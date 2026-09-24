@@ -23,6 +23,20 @@ public sealed class FlatImage
 
     public FlatImage Clone() => new(Width, Height, (byte[])Bgra.Clone());
 
+    // The pixel as one packed 0xAARRGGBB value (see Argb), and its setter.
+    public uint Argb(int x, int y) { var i = Index(x, y); return (uint)(Bgra[i + 3] << 24 | Bgra[i + 2] << 16 | Bgra[i + 1] << 8 | Bgra[i]); }
+    public void SetArgb(int x, int y, uint argb) => Set(x, y, LbaBodyStudio.Argb.R(argb), LbaBodyStudio.Argb.G(argb), LbaBodyStudio.Argb.B(argb), LbaBodyStudio.Argb.A(argb));
+
+    // A picture from a packed-ARGB pixel buffer (the renderer's): in memory a little-endian 0xAARRGGBB int is exactly the bytes B, G, R, A.
+    public static FlatImage FromArgb(int width, int height, int[] argb)
+    {
+        var image = new FlatImage(width, height);
+        if (argb.Length != image.Width * image.Height) throw new ArgumentException("Pixel buffer does not match the size.");
+        if (BitConverter.IsLittleEndian) Buffer.BlockCopy(argb, 0, image.Bgra, 0, image.Bgra.Length);
+        else for (var i = 0; i < argb.Length; i++) { var c = argb[i]; image.Bgra[i * 4] = (byte)c; image.Bgra[i * 4 + 1] = (byte)(c >> 8); image.Bgra[i * 4 + 2] = (byte)(c >> 16); image.Bgra[i * 4 + 3] = (byte)(c >> 24); }
+        return image;
+    }
+
     public FlatImage Crop(int x, int y, int width, int height)
     {
         var result = new FlatImage(width, height);
@@ -114,6 +128,19 @@ public sealed class FlatImage
         }
         return either == 0 ? 1 : both / (double)either;
     }
+}
+
+// Packed 0xAARRGGBB colours (what System.Drawing.Color.ToArgb() gave; alpha 0xFF for an opaque colour): the form every colour in
+// Body Studio takes -- palettes, the renderer's theme and background colours, and sampled picture pixels.
+public static class Argb
+{
+    public static uint Pack(int r, int g, int b, int a = 255) => (uint)((a & 0xFF) << 24 | (r & 0xFF) << 16 | (g & 0xFF) << 8 | (b & 0xFF));
+    public static byte A(uint argb) => (byte)(argb >> 24);
+    public static byte R(uint argb) => (byte)(argb >> 16);
+    public static byte G(uint argb) => (byte)(argb >> 8);
+    public static byte B(uint argb) => (byte)argb;
+    // `colour` blended towards white by `amount` (0 .. 1), the way ControlPaint.Light lightened a button colour.
+    public static uint Lighten(uint argb, float amount) => Pack((int)(R(argb) + (255 - R(argb)) * amount), (int)(G(argb) + (255 - G(argb)) * amount), (int)(B(argb) + (255 - B(argb)) * amount), A(argb));
 }
 
 // sRGB <-> CIE Lab, for colour distances that follow what the eye sees.

@@ -1,9 +1,14 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Shapes;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Avalonia.Controls.Shapes;
 using LBAAssembler.Lba1;
 using LBAAssembler.Scenes;
 using LBAAssembler.Terrain;
@@ -84,9 +89,9 @@ public partial class MainWindow
         var letter = new TextBlock { Text = "T", Foreground = Brushes.White, FontWeight = FontWeights.Bold, FontSize = 18, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 4, 0, 0), IsHitTestVisible = false };
         grid.Children.Add(pin); grid.Children.Add(body); grid.Children.Add(letter);
         var marker = new Border { Child = grid, Background = Brushes.Transparent };
-        marker.MouseLeftButtonDown += PlacementMarker_MouseDown;
-        marker.MouseMove += PlacementMarker_MouseMove;
-        marker.MouseLeftButtonUp += PlacementMarker_MouseUp;
+        marker.PointerPressed += PlacementMarker_MouseDown;
+        marker.PointerMoved += PlacementMarker_MouseMove;
+        marker.PointerReleased += PlacementMarker_MouseUp;
         placementMarker = marker;
         PlacementCanvas.Children.Add(marker);
     }
@@ -117,15 +122,15 @@ public partial class MainWindow
     private Point InteriorCanvasToView(Point canvas)
         => new((canvas.X - interiorCenter.X) * interiorZoom + ViewportHost.ActualWidth / 2, (canvas.Y - interiorCenter.Y) * interiorZoom + ViewportHost.ActualHeight / 2);
 
-    private void PlacementMarker_MouseDown(object sender, MouseButtonEventArgs e)
-    {
+    private void PlacementMarker_MouseDown(object? sender, PointerEventArgs e)
+    { if (!e.IsLeft) return;
         draggingHero = true;
         grabOffset = placementMarker is null ? new Vector() : e.GetPosition(ViewportHost) - new Point(Canvas.GetLeft(placementMarker) + 23, Canvas.GetTop(placementMarker) + 58);
         placementMarker?.CaptureMouse();
         e.Handled = true;
     }
 
-    private void PlacementMarker_MouseMove(object sender, MouseEventArgs e)
+    private void PlacementMarker_MouseMove(object? sender, PointerEventArgs e)
     {
         if (!draggingHero) return;
         var at = e.GetPosition(ViewportHost) - grabOffset;
@@ -135,8 +140,8 @@ public partial class MainWindow
         UpdatePlacementMarker();
     }
 
-    private void PlacementMarker_MouseUp(object sender, MouseButtonEventArgs e)
-    {
+    private void PlacementMarker_MouseUp(object? sender, PointerEventArgs e)
+    { if (!e.IsLeft) return;
         if (!draggingHero) return;
         draggingHero = false;
         placementMarker?.ReleaseMouseCapture();

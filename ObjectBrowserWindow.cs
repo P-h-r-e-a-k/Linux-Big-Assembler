@@ -1,10 +1,14 @@
 using System.IO;
 using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using LbaBodyStudio;
 using LBAAssembler.Lba1;
 
@@ -18,7 +22,7 @@ internal sealed class ObjectBrowserWindow : Window
     private sealed record Source(string Title, int Game, string Directory, string File, bool Static);
 
     private readonly ComboBox sourceBox = new() { Width = 200, Margin = new Thickness(0, 0, 10, 0) };
-    private readonly ListBox list = new() { Width = 130, FontFamily = new FontFamily("Consolas"), Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
+    private readonly ListBox list = new() { Width = 130, FontFamily = UiFonts.Mono, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
     private readonly Image view = new() { Stretch = Stretch.Uniform };
     private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
     private readonly TextBlock status = new() { Foreground = UiBrushes.Text, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
@@ -30,7 +34,7 @@ internal sealed class ObjectBrowserWindow : Window
     private int index = -1;
     private float yaw = 0.6f;
     private Point? drag;
-    private System.Drawing.Color[] palette = Array.Empty<System.Drawing.Color>();
+    private uint[] palette = Array.Empty<uint>();
     private byte[]? texturePage;
     private readonly string? lba1Directory, lba2Directory;
 
@@ -59,7 +63,7 @@ internal sealed class ObjectBrowserWindow : Window
         DockPanel.SetDock(top, Dock.Top);
         top.Children.Add(new TextBlock { Text = "Library", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Foreground = UiBrushes.Muted });
         top.Children.Add(sourceBox);
-        foreach (var (text, tip, handler) in new (string, string, RoutedEventHandler)[]
+        foreach (var (text, tip, handler) in new (string, string, EventHandler<RoutedEventArgs>)[]
         {
             ("Export .body", "The body exactly as the game stores it", (_, _) => ExportBody()),
             ("Export .obj", "The neutral pose as a Wavefront OBJ with palette materials", (_, _) => ExportObj()),
@@ -70,7 +74,7 @@ internal sealed class ObjectBrowserWindow : Window
             var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 6, 0) };
             b.Click += handler; top.Children.Add(b);
         }
-        wire.Foreground = Foreground; wire.VerticalAlignment = VerticalAlignment.Center; wire.Checked += (_, _) => Draw(); wire.Unchecked += (_, _) => Draw();
+        wire.Foreground = Foreground; wire.VerticalAlignment = VerticalAlignment.Center; wire.IsCheckedChanged += (_, _) => Draw(); wire.Unchecked += (_, _) => Draw();
         top.Children.Add(wire);
         root.Children.Add(top);
         var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = status };
@@ -88,9 +92,9 @@ internal sealed class ObjectBrowserWindow : Window
         root.Children.Add(right);
 
         var host = new Border { Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)), Child = view };
-        host.MouseLeftButtonDown += (_, e) => { drag = e.GetPosition(host); host.CaptureMouse(); };
-        host.MouseMove += (_, e) => { if (drag is { } d && host.IsMouseCaptured) { var p = e.GetPosition(host); yaw += (float)(p.X - d.X) * 0.012f; drag = p; Draw(); } };
-        host.MouseLeftButtonUp += (_, _) => { drag = null; host.ReleaseMouseCapture(); };
+        host.PointerPressed += (_, e) => { if (!e.IsLeft) return; drag = e.GetPosition(host); host.CaptureMouse(); };
+        host.PointerMoved += (_, e) => { if (drag is { } d && host.IsMouseCaptured) { var p = e.GetPosition(host); yaw += (float)(p.X - d.X) * 0.012f; drag = p; Draw(); } };
+        host.PointerReleased += (_, e) => { if (!e.IsLeft) return; drag = null; host.ReleaseMouseCapture(); };
         host.SizeChanged += (_, _) => Draw();
         root.Children.Add(host);
         Content = root;
@@ -144,13 +148,8 @@ internal sealed class ObjectBrowserWindow : Window
         var w = (int)Math.Max(200, view.ActualWidth); var h = (int)Math.Max(200, view.ActualHeight);
         try
         {
-            using var bitmap = Renderer.Render(body, palette, w, h, yaw, wire.IsChecked == true, background: Renderer.ViewBackground, gridLine: Renderer.ViewGrid);
-            using var stream = new MemoryStream();
-            bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-            stream.Position = 0;
-            var image = new BitmapImage();
-            image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad; image.StreamSource = stream; image.EndInit(); image.Freeze();
-            view.Source = image;
+            var image = Renderer.Render(body, palette, w, h, yaw, wire.IsChecked == true, background: Renderer.ViewBackground, gridLine: Renderer.ViewGrid);
+            view.Source = BitmapFactory.FromBgra(image.Width, image.Height, image.Bgra);
         }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException or IndexOutOfRangeException) { status.Text = "Couldn't draw this body: " + e.Message; }
     }
@@ -158,7 +157,7 @@ internal sealed class ObjectBrowserWindow : Window
     private void ExportBody()
     {
         if (archive is null || index < 0) return;
-        var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Game body|*.body", FileName = $"{System.IO.Path.GetFileNameWithoutExtension(source!.File).ToLowerInvariant()}-{index}.body" };
+        var dialog = new SaveFileDialog { Filter = "Game body|*.body", FileName = $"{System.IO.Path.GetFileNameWithoutExtension(source!.File).ToLowerInvariant()}-{index}.body" };
         if (dialog.ShowDialog(this) != true) return;
         File.WriteAllBytes(dialog.FileName, archive.Read(index));
         status.Text = $"Exported entry {index} to {dialog.FileName}.";
@@ -167,7 +166,7 @@ internal sealed class ObjectBrowserWindow : Window
     private void ExportObj()
     {
         if (body is null) return;
-        var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Wavefront OBJ|*.obj", FileName = $"body-{index}.obj" };
+        var dialog = new SaveFileDialog { Filter = "Wavefront OBJ|*.obj", FileName = $"body-{index}.obj" };
         if (dialog.ShowDialog(this) != true) return;
         var obj = new StringBuilder("mtllib " + System.IO.Path.GetFileNameWithoutExtension(dialog.FileName) + ".mtl\n");
         var mtl = new StringBuilder();
@@ -175,7 +174,7 @@ internal sealed class ObjectBrowserWindow : Window
         foreach (var c in body.Faces.Select(f => f.Colour).Distinct())
         {
             var p = palette[Math.Clamp(c, 0, palette.Length - 1)];
-            mtl.AppendLine(FormattableString.Invariant($"newmtl palette{c}\nKd {p.R / 255f} {p.G / 255f} {p.B / 255f}"));
+            mtl.AppendLine(FormattableString.Invariant($"newmtl palette{c}\nKd {((p >> 16) & 0xFF) / 255f} {((p >> 8) & 0xFF) / 255f} {(p & 0xFF) / 255f}"));
         }
         foreach (var f in body.Faces) { obj.AppendLine($"usemtl palette{f.Colour}"); obj.AppendLine("f " + string.Join(" ", f.Points.Select(p => p + 1))); }
         File.WriteAllText(dialog.FileName, obj.ToString());
@@ -186,7 +185,7 @@ internal sealed class ObjectBrowserWindow : Window
     private void Replace()
     {
         if (archive is null || source is null || index < 0) return;
-        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Game body|*.body|All files|*.*" };
+        var dialog = new OpenFileDialog { Filter = "Game body|*.body|All files|*.*" };
         if (dialog.ShowDialog(this) != true) return;
         try
         {

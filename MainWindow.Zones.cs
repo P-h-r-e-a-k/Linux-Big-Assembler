@@ -1,8 +1,13 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -49,9 +54,9 @@ public partial class MainWindow
 
     // ---- selection ------------------------------------------------------------
 
-    private void ZoneShape_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (((FrameworkElement)sender).Tag is not ZoneRef zone) return;
+    private void ZoneShape_MouseLeftButtonDown(object? sender, PointerEventArgs e)
+    { if (!e.IsLeft) return;
+        if (((Control)sender).Tag is not ZoneRef zone) return;
         e.Handled = true;
         SelectZone(zone, showTab: true);
     }
@@ -80,7 +85,7 @@ public partial class MainWindow
         if (ZoneDetailsTab.IsSelected) RefreshZoneList();
     }
 
-    private void ZoneListRefresh_Click(object sender, RoutedEventArgs e) => RefreshZoneList();
+    private void ZoneListRefresh_Click(object? sender, RoutedEventArgs e) => RefreshZoneList();
 
     private void RefreshZoneList()
     {
@@ -96,7 +101,7 @@ public partial class MainWindow
                 var text = $"{(multiScene ? $"{zone.Ref!.Scene}: " : "")}{ZoneStyle.NameOf(zone.Type)} #{zone.Ref!.Index}";
                 if (zone.Type == 0 && data is not null) text += $" → scene {data.Destination}";
                 var row = new StackPanel { Orientation = Orientation.Horizontal };
-                row.Children.Add(new System.Windows.Shapes.Rectangle
+                row.Children.Add(new Avalonia.Controls.Shapes.Rectangle
                 {
                     Width = 8, Height = 8, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
                     Fill = new SolidColorBrush(ZoneStyle.ColorOf(zone.Type)),
@@ -121,7 +126,7 @@ public partial class MainWindow
         finally { zoneListSyncing = false; }
     }
 
-    private void ZoneList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ZoneList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (zoneListSyncing) return;
         if (ZoneListBox.SelectedItem is ListBoxItem { Tag: ZoneRef zone }) SelectZone(zone, showTab: false, center: true);
@@ -170,7 +175,7 @@ public partial class MainWindow
                     Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)),
                     BorderBrush = new SolidColorBrush(Color.FromRgb(0xA9, 0xC3, 0xE0)),
                 };
-                System.Windows.Automation.AutomationProperties.SetName(box, field.Label);
+                Avalonia.Automation.AutomationProperties.SetName(box, field.Label);
                 box.TextChanged += ZoneBounds_TextChanged;
                 Grid.SetColumn(box, 1);
                 row.Children.Add(label);
@@ -185,7 +190,7 @@ public partial class MainWindow
         UpdateZoneEditability();
     }
 
-    private void ZoneBounds_TextChanged(object sender, TextChangedEventArgs e)
+    private void ZoneBounds_TextChanged(object? sender, TextChangedEventArgs e)
     {
         if (!zoneFormLoading) UpdateZoneDerived();
     }
@@ -218,9 +223,9 @@ public partial class MainWindow
         }
     }
 
-    private void ZoneRevert_Click(object sender, RoutedEventArgs e) => LoadZoneForm();
+    private void ZoneRevert_Click(object? sender, RoutedEventArgs e) => LoadZoneForm();
 
-    private void ZoneApply_Click(object sender, RoutedEventArgs e)
+    private void ZoneApply_Click(object? sender, RoutedEventArgs e)
     {
         if (zoneOriginal is null || editMode != EditMode.Build) return;
         var edited = zoneOriginal.Clone();
@@ -304,7 +309,7 @@ public partial class MainWindow
         ZoneStatus.Text = "Saved to SCENE.HQR (the first save keeps SCENE.HQR.bak).";
     }
 
-    private void ZoneGoto_Click(object sender, RoutedEventArgs e)
+    private void ZoneGoto_Click(object? sender, RoutedEventArgs e)
     {
         if (zoneOriginal is not { Type: 0 } zone) return;
         var destination = zoneFieldBoxes.FirstOrDefault(f => f.Field.Label == "Destination scene").Box;

@@ -100,40 +100,67 @@ internal sealed class RendererLibraryApi : IDisposable
     private ReloadBodiesFn? reloadBodies;
     private ReloadAnimsFn? reloadAnims;
 
-    // devTreeFallbackPath is an absolute path into the native dev build
-    // tree (dynamically linked against MSYS2's GCC runtime/SDL3 -- fine
-    // locally, since msys64 is on a dev machine), used only when neither of
-    // the two distributable options below is present: running straight
-    // from source before the statically-linked DLL has ever been built.
+    // The library's file name on this platform: liblba2_renderer.so on Linux (built by the "linux" CMake preset into
+    // out/build/linux), liblba2_renderer.dll on Windows. It is also the name of the embedded resource (LBAAssembler.csproj).
+    private static readonly string LibraryFileName = OperatingSystem.IsWindows() ? "liblba2_renderer.dll" : "liblba2_renderer.so";
+    private static readonly string LibraryExtension = Path.GetExtension(LibraryFileName);      // ".dll" / ".so"
+
+    // devTreeFallbackPath is an absolute path into the native dev build tree, used only when neither of the two
+    // distributable options below is present: running straight from source before the library has ever been copied
+    // beside the executable. When that path doesn't exist either, the repository's own build output is looked for by
+    // walking up from the executable's folder (the same way Lba2Engine finds lba2cc), so a caller that still passes a
+    // path of another platform's build tree is no worse off.
     //
     // The two distributable options, tried first:
-    //  1. A copy of the DLL next to the exe (LBAAssembler.csproj copies
+    //  1. A copy of the library next to the exe (LBAAssembler.csproj copies
     //     it there via CopyToOutputDirectory) -- covers bin/Debug and a
     //     plain folder-based dotnet publish.
     //  2. Failing that, an embedded copy (LBAAssembler.csproj also
     //     embeds it as a resource) extracted to a stable cache directory --
     //     covers a single-file publish. dotnet publish's own
     //     IncludeNativeLibrariesForSelfExtract looked like the built-in
-    //     answer for this, but it isn't: it does extract the DLL at
-    //     runtime, just into its own private %TEMP%\.net\<app>\<hash>\
-    //     cache directory rather than next to the exe (AppContext.
-    //     BaseDirectory stays the exe's own folder for a single-file app),
-    //     and NativeLibrary.Load resolving a bare "liblba2_renderer.dll"
-    //     does not search that directory either -- confirmed empirically by
-    //     a DllNotFoundException there. Embedding it ourselves and
-    //     extracting it to a location we choose sidesteps the single-file
-    //     host's own native-library resolver entirely instead of fighting it.
+    //     answer for this, but it isn't: it does extract the library at
+    //     runtime, just into its own private temp cache directory rather
+    //     than next to the exe (AppContext.BaseDirectory stays the exe's own
+    //     folder for a single-file app), and NativeLibrary.Load resolving a
+    //     bare "liblba2_renderer.dll" does not search that directory either
+    //     -- confirmed empirically by a DllNotFoundException there.
+    //     Embedding it ourselves and extracting it to a location we choose
+    //     sidesteps the single-file host's own native-library resolver
+    //     entirely instead of fighting it.
+    //
+    // Linux: the library links libSDL3.so.0 dynamically (it creates a hidden SDL window when initialised, so the app must
+    // run under a display) and finds it through its RUNPATH (/usr/local/lib on the build machine) or the loader's usual
+    // paths; a release bundle must ship libSDL3.so.0 or link it statically. The load failure is logged with that hint.
     public RendererLibraryApi(string devTreeFallbackPath)
     {
         var path = ResolveLibraryPath(devTreeFallbackPath);
-        if (path is null) return;
-        // Only the dev-tree DLL is dynamically linked; both distributable
-        // paths are statically linked and have no non-system dependencies,
-        // but pointing this at a real MSYS2 install is harmless either way.
-        SetDllDirectory("C:\\msys64\\ucrt64\\bin");
-        try { handle = NativeLibrary.Load(path); } catch { handle = IntPtr.Zero; }
-        if (handle == IntPtr.Zero) return;
-        version = Marshal.GetDelegateForFunctionPointer<VersionFn>(NativeLibrary.GetExport(handle, "lba2_renderer_version"));
+        if (path is null) { DebugLog.Log($"RendererLibraryApi: no {LibraryFileName} beside the executable, embedded, or in the development tree ({devTreeFallbackPath})"); return; }
+        if (OperatingSystem.IsWindows())
+        {
+            // Only the dev-tree DLL is dynamically linked; both distributable
+            // paths are statically linked and have no non-system dependencies,
+            // but pointing this at a real MSYS2 install is harmless either way.
+            try { SetDllDirectory("C:\\msys64\\ucrt64\\bin"); } catch (Exception) { /* not there: fine */ }
+        }
+        if (!NativeLibrary.TryLoad(path, out handle))
+        {
+            handle = IntPtr.Zero;
+            // TryLoad says nothing about why; Load's exception message carries the loader's own text (dlerror / GetLastError).
+            string reason;
+            try { NativeLibrary.Load(path); reason = "loaded on the second try"; }
+            catch (Exception error) { reason = error.Message; }
+            DebugLog.Log($"RendererLibraryApi: couldn't load {path}: {reason}" + (OperatingSystem.IsWindows() ? ""
+                : " (the renderer needs libSDL3.so.0: install SDL3 -- it is in /usr/local/lib on the build machine -- or put it next to the library)"));
+            return;
+        }
+        try { version = Marshal.GetDelegateForFunctionPointer<VersionFn>(NativeLibrary.GetExport(handle, "lba2_renderer_version")); }
+        catch (EntryPointNotFoundException error)
+        {
+            DebugLog.Log($"RendererLibraryApi: {path} has no lba2_renderer_version export: {error.Message}");
+            NativeLibrary.Free(handle); handle = IntPtr.Zero;
+            return;
+        }
         initialize = Get<InitializeFn>("lba2_renderer_initialize"); setDataRoot = Get<SetDataRootFn>("lba2_renderer_set_data_root"); shutdown = Get<ShutdownFn>("lba2_renderer_shutdown");
         loadIsland = Get<LoadIslandFn>("lba2_renderer_load_island"); loadCube = Get<LoadCubeFn>("lba2_renderer_load_cube");
         setViewTarget = Get<SetViewTargetFn>("lba2_renderer_set_view_target");
@@ -176,15 +203,16 @@ internal sealed class RendererLibraryApi : IDisposable
         projectPoint = Get<ProjectPointFn>("lba2_renderer_project_point");
     }
 
+    // Windows only (called behind OperatingSystem.IsWindows()).
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern bool SetDllDirectory(string path);
 
-    // Deletes renderer DLLs extracted by earlier builds of the exe (best effort: one still loaded by
+    // Deletes renderer libraries extracted by earlier builds of the exe (best effort: one still loaded by
     // another running instance can't be deleted and is simply left).
     private static void PruneOldExtractions(string directory, string keep)
     {
         try
         {
-            foreach (var old in Directory.EnumerateFiles(directory, "liblba2_renderer.*.dll"))
+            foreach (var old in Directory.EnumerateFiles(directory, "liblba2_renderer.*" + LibraryExtension))
             {
                 if (string.Equals(old, keep, StringComparison.OrdinalIgnoreCase)) continue;
                 try { File.Delete(old); } catch (Exception) { /* in use */ }
@@ -197,11 +225,11 @@ internal sealed class RendererLibraryApi : IDisposable
     // and why the embedded-resource one exists at all.
     private static string? ResolveLibraryPath(string devTreeFallbackPath)
     {
-        var coLocated = Path.Combine(AppContext.BaseDirectory, "liblba2_renderer.dll");
+        var coLocated = Path.Combine(AppContext.BaseDirectory, LibraryFileName);
         if (File.Exists(coLocated)) return coLocated;
 
         var assembly = Assembly.GetExecutingAssembly();
-        using (var resource = assembly.GetManifestResourceStream("liblba2_renderer.dll"))
+        using (var resource = assembly.GetManifestResourceStream(LibraryFileName))
         {
             if (resource is not null)
             {
@@ -220,7 +248,7 @@ internal sealed class RendererLibraryApi : IDisposable
                     : resource.Length.ToString();
                 // Extracted beside the executable (a "native" folder), so the app leaves nothing
                 // elsewhere on the machine; if that folder can't be written to, into
-                // %LOCALAPPDATA% instead.
+                // %LOCALAPPDATA% (~/.local/share on Linux) instead.
                 var candidates = new[]
                 {
                     Path.Combine(AppContext.BaseDirectory, "native"),
@@ -228,7 +256,7 @@ internal sealed class RendererLibraryApi : IDisposable
                 };
                 foreach (var cacheDir in candidates)
                 {
-                    var extractedPath = Path.Combine(cacheDir, $"liblba2_renderer.{cacheKey}.dll");
+                    var extractedPath = Path.Combine(cacheDir, $"liblba2_renderer.{cacheKey}{LibraryExtension}");
                     try
                     {
                         if (!File.Exists(extractedPath))
@@ -252,7 +280,18 @@ internal sealed class RendererLibraryApi : IDisposable
             }
         }
 
-        return File.Exists(devTreeFallbackPath) ? devTreeFallbackPath : null;
+        if (File.Exists(devTreeFallbackPath)) return devTreeFallbackPath;
+
+        // a development checkout: walk up from the exe to the repository's own build output
+        var relativeBuild = OperatingSystem.IsWindows()
+            ? Path.Combine("native", "lba2-classic-community", "out", "build", "windows_ucrt64_static", "SOURCES", "3DEXT", LibraryFileName)
+            : Path.Combine("native", "lba2-classic-community", "out", "build", "linux", "SOURCES", "3DEXT", LibraryFileName);
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, relativeBuild);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
     }
 
     public bool IsLoaded => handle != IntPtr.Zero && version is not null;

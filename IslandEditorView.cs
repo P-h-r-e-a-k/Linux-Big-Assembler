@@ -1,13 +1,15 @@
 using System.Globalization;
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Avalonia.Controls.Shapes;
 using LBAAssembler.Terrain;
 
 namespace LBAAssembler;
@@ -134,7 +136,7 @@ internal sealed class IslandEditorView
     private readonly TextBox shadowDepthBox = new() { Text = "5" };
     private readonly CheckBox terrainShadowBox = new() { Content = "Terrain casts shadows", IsChecked = true };
     private readonly CheckBox decorShadowBox = new() { Content = "Objects cast shadows" };
-    private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
+    private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, FontFamily = UiFonts.Mono, FontSize = 11 };
     private readonly Canvas profile = new() { Height = 96, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), ClipToBounds = true };
     private readonly Image atlasImage = new() { Width = 256, Height = 256, Stretch = Stretch.Fill };
     private readonly Canvas atlasCanvas = new() { Width = 256, Height = 256 };
@@ -147,7 +149,7 @@ internal sealed class IslandEditorView
     private readonly StackPanel decorPanel = new();
     private bool loadingFields;
     private string? currentName;
-    private static readonly Brush Fore = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
+    private static readonly IBrush Fore = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
 
     public event Action<string>? StatusChanged;
     public event Action? Saved;
@@ -155,8 +157,8 @@ internal sealed class IslandEditorView
     public event Action? Edited;                 // the island changed (a stroke tick, a commit, an undo): the host can refresh its own view
     public event Action<bool>? MapRequested;     // the top-down map was ticked / unticked in the panel
 
-    public UIElement MapArea { get; private set; } = null!;
-    public UIElement Panel { get; private set; } = null!;
+    public Control MapArea { get; private set; } = null!;
+    public Control Panel { get; private set; } = null!;
     public string? CurrentName => currentName;
     public bool Dirty => history is { Dirty: true };
     public string? UndoLabel => history?.CanUndo == true ? history.UndoLabel ?? "" : null;
@@ -189,32 +191,24 @@ internal sealed class IslandEditorView
 
     // ---- layout ---------------------------------------------------------------------------------------------------------------------------
 
-    private static Brush Muted => new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A));
+    private static IBrush Muted => new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A));
 
-    private static readonly Style ButtonStyle = (Style)System.Windows.Markup.XamlReader.Parse(
-        "<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'>" +
-        "<Setter Property='Foreground' Value='#10243E'/><Setter Property='Background' Value='#C3DBF5'/><Setter Property='BorderBrush' Value='#A9C3E0'/>" +
-        "<Setter Property='Padding' Value='9,3'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>" +
-        "<Border x:Name='B' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' Padding='{TemplateBinding Padding}'>" +
-        "<ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers>" +
-        "<Trigger Property='IsMouseOver' Value='True'><Setter TargetName='B' Property='Background' Value='#C3DBF5'/></Trigger>" +
-        "<Trigger Property='IsPressed' Value='True'><Setter TargetName='B' Property='Background' Value='#A9C3E0'/></Trigger>" +
-        "<Trigger Property='IsEnabled' Value='False'><Setter TargetName='B' Property='Opacity' Value='0.45'/></Trigger>" +
-        "</ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>");
+    // The tool buttons' look (Theme.axaml's Button.MapTool class: the hover colour as the face, a darker press).
+    private const string ButtonStyle = "MapTool";
 
     private void BuildLayout()
     {
         // action bar at the top of the panel: undo / redo / save, weld, check, and the optional top-down map
         var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 2) };
         undoButton.ToolTip = "Undo (Ctrl+Z)"; redoButton.ToolTip = "Redo (Ctrl+Y)"; saveButton.ToolTip = "Save the island (Ctrl+S); the original is kept as .bak";
-        foreach (var (button, handler, tip) in new (Button, RoutedEventHandler, string?)[]
+        foreach (var (button, handler, tip) in new (Button, EventHandler<RoutedEventArgs>, string?)[]
         {
             (undoButton, (_, _) => DoUndo(), null), (redoButton, (_, _) => DoRedo(), null), (saveButton, (_, _) => Save(), null),
             (new Button { Content = "Weld borders" }, (_, _) => Weld(), "Makes the shared vertices on cube borders agree again"),
             (new Button { Content = "Check" }, (_, _) => Check(), "Looks for anything the game may not like"),
         })
         {
-            button.Style = ButtonStyle; button.Margin = new Thickness(0, 0, 6, 6);
+            button.Classes.Add(ButtonStyle); button.Margin = new Thickness(0, 0, 6, 6);
             if (tip is not null) button.ToolTip = tip;
             button.Click += handler;
             actions.Children.Add(button);
@@ -226,12 +220,12 @@ internal sealed class IslandEditorView
         viewBox.SelectionChanged += (_, _) => { if (viewBox.SelectedItem is ComboBoxItem { Tag: MapView v }) { view = v; if (mapActive) RedrawAll(); } };
         mapBox.Foreground = Fore; mapBox.Margin = new Thickness(0, 2, 0, 0);
         mapBox.ToolTip = "Replace the 3D view with a map from above that can also show the height, the baked light and shadows, the game codes and the water depth";
-        mapBox.Checked += (_, _) => MapRequested?.Invoke(true);
-        mapBox.Unchecked += (_, _) => MapRequested?.Invoke(false);
+        mapBox.IsCheckedChanged += (_, _) => MapRequested?.Invoke(true);
+        mapBox.IsCheckedChanged += (_, _) => MapRequested?.Invoke(false);
         var mapRow = new StackPanel();
         mapRow.Children.Add(mapBox);
         mapRow.Children.Add(viewBox);
-        var fitButton = new Button { Content = "Fit the map", Style = ButtonStyle, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
+        var fitButton = new Button { Content = "Fit the map", Classes = { ButtonStyle }, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
         fitButton.Click += (_, _) => FitView();
         mapRow.Children.Add(fitButton);
 
@@ -249,7 +243,7 @@ internal sealed class IslandEditorView
             {
                 var button = new RadioButton { Content = name, GroupName = "tool", ToolTip = tip, Margin = new Thickness(0, 1, 4, 1), Foreground = Fore };
                 var captured = t;
-                button.Checked += (_, _) => SelectTool(captured);
+                button.IsCheckedChanged += (_, _) => SelectTool(captured);
                 toolButtons[t] = button;
                 grid.Children.Add(button);
             }
@@ -261,7 +255,7 @@ internal sealed class IslandEditorView
         brush.Children.Add(SliderRow("Radius", radius, "vertices (cells); [ and ] change it"));
         brush.Children.Add(SliderRow("Hardness", hardness, "how much of the radius is full strength"));
         brush.Children.Add(SliderRow("Strength", strength, "rate while held"));
-        stack.Children.Add(Section("Brush", brush, open: true, out _));
+        stack.Children.Add(Section("IBrush", brush, open: true, out _));
 
         var settings = new StackPanel();
         settings.Children.Add(FieldRow("Level", levelBox, "world units; the height Flatten pulls to"));
@@ -294,9 +288,9 @@ internal sealed class IslandEditorView
         bake.Children.Add(FieldRow("Shadow depth", shadowDepthBox, "levels a footprint shadow under an object darkens by (retail buildings: about 5)"));
         bake.Children.Add(terrainShadowBox); bake.Children.Add(decorShadowBox);
         var bakeButtons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
-        void BakeButton(string text, string tip, RoutedEventHandler handler)
+        void BakeButton(string text, string tip, EventHandler<RoutedEventArgs> handler)
         {
-            var b = new Button { Content = text, ToolTip = tip, Style = ButtonStyle, Margin = new Thickness(0, 0, 6, 6) };
+            var b = new Button { Content = text, ToolTip = tip, Classes = { ButtonStyle }, Margin = new Thickness(0, 0, 6, 6) };
             b.Click += handler; bakeButtons.Children.Add(b);
         }
         BakeButton("Use the cube's light", "Reads the azimuth and elevation from the island's first cube", (_, _) => LoadBakeFromCube());
@@ -310,7 +304,7 @@ internal sealed class IslandEditorView
         var atlas = new StackPanel();
         atlas.Children.Add(new TextBlock { Text = "Drag a square, then use Paint atlas tile.", Foreground = Muted, FontSize = 10, Margin = new Thickness(0, 0, 0, 4) });
         atlasCanvas.Children.Add(atlasImage); atlasCanvas.Children.Add(atlasSelection);
-        atlasCanvas.MouseLeftButtonDown += AtlasDown; atlasCanvas.MouseMove += AtlasMove; atlasCanvas.MouseLeftButtonUp += (_, _) => atlasCanvas.ReleaseMouseCapture();
+        atlasCanvas.PointerPressed += AtlasDown; atlasCanvas.PointerMoved += AtlasMove; atlasCanvas.PointerReleased += (_, e) => { if (e.IsLeft) atlasCanvas.ReleaseMouseCapture(); };
         atlas.Children.Add(new Border { BorderBrush = Muted, BorderThickness = new Thickness(1), Child = atlasCanvas, HorizontalAlignment = HorizontalAlignment.Left });
         stack.Children.Add(Section("Ground atlas", atlas, open: false, out openAtlas));
         Panel = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = stack };
@@ -319,17 +313,17 @@ internal sealed class IslandEditorView
         DockPanel.SetDock(profile, Dock.Bottom);
         var centre = new DockPanel { ClipToBounds = true };
         centre.Children.Add(profile);
-        RenderOptions.SetBitmapScalingMode(mapImage, BitmapScalingMode.NearestNeighbor);
+        RenderOptions.SetBitmapInterpolationMode(mapImage, BitmapInterpolationMode.None);
         world.Children.Add(mapImage); world.Children.Add(overlay); world.Children.Add(brushCircle);
-        world.RenderTransformOrigin = new Point(0, 0);
+        world.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Absolute);     // WPF's default; Avalonia's is the centre
         viewport.Children.Add(world);
-        viewport.MouseWheel += (_, e) => ZoomAt(e.GetPosition(viewport), e.Delta > 0 ? 1.2 : 1 / 1.2);
-        viewport.MouseLeftButtonDown += ViewDown; viewport.MouseLeftButtonUp += ViewUp;
-        viewport.MouseMove += ViewMove; viewport.MouseLeave += (_, _) => brushCircle.Visibility = Visibility.Collapsed;
-        viewport.MouseRightButtonDown += (_, e) => { panning = true; panStart = e.GetPosition(viewport); panOrigin = pan; viewport.CaptureMouse(); };
-        viewport.MouseRightButtonUp += (_, _) => { panning = false; viewport.ReleaseMouseCapture(); };
-        viewport.MouseDown += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { panning = true; panStart = e.GetPosition(viewport); panOrigin = pan; viewport.CaptureMouse(); } };
-        viewport.MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { panning = false; viewport.ReleaseMouseCapture(); } };
+        viewport.PointerWheelChanged += (_, e) => ZoomAt(e.GetPosition(viewport), e.WheelDelta > 0 ? 1.2 : 1 / 1.2);
+        viewport.PointerPressed += ViewDown; viewport.PointerReleased += ViewUp;
+        viewport.PointerMoved += ViewMove; viewport.PointerExited += (_, _) => brushCircle.Visibility = Visibility.Collapsed;
+        viewport.PointerPressed += (_, e) => { if (!e.IsRight) return; panning = true; panStart = e.GetPosition(viewport); panOrigin = pan; viewport.CaptureMouse(); };
+        viewport.PointerReleased += (_, e) => { if (!e.IsRight) return; panning = false; viewport.ReleaseMouseCapture(); };
+        viewport.PointerPressed += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { panning = true; panStart = e.GetPosition(viewport); panOrigin = pan; viewport.CaptureMouse(); } };
+        viewport.PointerReleased += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { panning = false; viewport.ReleaseMouseCapture(); } };
         viewport.SizeChanged += (_, _) => { if (renderer is not null && zoom == 1 && pan == default) FitView(); };
         centre.Children.Add(viewport);
         MapArea = centre;
@@ -340,12 +334,12 @@ internal sealed class IslandEditorView
     private Action<bool> openAtlas = _ => { };
 
     // A collapsible group in the side panel.
-    private static UIElement Section(string title, UIElement content, bool open, out Action<bool> setOpen)
+    private static Control Section(string title, Control content, bool open, out Action<bool> setOpen)
     {
         var body = new Border { Child = content, Visibility = open ? Visibility.Visible : Visibility.Collapsed, Padding = new Thickness(0, 2, 0, 4) };
-        var header = new TextBlock { Text = (open ? "▾  " : "▸  ") + title, FontFamily = new FontFamily("Consolas"), FontSize = 10.5, Foreground = Muted, Cursor = Cursors.Hand, Margin = new Thickness(0, 12, 0, 2) };
+        var header = new TextBlock { Text = (open ? "▾  " : "▸  ") + title, FontFamily = UiFonts.Mono, FontSize = 10.5, Foreground = Muted, Cursor = Cursors.Hand, Margin = new Thickness(0, 12, 0, 2) };
         void Set(bool show) { body.Visibility = show ? Visibility.Visible : Visibility.Collapsed; header.Text = (show ? "▾  " : "▸  ") + title; }
-        header.MouseLeftButtonDown += (_, _) => Set(body.Visibility != Visibility.Visible);
+        header.PointerPressed += (_, e) => { if (!e.IsLeft) return; Set(body.Visibility != Visibility.Visible); };
         setOpen = Set;
         var panel = new StackPanel();
         panel.Children.Add(header); panel.Children.Add(body);
@@ -355,7 +349,7 @@ internal sealed class IslandEditorView
     private static TextBlock Label(string text) => new() { Text = text, Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
     private static TextBlock Heading(string text) => new() { Text = text, FontSize = 10, Foreground = Muted, Margin = new Thickness(0, 12, 0, 4) };
 
-    private static UIElement FieldRow(string label, Control box, string tip)
+    private static Control FieldRow(string label, TemplatedControl box, string tip)
     {
         var grid = new Grid { Margin = new Thickness(0, 2, 0, 2) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
@@ -374,7 +368,7 @@ internal sealed class IslandEditorView
         return grid;
     }
 
-    private static UIElement SliderRow(string label, Slider slider, string tip)
+    private static Control SliderRow(string label, Slider slider, string tip)
     {
         var grid = new Grid { Margin = new Thickness(0, 2, 0, 2) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
@@ -393,9 +387,9 @@ internal sealed class IslandEditorView
         for (var i = 0; i < names.Length; i++) decorPanel.Children.Add(FieldRow(names[i], decorFields[i], i == 6 ? "A game variable that hides the object while set (negative: while clear); 0 = always shown" : ""));
         decorFields[7].IsReadOnly = true;
         var buttons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
-        void B(string text, string tip, RoutedEventHandler handler)
+        void B(string text, string tip, EventHandler<RoutedEventArgs> handler)
         {
-            var b = new Button { Content = text, ToolTip = tip, Style = ButtonStyle, Margin = new Thickness(0, 0, 6, 6) };
+            var b = new Button { Content = text, ToolTip = tip, Classes = { ButtonStyle }, Margin = new Thickness(0, 0, 6, 6) };
             b.Click += handler; buttons.Children.Add(b);
         }
         B("Apply", "Writes the fields to the object (the ZV moves with it)", (_, _) => ApplyDecorFields());
@@ -425,7 +419,7 @@ internal sealed class IslandEditorView
             palette = IslandMapRenderer.LoadPalette(gameDirectory, System.IO.Path.GetFileNameWithoutExtension(name));
             var (mapCells, _) = (Math.Max(island.PresentBounds().MaxX - island.PresentBounds().MinX + 1, island.PresentBounds().MaxZ - island.PresentBounds().MinZ + 1) * 64, 0);
             renderer = new IslandMapRenderer(island, palette, Math.Clamp(1800 / mapCells, 2, 8));
-            bitmap = new WriteableBitmap(renderer.PixelWidth, renderer.PixelHeight, 96, 96, PixelFormats.Bgra32, null);
+            bitmap = BitmapFactory.Writeable(renderer.PixelWidth, renderer.PixelHeight);
             mapImage.Source = bitmap; mapImage.Width = renderer.PixelWidth; mapImage.Height = renderer.PixelHeight;
             overlay.Width = world.Width = renderer.PixelWidth; overlay.Height = world.Height = renderer.PixelHeight;
             LoadBakeFromCube();
@@ -446,7 +440,7 @@ internal sealed class IslandEditorView
         }
     }
 
-    private BitmapSource AtlasBitmap()
+    private Bitmap AtlasBitmap()
     {
         var sixBit = palette.Take(768).Max() <= 63;
         var pixels = new byte[256 * 256 * 4];
@@ -458,7 +452,7 @@ internal sealed class IslandEditorView
             pixels[i * 4 + 2] = (byte)Math.Min(255, palette[p] * (sixBit ? 4 : 1));
             pixels[i * 4 + 3] = 255;
         }
-        var bmp = BitmapSource.Create(256, 256, 96, 96, PixelFormats.Bgra32, null, pixels, 256 * 4);
+        var bmp = BitmapFactory.Create(256, 256, 96, 96, PixelFormats.Bgra32, null, pixels, 256 * 4);
         bmp.Freeze();
         return bmp;
     }
@@ -542,7 +536,7 @@ internal sealed class IslandEditorView
             var (lo, hi) = IslandOps.HeightRange(island);
             renderer.HeightMin = lo; renderer.HeightMax = Math.Max(lo + 1, hi);
             renderer.RenderAll(view);
-            bitmap.WritePixels(new Int32Rect(0, 0, renderer.PixelWidth, renderer.PixelHeight), renderer.Pixels, renderer.PixelWidth * 4, 0);
+            bitmap.WritePixels(new PixelRect(0, 0, renderer.PixelWidth, renderer.PixelHeight), renderer.Pixels, renderer.PixelWidth * 4, 0);
             RebuildOverlay();
             DrawProfile();
         }
@@ -559,7 +553,7 @@ internal sealed class IslandEditorView
         x1 = Math.Min(x1, renderer.OriginX + renderer.CellsX - 1); z1 = Math.Min(z1, renderer.OriginZ + renderer.CellsZ - 1);
         if (x1 < x0 || z1 < z0) return;
         renderer.Render(view, x0, z0, x1, z1);
-        var rect = new Int32Rect((x0 - renderer.OriginX) * renderer.Scale, (z0 - renderer.OriginZ) * renderer.Scale, (x1 - x0 + 1) * renderer.Scale, (z1 - z0 + 1) * renderer.Scale);
+        var rect = new PixelRect((x0 - renderer.OriginX) * renderer.Scale, (z0 - renderer.OriginZ) * renderer.Scale, (x1 - x0 + 1) * renderer.Scale, (z1 - z0 + 1) * renderer.Scale);
         bitmap.WritePixels(rect, renderer.Pixels, renderer.PixelWidth * 4, rect.X, rect.Y);
     }
 
@@ -576,7 +570,7 @@ internal sealed class IslandEditorView
         var (minX, minZ, maxX, maxZ) = island.PresentBounds();
         for (var cx = minX; cx <= maxX + 1; cx++) grid.Children.Add(new LineGeometry(new Point(CellToPixelX(cx * 64), 0), new Point(CellToPixelX(cx * 64), renderer.PixelHeight)));
         for (var cz = minZ; cz <= maxZ + 1; cz++) grid.Children.Add(new LineGeometry(new Point(0, CellToPixelZ(cz * 64)), new Point(renderer.PixelWidth, CellToPixelZ(cz * 64))));
-        overlay.Children.Add(new System.Windows.Shapes.Path { Data = grid, Stroke = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)), StrokeThickness = thin, IsHitTestVisible = false });
+        overlay.Children.Add(new Avalonia.Controls.Shapes.Path { Data = grid, Stroke = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)), StrokeThickness = thin, IsHitTestVisible = false });
 
         // objects
         foreach (var (cx, cz, cube) in IslandOps.CubeCells(island))
@@ -607,7 +601,7 @@ internal sealed class IslandEditorView
 
     private void ApplyTransform()
     {
-        world.RenderTransform = new MatrixTransform(zoom, 0, 0, zoom, pan.X, pan.Y);
+        world.RenderTransform = CompatTransforms.Matrix(zoom, 0, 0, zoom, pan.X, pan.Y);
         RebuildOverlay();
     }
 
@@ -785,7 +779,7 @@ internal sealed class IslandEditorView
 
     public void PointerUp() => PointerUpCore();
 
-    private void ViewDown(object sender, MouseButtonEventArgs e)
+    private void ViewDown(object? sender, PointerEventArgs e)
     {
         if (island is null || history is null || renderer is null) return;
         viewport.Focus();
@@ -798,7 +792,7 @@ internal sealed class IslandEditorView
     private void PointerDownCore()
     {
         if (island is null || history is null) return;
-        if (Keyboard.Modifiers == ModifierKeys.Alt) { SampleLevel(); return; }
+        if (Keyboard.Modifiers == KeyModifiers.Alt) { SampleLevel(); return; }
         switch (tool)
         {
             case Tool.Navigate: return;
@@ -826,7 +820,7 @@ internal sealed class IslandEditorView
         strokeTimer.Start();
     }
 
-    private void ViewUp(object sender, MouseButtonEventArgs e)
+    private void ViewUp(object? sender, PointerEventArgs e)
     {
         if (tool == Tool.Navigate && panning) { panning = false; viewport.ReleaseMouseCapture(); return; }
         PointerUpCore();
@@ -848,7 +842,7 @@ internal sealed class IslandEditorView
         if (view is MapView.Shadows or MapView.Height) RedrawAll();
     }
 
-    private void ViewMove(object sender, MouseEventArgs e)
+    private void ViewMove(object? sender, PointerEventArgs e)
     {
         var screen = e.GetPosition(viewport);
         if (panning)
@@ -1101,14 +1095,14 @@ internal sealed class IslandEditorView
     // ---- atlas ------------------------------------------------------------------------------------------------------------------------------
 
     private Point atlasStart;
-    private void AtlasDown(object sender, MouseButtonEventArgs e)
+    private void AtlasDown(object? sender, PointerEventArgs e)
     {
         atlasStart = e.GetPosition(atlasCanvas);
         atlasCanvas.CaptureMouse();
         UpdateAtlasSelection(atlasStart);
     }
 
-    private void AtlasMove(object sender, MouseEventArgs e)
+    private void AtlasMove(object? sender, PointerEventArgs e)
     {
         if (atlasCanvas.IsMouseCaptured) UpdateAtlasSelection(e.GetPosition(atlasCanvas));
     }
@@ -1133,7 +1127,7 @@ internal sealed class IslandEditorView
     public bool HandleKey(KeyEventArgs e)
     {
         if (Keyboard.FocusedElement is TextBox) return false;
-        var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        var ctrl = Keyboard.Modifiers.HasFlag(KeyModifiers.Control);
         if (ctrl && e.Key == Key.Z) DoUndo();
         else if (ctrl && e.Key == Key.Y) DoRedo();
         else if (ctrl && e.Key == Key.S) Save();

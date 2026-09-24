@@ -8,7 +8,7 @@ extern "C" {
 #if defined(_WIN32)
 #define LBA2_RENDERER_API __declspec(dllexport)
 #else
-#define LBA2_RENDERER_API
+#define LBA2_RENDERER_API __attribute__((visibility("default")))
 #endif
 
 /* Stable editor-facing boundary. The implementation is intentionally small;

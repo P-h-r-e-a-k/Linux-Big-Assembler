@@ -1,5 +1,12 @@
-using System.Windows;
-using System.Windows.Controls;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -43,7 +50,7 @@ public partial class MainWindow
         AudioEffectsValue.Text = audio.Effects + "%";
     }
 
-    private void AudioMute_Click(object sender, RoutedEventArgs e)
+    private void AudioMute_Click(object? sender, RoutedEventArgs e)
     {
         var audio = CurrentAudio;
         audio.Mute = AudioMuteCheck.IsChecked == true;
@@ -52,7 +59,7 @@ public partial class MainWindow
         lba1Play?.ApplyAudio();
     }
 
-    private void AudioSlider_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void AudioSlider_Changed(object? sender, RangeBaseValueChangedEventArgs e)
     {
         if (audioSyncing) return;
         var audio = CurrentAudio;
@@ -61,7 +68,7 @@ public partial class MainWindow
         audioDirty = true;
     }
 
-    private void AudioReset_Click(object sender, RoutedEventArgs e)
+    private void AudioReset_Click(object? sender, RoutedEventArgs e)
     {
         var audio = CurrentAudio;
         var defaults = new AudioLevels();

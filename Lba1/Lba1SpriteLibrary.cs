@@ -1,7 +1,13 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler.Lba1;
 
@@ -9,7 +15,7 @@ namespace LBAAssembler.Lba1;
 // width, height, hot-spot x and y (signed, relative to the sprite's anchor), then the lines.
 internal sealed class Lba1SpriteLibrary
 {
-    public sealed record Sprite(BitmapSource Image);
+    public sealed record Sprite(Bitmap Image);
 
     private readonly HqrArchive? archive;
     private readonly byte[] palette;
@@ -45,7 +51,7 @@ internal sealed class Lba1SpriteLibrary
                 {
                     var bgra = new byte[data[0] * data[1] * 4];
                     Lba1GridRenderer.Blit(bgra, data[0], data[1], data, 0, 0, palette);
-                    var bitmap = BitmapSource.Create(data[0], data[1], 96, 96, PixelFormats.Bgra32, null, bgra, data[0] * 4);
+                    var bitmap = BitmapFactory.Create(data[0], data[1], 96, 96, PixelFormats.Bgra32, null, bgra, data[0] * 4);
                     bitmap.Freeze();
                     shadow = new Sprite(bitmap);
                 }
@@ -74,7 +80,7 @@ internal sealed class Lba1SpriteLibrary
                 {
                     var bgra = new byte[data[0] * data[1] * 4];
                     Lba1GridRenderer.Blit(bgra, data[0], data[1], data, 0, 0, palette);
-                    var bitmap = BitmapSource.Create(data[0], data[1], 96, 96, PixelFormats.Bgra32, null, bgra, data[0] * 4);
+                    var bitmap = BitmapFactory.Create(data[0], data[1], 96, 96, PixelFormats.Bgra32, null, bgra, data[0] * 4);
                     bitmap.Freeze();
                     sprite = new Sprite(bitmap);
                 }

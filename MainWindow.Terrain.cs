@@ -1,10 +1,14 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Shapes;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Avalonia.Controls.Shapes;
 
 namespace LBAAssembler;
 
@@ -210,7 +214,7 @@ public partial class MainWindow
         }
     }
 
-    private void Viewport_MouseLeave(object sender, MouseEventArgs e)
+    private void Viewport_MouseLeave(object? sender, PointerEventArgs e)
     {
         if (paintingTerrain) return;
         hoverCell = null;

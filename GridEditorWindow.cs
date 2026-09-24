@@ -1,10 +1,13 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using LBAAssembler.Grids;
 using LBAAssembler.Lba1;
 using LBAAssembler.Scenes;
@@ -22,15 +25,15 @@ internal sealed class GridEditorWindow : Window
     private readonly List<IGridBackend> backends = new();
     private readonly ComboBox backendBox = new() { Width = 90 };
     private readonly TextBox filter = new() { Padding = new Thickness(3), ToolTip = "Filter the grids" };
-    private readonly ListBox grids = new() { Width = 190, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), FontFamily = new FontFamily("Consolas") };
+    private readonly ListBox grids = new() { Width = 190, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), FontFamily = UiFonts.Mono };
     private readonly ListBox blocks = new() { Width = 200, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
     private readonly Image plan = new() { Width = 64 * Cell, Height = 64 * Cell, Cursor = Cursors.Cross };
     private readonly Canvas planHost = new() { Width = 64 * Cell, Height = 64 * Cell, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)) };
-    private readonly System.Windows.Shapes.Rectangle cursor = new() { Stroke = Brushes.Yellow, StrokeThickness = 2, IsHitTestVisible = false };
+    private readonly Avalonia.Controls.Shapes.Rectangle cursor = new() { Stroke = Brushes.Yellow, StrokeThickness = 2, IsHitTestVisible = false };
     private readonly Image iso = new() { Stretch = Stretch.Uniform };
     private readonly Slider layer = new() { Minimum = 0, Maximum = 24, Value = 0, Width = 200, IsSnapToTickEnabled = true, TickFrequency = 1 };
     private readonly TextBlock layerText = new() { Foreground = UiBrushes.Text, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock cellInfo = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11, Margin = new Thickness(0, 6, 0, 0) };
+    private readonly TextBlock cellInfo = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, FontFamily = UiFonts.Mono, FontSize = 11, Margin = new Thickness(0, 6, 0, 0) };
     private readonly TextBlock status = new() { Foreground = UiBrushes.Text, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Button saveButton = new() { Content = "Save" }, undoButton = new() { Content = "Undo" }, redoButton = new() { Content = "Redo" };
     private readonly RadioButton paintTool = new() { Content = "Paint", IsChecked = true, GroupName = "gt" }, eraseTool = new() { Content = "Erase", GroupName = "gt" }, fillTool = new() { Content = "Fill rectangle", GroupName = "gt" };
@@ -95,7 +98,7 @@ internal sealed class GridEditorWindow : Window
         top.Children.Add(new TextBlock { Text = "Layer", Foreground = UiBrushes.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 6, 0) });
         top.Children.Add(layer); top.Children.Add(layerText);
         layer.ValueChanged += (_, _) => { layerText.Text = $"y = {(int)layer.Value}"; RedrawPlan(); };
-        foreach (var (b, handler) in new (Button, RoutedEventHandler)[] { (undoButton, (_, _) => Undo()), (redoButton, (_, _) => Redo()), (saveButton, (_, _) => Save()) })
+        foreach (var (b, handler) in new (Button, EventHandler<RoutedEventArgs>)[] { (undoButton, (_, _) => Undo()), (redoButton, (_, _) => Redo()), (saveButton, (_, _) => Save()) })
         { b.Padding = new Thickness(12, 3, 12, 3); b.Margin = new Thickness(14, 0, 0, 0); b.Click += handler; top.Children.Add(b); }
         root.Children.Add(top);
         var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = status };
@@ -126,9 +129,9 @@ internal sealed class GridEditorWindow : Window
         root.Children.Add(right);
 
         planHost.Children.Add(plan); planHost.Children.Add(cursor);
-        planHost.MouseLeftButtonDown += PlanDown; planHost.MouseMove += PlanMove; planHost.MouseLeftButtonUp += PlanUp;
-        planHost.MouseRightButtonDown += (_, e) => PickAt(e.GetPosition(planHost));
-        RenderOptions.SetBitmapScalingMode(plan, BitmapScalingMode.NearestNeighbor);
+        planHost.PointerPressed += PlanDown; planHost.PointerMoved += PlanMove; planHost.PointerReleased += PlanUp;
+        planHost.PointerPressed += (_, e) => { if (!e.IsRight) return; PickAt(e.GetPosition(planHost)); };
+        RenderOptions.SetBitmapInterpolationMode(plan, BitmapInterpolationMode.None);
         var centre = new Grid();
         centre.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         centre.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -138,21 +141,21 @@ internal sealed class GridEditorWindow : Window
         Grid.SetColumn(isoHost, 1); centre.Children.Add(isoHost);
         root.Children.Add(centre);
         Content = root;
-        PreviewKeyDown += (_, e) =>
+        AddHandler(KeyDownEvent, (_, e) =>
         {
             if (Keyboard.FocusedElement is TextBox) return;
-            var ctrl = Keyboard.Modifiers == ModifierKeys.Control;
+            var ctrl = Keyboard.Modifiers == KeyModifiers.Control;
             if (ctrl && e.Key == Key.Z) { Undo(); e.Handled = true; }
             else if (ctrl && e.Key == Key.Y) { Redo(); e.Handled = true; }
             else if (ctrl && e.Key == Key.S) { Save(); e.Handled = true; }
             else if (e.Key == Key.PageUp) { layer.Value = Math.Min(24, layer.Value + 1); e.Handled = true; }
             else if (e.Key == Key.PageDown) { layer.Value = Math.Max(0, layer.Value - 1); e.Handled = true; }
-        };
+        }, RoutingStrategies.Tunnel);
         layerText.Text = "y = 0";
     }
 
     private sealed record GridItem(int Id, string Label) { public override string ToString() => Label; }
-    private sealed record BlockItem(int Number, string Text, ImageSource? Thumb);
+    private sealed record BlockItem(int Number, string Text, IImage? Thumb);
 
     // ---- opening / saving ----------------------------------------------------------------------------------------------------------
 
@@ -269,16 +272,17 @@ internal sealed class GridEditorWindow : Window
             if (GridPaint.Info(library, n) is not { } info) continue;
             blocks.Items.Add(new BlockItem(n, $"{n}  {info.Dx}x{info.Dy}x{info.Dz}", Thumbnail(n)));
         }
-        blocks.ItemTemplate = new DataTemplate();
-        var stack = new FrameworkElementFactory(typeof(StackPanel)); stack.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
-        var image = new FrameworkElementFactory(typeof(Image)); image.SetBinding(Image.SourceProperty, new System.Windows.Data.Binding("Thumb")); image.SetValue(FrameworkElement.WidthProperty, 44.0); image.SetValue(FrameworkElement.HeightProperty, 34.0); image.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 8, 0));
-        var text = new FrameworkElementFactory(typeof(TextBlock)); text.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Text")); text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center); text.SetValue(TextBlock.ForegroundProperty, UiBrushes.Text);
-        stack.AppendChild(image); stack.AppendChild(text);
-        blocks.ItemTemplate.VisualTree = stack;
+        blocks.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<BlockItem>((item, _) =>
+        {
+            var stack = new StackPanel { Orientation = Orientation.Horizontal };
+            stack.Children.Add(new Image { Source = item?.Thumb, Width = 44, Height = 34, Margin = new Thickness(0, 0, 8, 0) });
+            stack.Children.Add(new TextBlock { Text = item?.Text, VerticalAlignment = VerticalAlignment.Center, Foreground = UiBrushes.Text });
+            return stack;
+        });
         if (blocks.Items.Count > 0) { block = Math.Clamp(block, 1, count); blocks.SelectedIndex = block - 1; }
     }
 
-    private ImageSource? Thumbnail(int number)
+    private IImage? Thumbnail(int number)
     {
         if (backend is null) return null;
         var placements = new List<Lba1Placement>();
@@ -291,7 +295,7 @@ internal sealed class GridEditorWindow : Window
         try
         {
             var image = Lba1GridRenderer.Render(new[] { new Lba1Tile(placements, 0, 0, 0) }, Brick, backend.Palette);
-            var bmp = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, image.Bgra, image.Width * 4);
+            var bmp = BitmapFactory.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, image.Bgra, image.Width * 4);
             bmp.Freeze();
             return bmp;
         }
@@ -329,7 +333,7 @@ internal sealed class GridEditorWindow : Window
 
     private void NewBlock()
     {
-        var dialog = new Window { Title = "New block", Width = 300, Height = 200, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Background, Foreground = Foreground, ResizeMode = ResizeMode.NoResize };
+        var dialog = new Window { Title = "New block", Width = 300, Height = 200, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Background, Foreground = Foreground, CanResize = false }.WithOwner(this);
         var dx = new TextBox { Text = "1" }; var dy = new TextBox { Text = "1" }; var dz = new TextBox { Text = "1" }; var brick = new TextBox { Text = "0" };
         var panel = new StackPanel { Margin = new Thickness(12) };
         foreach (var (label, box) in new[] { ("size x", dx), ("size y", dy), ("size z", dz), ("brick (0-based)", brick) })
@@ -355,7 +359,7 @@ internal sealed class GridEditorWindow : Window
         return x >= 0 && z >= 0 && x < 64 && z < 64 ? (x, z) : null;
     }
 
-    private void PlanDown(object sender, MouseButtonEventArgs e)
+    private void PlanDown(object? sender, PointerEventArgs e)
     {
         if (CellAt(e.GetPosition(planHost)) is not { } c) return;
         planHost.CaptureMouse();
@@ -363,7 +367,7 @@ internal sealed class GridEditorWindow : Window
         if (fillTool.IsChecked != true) Apply(c);
     }
 
-    private void PlanMove(object sender, MouseEventArgs e)
+    private void PlanMove(object? sender, PointerEventArgs e)
     {
         if (CellAt(e.GetPosition(planHost)) is not { } c) return;
         Canvas.SetLeft(cursor, c.X * Cell); Canvas.SetTop(cursor, c.Z * Cell);
@@ -380,7 +384,7 @@ internal sealed class GridEditorWindow : Window
         }
     }
 
-    private void PlanUp(object sender, MouseButtonEventArgs e)
+    private void PlanUp(object? sender, PointerEventArgs e)
     {
         if (!planHost.IsMouseCaptured) return;
         planHost.ReleaseMouseCapture();
@@ -451,8 +455,8 @@ internal sealed class GridEditorWindow : Window
                         planPixels[o] = (byte)Math.Min(255, b * dim * k); planPixels[o + 1] = (byte)Math.Min(255, g * dim * k); planPixels[o + 2] = (byte)Math.Min(255, r * dim * k); planPixels[o + 3] = 255;
                     }
             }
-        planBitmap ??= new WriteableBitmap(64 * Cell, 64 * Cell, 96, 96, PixelFormats.Bgra32, null);
-        planBitmap.WritePixels(new Int32Rect(0, 0, 64 * Cell, 64 * Cell), planPixels, 64 * Cell * 4, 0);
+        planBitmap ??= BitmapFactory.Writeable(64 * Cell, 64 * Cell);
+        planBitmap.WritePixels(new PixelRect(0, 0, 64 * Cell, 64 * Cell), planPixels, 64 * Cell * 4, 0);
         plan.Source = planBitmap;
     }
 
@@ -464,7 +468,7 @@ internal sealed class GridEditorWindow : Window
         try
         {
             isoImage = Lba1GridRenderer.Render(grid, library, Brick, backend.Palette);
-            var bmp = BitmapSource.Create(isoImage.Width, isoImage.Height, 96, 96, PixelFormats.Bgra32, null, isoImage.Bgra, isoImage.Width * 4);
+            var bmp = BitmapFactory.Create(isoImage.Width, isoImage.Height, 96, 96, PixelFormats.Bgra32, null, isoImage.Bgra, isoImage.Width * 4);
             bmp.Freeze();
             iso.Source = bmp;
         }

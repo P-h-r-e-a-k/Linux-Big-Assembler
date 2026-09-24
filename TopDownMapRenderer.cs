@@ -1,6 +1,12 @@
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -54,8 +60,8 @@ internal static class TopDownMapRenderer
 
         Smooth(pixels, size);
 
-        var bitmap = new WriteableBitmap(size, size, 96, 96, PixelFormats.Bgra32, null);
-        bitmap.WritePixels(new Int32Rect(0, 0, size, size), pixels, size * 4, 0);
+        var bitmap = BitmapFactory.Writeable(size, size);
+        bitmap.WritePixels(new PixelRect(0, 0, size, size), pixels, size * 4, 0);
         bitmap.Freeze();
         return bitmap;
     }

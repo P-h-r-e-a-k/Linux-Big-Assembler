@@ -1,7 +1,12 @@
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Media.Media3D;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -23,15 +28,13 @@ internal static class SoftwareTerrainRenderer
 
         var yawRadians = yaw * Math.PI / 180.0;
         var pitchRadians = pitch * Math.PI / 180.0;
-        var target = new Point3D(targetX, 0, targetZ);
+        var target = new Vec3(targetX, 0, targetZ);
         var horizontal = distance * Math.Cos(pitchRadians);
-        var camera = new Point3D(targetX + horizontal * Math.Cos(yawRadians), distance * Math.Sin(pitchRadians), targetZ + horizontal * Math.Sin(yawRadians));
+        var camera = new Vec3(targetX + horizontal * Math.Cos(yawRadians), distance * Math.Sin(pitchRadians), targetZ + horizontal * Math.Sin(yawRadians));
         var forward = target - camera;
-        forward.Normalize();
-        var right = Vector3D.CrossProduct(forward, new Vector3D(0, 1, 0));
-        right.Normalize();
-        var up = Vector3D.CrossProduct(right, forward);
-        up.Normalize();
+        forward = forward.Normalized();
+        var right = Vec3.Cross(forward, new Vec3(0, 1, 0)).Normalized();
+        var up = Vec3.Cross(right, forward).Normalized();
         var focal = width / (2.0 * Math.Tan(55.0 * Math.PI / 360.0));
 
         for (var cubeY = 0; cubeY < 16; cubeY++)
@@ -51,8 +54,8 @@ internal static class SoftwareTerrainRenderer
             }
         }
 
-        var bitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
-        bitmap.WritePixels(new Int32Rect(0, 0, width, height), pixels, width * 4, 0);
+        var bitmap = BitmapFactory.Writeable(width, height);
+        bitmap.WritePixels(new PixelRect(0, 0, width, height), pixels, width * 4, 0);
         bitmap.Freeze();
         return bitmap;
     }
@@ -63,34 +66,32 @@ internal static class SoftwareTerrainRenderer
     // rendered bitmap line up with it pixel-for-pixel. Returns false for a
     // point behind the camera (viewZ <= 1, matching RasterTriangle's own
     // near-plane check) rather than a garbage screen position.
-    public static bool TryProjectWorldPoint(int width, int height, double yaw, double pitch, double distance, double targetX, double targetZ, Point3D world, out double screenX, out double screenY)
+    public static bool TryProjectWorldPoint(int width, int height, double yaw, double pitch, double distance, double targetX, double targetZ, Vec3 world, out double screenX, out double screenY)
     {
         width = Math.Max(320, width);
         height = Math.Max(200, height);
         var yawRadians = yaw * Math.PI / 180.0;
         var pitchRadians = pitch * Math.PI / 180.0;
         var horizontal = distance * Math.Cos(pitchRadians);
-        var camera = new Point3D(targetX + horizontal * Math.Cos(yawRadians), distance * Math.Sin(pitchRadians), targetZ + horizontal * Math.Sin(yawRadians));
-        var target = new Point3D(targetX, 0, targetZ);
+        var camera = new Vec3(targetX + horizontal * Math.Cos(yawRadians), distance * Math.Sin(pitchRadians), targetZ + horizontal * Math.Sin(yawRadians));
+        var target = new Vec3(targetX, 0, targetZ);
         var forward = target - camera;
-        forward.Normalize();
-        var right = Vector3D.CrossProduct(forward, new Vector3D(0, 1, 0));
-        right.Normalize();
-        var up = Vector3D.CrossProduct(right, forward);
-        up.Normalize();
+        forward = forward.Normalized();
+        var right = Vec3.Cross(forward, new Vec3(0, 1, 0)).Normalized();
+        var up = Vec3.Cross(right, forward).Normalized();
         var focal = width / (2.0 * Math.Tan(55.0 * Math.PI / 360.0));
 
         var relative = world - camera;
-        var viewX = Vector3D.DotProduct(relative, right);
-        var viewY = Vector3D.DotProduct(relative, up);
-        var viewZ = Vector3D.DotProduct(relative, forward);
+        var viewX = Vec3.Dot(relative, right);
+        var viewY = Vec3.Dot(relative, up);
+        var viewZ = Vec3.Dot(relative, forward);
         if (viewZ <= 1) { screenX = screenY = 0; return false; }
         screenX = width / 2.0 + focal * viewX / viewZ;
         screenY = height / 2.0 - focal * viewY / viewZ;
         return true;
     }
 
-    private static void RasterTriangle(IslandDocument island, byte[] pixels, float[] depth, int width, int height, Point3D camera, Vector3D right, Vector3D up, Vector3D forward, double focal, int cubeId, int cubeX, int cubeY, int cellX, int cellZ, uint polygon, int[] corners)
+    private static void RasterTriangle(IslandDocument island, byte[] pixels, float[] depth, int width, int height, Vec3 camera, Vec3 right, Vec3 up, Vec3 forward, double focal, int cubeId, int cubeX, int cubeY, int cellX, int cellZ, uint polygon, int[] corners)
     {
         var texture = island.TextureAt(cubeId, (int)((polygon >> 19) & 0x1FFF));
         var textured = ((polygon >> 4) & 3) != 0 && texture is not null;
@@ -101,11 +102,11 @@ internal static class SoftwareTerrainRenderer
             var corner = corners[index];
             var x = cellX + (int)local[corner].X;
             var z = cellZ + (int)local[corner].Y;
-            var world = new Point3D(cubeX * 32768 + x * 512, island.HeightAt(cubeId, x, z), cubeY * 32768 + z * 512);
+            var world = new Vec3(cubeX * 32768 + x * 512, island.HeightAt(cubeId, x, z), cubeY * 32768 + z * 512);
             var relative = world - camera;
-            var viewX = Vector3D.DotProduct(relative, right);
-            var viewY = Vector3D.DotProduct(relative, up);
-            var viewZ = Vector3D.DotProduct(relative, forward);
+            var viewX = Vec3.Dot(relative, right);
+            var viewY = Vec3.Dot(relative, up);
+            var viewZ = Vec3.Dot(relative, forward);
             if (viewZ <= 1) return;
             projected[index] = new ProjectedPoint((float)widthFor(focal, viewX, viewZ), (float)heightFor(focal, viewY, viewZ), viewZ, island.IntensityAt(cubeId, x, z), textured ? TextureCoordinate(texture!, index * 2) : 0, textured ? TextureCoordinate(texture!, index * 2 + 1) : 0);
         }
@@ -141,4 +142,16 @@ internal static class SoftwareTerrainRenderer
     private static Color FlatColor(int bank, int light) => Color.FromRgb((byte)Math.Clamp(70 + bank * 10 + light * 5, 0, 255), (byte)Math.Clamp(95 + bank * 7 + light * 6, 0, 255), (byte)Math.Clamp(55 + bank * 4 + light * 3, 0, 255));
     private static double Edge(ProjectedPoint a, ProjectedPoint b, double x, double y) => (x - a.X) * (b.Y - a.Y) - (y - a.Y) * (b.X - a.X);
     private readonly record struct ProjectedPoint(float X, float Y, double Z, byte Light, double U, double V);
+}
+
+// WPF's Media3D Point3D/Vector3D in the two shapes this renderer used them (double precision, cross product, dot product).
+internal readonly record struct Vec3(double X, double Y, double Z)
+{
+    public static Vec3 operator -(Vec3 a, Vec3 b) => new(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
+    public static Vec3 operator +(Vec3 a, Vec3 b) => new(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
+    public static Vec3 operator *(Vec3 a, double s) => new(a.X * s, a.Y * s, a.Z * s);
+    public double Length => Math.Sqrt(X * X + Y * Y + Z * Z);
+    public Vec3 Normalized() { var l = Length; return l <= 0 ? this : new(X / l, Y / l, Z / l); }
+    public static Vec3 Cross(Vec3 a, Vec3 b) => new(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X);
+    public static double Dot(Vec3 a, Vec3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
 }

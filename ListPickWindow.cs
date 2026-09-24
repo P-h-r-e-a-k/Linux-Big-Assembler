@@ -1,7 +1,12 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -42,7 +47,7 @@ internal sealed class ListPickWindow : Window
         filter.Padding = new Thickness(4, 3, 4, 3);
         panel.Children.Add(filter);
 
-        list.FontFamily = new FontFamily("Consolas");
+        list.FontFamily = UiFonts.Mono;
         list.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
         list.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
         panel.Children.Add(list);
@@ -58,10 +63,10 @@ internal sealed class ListPickWindow : Window
             else if (list.Items.Count > 0) list.SelectedIndex = 0;
         }
         filter.TextChanged += (_, _) => { selected = null; Fill(); };
-        void Accept() { if (list.SelectedItem is Entry e) { Chosen = e.Id; DialogResult = true; } }
+        void Accept() { if (list.SelectedItem is Entry e) { Chosen = e.Id; this.DialogResult = true; } }
         ok.Click += (_, _) => Accept();
-        list.MouseDoubleClick += (_, _) => Accept();
-        filter.PreviewKeyDown += (_, e) =>
+        list.DoubleTapped += (_, _) => Accept();
+        filter.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Down && list.SelectedIndex < list.Items.Count - 1) { list.SelectedIndex++; e.Handled = true; }
             if (e.Key == Key.Up && list.SelectedIndex > 0) { list.SelectedIndex--; e.Handled = true; }
@@ -77,7 +82,7 @@ internal sealed class ListPickWindow : Window
 
     public static int? Pick(Window owner, string title, IReadOnlyList<(int Id, string Label)> items, int? selected = null, string? note = null)
     {
-        var window = new ListPickWindow(title, items, selected, note) { Owner = owner };
+        var window = new ListPickWindow(title, items, selected, note).WithOwner(owner);
         return window.ShowDialog() == true ? window.Chosen : null;
     }
 }

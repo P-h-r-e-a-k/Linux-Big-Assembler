@@ -1,9 +1,13 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using LBAAssembler.Lba1;
 
 namespace LBAAssembler;
@@ -118,7 +122,7 @@ public partial class MainWindow
 
         CloseLba1ActorWindows();
         nativeRenderer.ReleaseInterior();
-        var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, image.Bgra, image.Width * 4);
+        var bitmap = BitmapFactory.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, image.Bgra, image.Width * 4);
         bitmap.Freeze();
 
         // A body per actor where it has one (the entity's body in the neutral pose, through the same renderer as the LBA1 markers), a dummy marker where
@@ -196,9 +200,9 @@ public partial class MainWindow
     }
 
     // In a joined map an actor is picked; double-clicking it opens its scene on its own, with the actor selected.
-    private void JoinedLba2Actor_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (((FrameworkElement)sender).Tag is not int key) return;
+    private void JoinedLba2Actor_MouseLeftButtonDown(object? sender, PointerEventArgs e)
+    { if (!e.IsLeft) return;
+        if (((Control)sender).Tag is not int key) return;
         e.Handled = true;
         selectedActorIndex = key;
         RefreshActorOverlayForSelection();

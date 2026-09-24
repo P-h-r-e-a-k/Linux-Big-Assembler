@@ -1,0 +1,152 @@
+<Window x:Class="LBAAssembler.ActorScriptWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Actor Script" Height="760" Width="1180" MinHeight="420" MinWidth="820"
+        Background="#FFFFFF" Foreground="#10243E" FontFamily="{StaticResource EditorFont}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="22">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="320" MinWidth="160"/>
+            <ColumnDefinition Width="8"/>
+            <ColumnDefinition Width="*" MinWidth="300"/>
+            <ColumnDefinition Width="16"/>
+            <ColumnDefinition Width="260"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="12"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="16"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="6"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="8"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="5">
+            <TextBlock Text="Actor script" Classes="Eyebrow"/>
+            <TextBlock x:Name="TitleLabel" Text="Actor 0" FontSize="19" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5">
+            <Border Background="#E8F0FA" BorderBrush="#A9C3E0" BorderThickness="1" Padding="12,10">
+                <TextBlock x:Name="StatsLabel" Text="" FontFamily="{StaticResource EditorMonoFont}" FontSize="11" Foreground="#234A72" TextWrapping="Wrap"/>
+            </Border>
+            <!-- Shown only while a script breakpoint has paused a live LBA1 Play session (any actor;
+                 several script windows can all show this at once and all act on it). -->
+            <Border x:Name="DebugBar" Background="#FDECC8" BorderBrush="#D9A93B" BorderThickness="1" Padding="12,8" Margin="0,8,0,0" IsVisible="False">
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button x:Name="StepButton" Content="Step" Classes="ToolButton" Click="Step_Click"/>
+                        <Button x:Name="ContinueButton" Content="Continue" Classes="ToolButton" Click="Continue_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="DebugBarText" FontFamily="{StaticResource EditorMonoFont}" FontSize="12" Foreground="#5A4310" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
+        </StackPanel>
+
+        <DockPanel Grid.Row="4" Grid.Column="2">
+            <TextBlock Text="Script" Classes="Eyebrow" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                <RadioButton x:Name="ViewLifeButton" Content="Life (C)" GroupName="ScriptView" Tag="life"
+                             Classes="ViewTab" IsCheckedChanged="View_Checked"/>
+                <RadioButton x:Name="ViewTrackButton" Content="Track (C)" GroupName="ScriptView" Tag="track"
+                             Classes="ViewTab" IsCheckedChanged="View_Checked"/>
+            </StackPanel>
+            <TextBlock DockPanel.Dock="Right" Text="Ctrl+Space for suggestions"
+                       Foreground="#8FB0D6" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock x:Name="HintLabel" Text="" TextTrimming="CharacterEllipsis"
+                       Foreground="#4E6B8A" FontSize="11" VerticalAlignment="Center" Margin="12,0,12,0"/>
+        </DockPanel>
+
+        <TextBlock Grid.Row="4" Grid.Column="4" Text="Keywords" Classes="Eyebrow" VerticalAlignment="Center"/>
+
+        <!-- Read-only disassembly of the same actor's scripts (life, then track), always visible to the left of the C editor. -->
+        <DockPanel Grid.Row="4" Grid.Column="0">
+            <TextBlock Text="Disassembly" Classes="Eyebrow" VerticalAlignment="Center"/>
+            <TextBlock Text="F9 breakpoint" DockPanel.Dock="Right" Foreground="#8FB0D6" FontSize="10" VerticalAlignment="Center"/>
+        </DockPanel>
+        <TextBox x:Name="DisassemblyTextBox" Grid.Row="6" Grid.Column="0" Grid.RowSpan="3"
+                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                 FontFamily="{StaticResource EditorMonoFont}" FontSize="12" Foreground="#4E6B8A" Background="#FFFFFF"
+                 BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 />
+        <GridSplitter Grid.Row="4" Grid.Column="1" Grid.RowSpan="5" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                      Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"/>
+
+        <Grid Grid.Row="6" Grid.Column="2">
+            <TextBox x:Name="ScriptTextBox"
+                     AcceptsReturn="True" AcceptsTab="False" TextWrapping="NoWrap"
+                     FontFamily="{StaticResource EditorMonoFont}" FontSize="13" Foreground="#10243E" Background="#FFFFFF"
+                     BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     TextChanged="ScriptTextBox_TextChanged"
+                     
+                     LostFocus="ScriptTextBox_LostKeyboardFocus"/>
+
+            <Popup x:Name="SuggestionPopup" PlacementTarget="{Binding ElementName=ScriptTextBox}"
+                   Placement="AnchorAndGravity" PlacementAnchor="TopLeft" PlacementGravity="BottomRight" IsLightDismissEnabled="False">
+                <Border Background="#D6E6F7" BorderBrush="#8FB0D6" BorderThickness="1" MaxHeight="280" MinWidth="360" MaxWidth="520">
+                    <ListBox x:Name="SuggestionList" Background="Transparent" BorderThickness="0"
+                             Foreground="#10243E" FontFamily="{StaticResource EditorMonoFont}" FontSize="12"
+                             PointerReleased="SuggestionList_PreviewMouseLeftButtonUp">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="8,5">
+                                    <TextBlock Text="{Binding Signature}" FontWeight="Bold" Foreground="#1B6EC2"/>
+                                    <TextBlock Text="{Binding Description}" Foreground="#4E6B8A" FontSize="10" TextWrapping="Wrap" FontFamily="{StaticResource EditorFont}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </Popup>
+        </Grid>
+
+        <!-- Compile status of the text in the editor, plus the actions that act on the scene's scripts. -->
+        <Grid Grid.Row="8" Grid.Column="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText" Grid.Column="0" FontFamily="{StaticResource EditorMonoFont}" FontSize="11" Foreground="#4E6B8A"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Cursor="Hand"
+                       PointerPressed="StatusText_MouseLeftButtonDown"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="RevertButton" Content="Revert script" Classes="ToolButton" Click="Revert_Click"/>
+                <Button x:Name="SaveButton" Content="Save to SCENE.HQR…" Classes="ToolButton" Click="Save_Click"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Full reference list of every valid script keyword (life actions,
+             life conditions, comparisons, track actions), separate from the
+             in-editor autocomplete popup above: browsable/searchable on its
+             own rather than only appearing while actively typing a matching
+             prefix. Double-click or Enter inserts at the caret. -->
+        <Grid Grid.Row="6" Grid.Column="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBox x:Name="KeywordFilterBox" Grid.Row="0" Classes="FieldBox"
+                     TextChanged="KeywordFilterBox_TextChanged" KeyDown="KeywordFilterBox_KeyDown"/>
+            <TextBlock x:Name="KeywordFilterPlaceholder" Grid.Row="0" Text="Filter keywords…" Foreground="#8FB0D6"
+                       FontFamily="{StaticResource EditorMonoFont}" FontSize="12" Margin="11,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+            <ListBox x:Name="KeywordList" Grid.Row="2" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1"
+                     Foreground="#10243E" FontFamily="{StaticResource EditorMonoFont}" FontSize="12"
+                     DoubleTapped="KeywordList_MouseDoubleClick" KeyDown="KeywordList_KeyDown">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="6,4" ToolTip.Tip="{Binding Description}">
+                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="#1B6EC2"/>
+                            <TextBlock Text="{Binding Kind}" Foreground="#7C93AC" FontSize="9" FontFamily="{StaticResource EditorFont}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+    </Grid>
+</Window>

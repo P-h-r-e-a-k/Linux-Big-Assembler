@@ -1,9 +1,14 @@
 using System.IO;
 using System.Linq;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Input;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -32,18 +37,18 @@ public partial class MainWindow
 
     // ---- modes -----------------------------------------------------------------------------------------------------------------------------
 
-    private void Mode_Checked(object sender, RoutedEventArgs e)
+    private void Mode_Checked(object? sender, RoutedEventArgs e)
     {
         if (!modeReady || modeSyncing || sender is not RadioButton { Tag: string tag } || !int.TryParse(tag, out var value)) return;
         SetMode((EditMode)value);
     }
 
-    private void ModeMenu_Click(object sender, RoutedEventArgs e)
+    private void ModeMenu_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is MenuItem { Tag: string tag } && int.TryParse(tag, out var value)) SetMode((EditMode)value);
     }
 
-    private void BuildView_Changed(object sender, RoutedEventArgs e)
+    private void BuildView_Changed(object? sender, RoutedEventArgs e)
     {
         if (!modeReady) return;
         buildTerrainView = BuildTerrainRadio.IsChecked == true;
@@ -102,7 +107,7 @@ public partial class MainWindow
         SetPanelVisible(ScriptTab, editMode == EditMode.Script);
         SetPanelVisible(PlayTab, true);
         var home = editMode switch { EditMode.Build => BuildTab, EditMode.Script => ScriptTab, _ => ZonesTab };
-        var currentlyShown = new[] { ZonesTab, ZoneDetailsTab, BuildTab, ScriptTab, PlayTab }.FirstOrDefault(t => t.IsActive);
+        var currentlyShown = new[] { ZonesTab, ZoneDetailsTab, BuildTab, ScriptTab, PlayTab }.FirstOrDefault(t => t.IsSelected);
         if (selectTab || currentlyShown is not { IsVisible: true }) ActivatePanel(home);
 
         UpdateZoneEditability();
@@ -198,7 +203,7 @@ public partial class MainWindow
     private bool ConfirmTerrainDiscard() => terrainEditor is not { Dirty: true } editor || editor.ConfirmDiscard();
 
     // Tools > LBA2: island terrain editor: the same as Build mode on the island that is open.
-    private void IslandEditor_Click(object sender, RoutedEventArgs e)
+    private void IslandEditor_Click(object? sender, RoutedEventArgs e)
     {
         if (!Lba2Engine.IsGameFolder(gameRoot))
         {
@@ -233,7 +238,7 @@ public partial class MainWindow
 
     private bool scriptListSyncing;
 
-    private void ScriptActorsRefresh_Click(object sender, RoutedEventArgs e) => RefreshScriptActors();
+    private void ScriptActorsRefresh_Click(object? sender, RoutedEventArgs e) => RefreshScriptActors();
 
     private void RefreshScriptActors()
     {
@@ -255,12 +260,12 @@ public partial class MainWindow
         finally { scriptListSyncing = false; }
     }
 
-    private void ScriptActorList_DoubleClick(object sender, MouseButtonEventArgs e)
+    private void ScriptActorList_DoubleClick(object? sender, TappedEventArgs e)
     {
         if (ScriptActorList.SelectedItem is ListBoxItem { Tag: int index }) OpenActorScriptWindow(index);
     }
 
-    private void ScriptActorList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ScriptActorList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (scriptListSyncing || ScriptActorList.SelectedItem is not ListBoxItem { Tag: int index }) return;
         selectedActorIndex = index;
@@ -269,7 +274,7 @@ public partial class MainWindow
 
     // ---- Build tab buttons -----------------------------------------------------------------------------------------------------------------------
 
-    private void BuildSceneEditor_Click(object sender, RoutedEventArgs e)
+    private void BuildSceneEditor_Click(object? sender, RoutedEventArgs e)
     {
         if (currentGame == GameKind.Lba1) Lba1Editor_Click(sender, e);
         else Lba2Editor_Click(sender, e);
@@ -277,12 +282,12 @@ public partial class MainWindow
 
     // ---- keys -------------------------------------------------------------------------------------------------------------------------------------
 
-    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void MainWindow_PreviewKeyDown(object? sender, KeyEventArgs e)
     {
         // While a scene is played the keys belong to the game (the LBA1 play view gets them from here; LBA2's engine has its own window).
         if (placing && e.Key == Key.Escape) { CancelPlacement(); e.Handled = true; return; }
         if (playing) { lba1Play?.ForwardKey(e, true); return; }
-        if (Keyboard.Modifiers == ModifierKeys.Control)
+        if (Keyboard.Modifiers == KeyModifiers.Control)
         {
             EditMode? wanted = e.Key switch
             {

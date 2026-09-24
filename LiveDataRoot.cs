@@ -20,6 +20,19 @@ internal sealed class LiveDataRoot : IDisposable
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool CreateHardLinkW(string newFileName, string existingFileName, IntPtr reserved);
+    // link(2): 0 on success, -1 (errno set) otherwise; paths are marshalled as UTF-8 (the default for DllImport strings on Unix).
+    [DllImport("libc", EntryPoint = "link", SetLastError = true)]
+    private static extern int UnixLink(string existingFileName, string newFileName);
+
+    // Makes `target` a hard link to `source`; false when the platform or the file system won't (the caller copies instead).
+    private static bool TryHardLink(string source, string target)
+    {
+        try
+        {
+            return OperatingSystem.IsWindows() ? CreateHardLinkW(target, source, IntPtr.Zero) : UnixLink(source, target) == 0;
+        }
+        catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException) { return false; }
+    }
 
     private readonly string gameDirectory;
     private readonly string islandFile;
@@ -75,7 +88,7 @@ internal sealed class LiveDataRoot : IDisposable
                 File.Delete(target);
             }
             if (isIsland) { File.Copy(source, target); continue; }
-            if (!CreateHardLinkW(target, source, IntPtr.Zero)) File.Copy(source, target);
+            if (!TryHardLink(source, target)) File.Copy(source, target);
         }
     }
 

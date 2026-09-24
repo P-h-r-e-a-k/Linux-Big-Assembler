@@ -1,40 +1,30 @@
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
+using System.IO;
+using SkiaSharp;
 
 namespace LbaBodyStudio;
 
-// FlatImage <-> System.Drawing.Bitmap.
+// FlatImage <-> picture files, through SkiaSharp (the decoder and PNG encoder Avalonia itself ships with): no System.Drawing.
 public static class FlatBitmap
 {
-    public static Bitmap ToBitmap(FlatImage image)
-    {
-        var bmp = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppArgb);
-        var data = bmp.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-        try { Marshal.Copy(image.Bgra, 0, data.Scan0, image.Bgra.Length); }
-        finally { bmp.UnlockBits(data); }
-        return bmp;
-    }
-
-    public static FlatImage FromBitmap(Bitmap bmp)
-    {
-        using var copy = bmp.Clone(new Rectangle(0, 0, bmp.Width, bmp.Height), PixelFormat.Format32bppArgb);
-        var data = copy.LockBits(new Rectangle(0, 0, copy.Width, copy.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-        var bytes = new byte[copy.Width * copy.Height * 4];
-        try { Marshal.Copy(data.Scan0, bytes, 0, bytes.Length); }
-        finally { copy.UnlockBits(data); }
-        return new FlatImage(copy.Width, copy.Height, bytes);
-    }
-
+    // Any picture SkiaSharp decodes (PNG, JPEG, BMP, GIF, WebP ...), as straight (unpremultiplied) BGRA.
     public static FlatImage Load(string path)
     {
-        using var source = new Bitmap(path);
-        return FromBitmap(source);
+        using var codec = SKCodec.Create(path) ?? throw new InvalidDataException($"Not a picture this tool reads: {path}");
+        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        using var bitmap = SKBitmap.Decode(codec, info) ?? throw new InvalidDataException($"Could not decode the picture: {path}");
+        var image = new FlatImage(bitmap.Width, bitmap.Height);
+        var source = bitmap.GetPixelSpan();
+        var rowBytes = image.Width * 4;
+        for (var y = 0; y < image.Height; y++) source.Slice(y * bitmap.RowBytes, rowBytes).CopyTo(image.Bgra.AsSpan(y * rowBytes, rowBytes));
+        return image;
     }
 
     public static void Save(FlatImage image, string path)
     {
-        using var bmp = ToBitmap(image);
-        bmp.Save(path, ImageFormat.Png);
+        var info = new SKImageInfo(image.Width, image.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        using var picture = SKImage.FromPixelCopy(info, image.Bgra, image.Width * 4) ?? throw new InvalidOperationException("Could not build the picture.");
+        using var data = picture.Encode(SKEncodedImageFormat.Png, 100) ?? throw new InvalidOperationException("Could not encode the picture as PNG.");
+        using var stream = File.Create(path);
+        data.SaveTo(stream);
     }
 }

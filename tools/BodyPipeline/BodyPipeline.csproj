@@ -3,19 +3,33 @@
   <!--
     Console harness for the body <-> flat image pipeline: statistics over the game's own bodies, flat reference sheets of them,
     game-style conversion of artwork, and the round trip body -> sheet -> generated body. Compiles Body Studio's sources directly.
+    Pictures go through SkiaSharp (FlatBitmap); Avalonia is here only because Body Studio's own windows (compiled with the rest
+    of BodyStudio/) are Avalonia windows now, and the formsmoke command opens one.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
     <RootNamespace>BodyPipeline</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <NoWarn>CS8618;CS8600;CS8602;CS8604;CS0649;CA1416</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="2.88.9" />
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="..\..\BodyStudio\**\*.cs" Link="BodyStudio\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- the WPF-style shims (dialogs, message box, bitmaps) Body Studio's windows are written against -->
+    <Compile Include="..\..\Compat\*.cs" Link="Compat\%(Filename)%(Extension)" />
+    <Compile Remove="..\..\Compat\PortStubs.cs;..\..\Compat\ShapesCompat.cs;..\..\Compat\SoundPlayer.cs" />
     <Compile Include="..\..\EditorSettings.cs" Link="EditorSettings.cs" />
     <Compile Include="..\..\AudioLevels.cs" Link="AudioLevels.cs" />
     <Compile Include="..\..\Scenes\**\*.cs" Link="Scenes\%(RecursiveDir)%(Filename)%(Extension)" />

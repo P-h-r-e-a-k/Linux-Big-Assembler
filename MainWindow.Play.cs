@@ -1,7 +1,13 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using LBAAssembler.Lba1;
 using LBAAssembler.LbaScript;
 
@@ -24,30 +30,30 @@ public partial class MainWindow
     private bool playing;
     private GameKind playingGame;
 
-    private void PlayScene_Click(object sender, RoutedEventArgs e)
+    private void PlayScene_Click(object? sender, RoutedEventArgs e)
     {
         if (placing) { CompletePlacement(); return; }            // "START HERE": Twinsen stays where he is on the map
         StartPlay(currentGame);
     }
 
-    private void Lba2Play_Click(object sender, RoutedEventArgs e) => StartPlay(GameKind.Lba2);
+    private void Lba2Play_Click(object? sender, RoutedEventArgs e) => StartPlay(GameKind.Lba2);
 
-    private void Lba1Play_Click(object sender, RoutedEventArgs e) => StartPlay(GameKind.Lba1);
+    private void Lba1Play_Click(object? sender, RoutedEventArgs e) => StartPlay(GameKind.Lba1);
 
-    private void StopPlay_Click(object sender, RoutedEventArgs e)
+    private void StopPlay_Click(object? sender, RoutedEventArgs e)
     {
         if (placing) CancelPlacement();
         else StopPlay();
     }
 
-    private void RestartPlay_Click(object sender, RoutedEventArgs e)
+    private void RestartPlay_Click(object? sender, RoutedEventArgs e)
     {
         var game = playingGame;
         StopPlay();
         StartPlay(game);
     }
 
-    private void PlayEveryItem_Click(object sender, RoutedEventArgs e)
+    private void PlayEveryItem_Click(object? sender, RoutedEventArgs e)
     {
         // the inventory is game variables 0..40; money (8) is a count, not an item
         var lines = Enumerable.Range(0, 41).Where(i => i != 8).Select(i => $"vargame {i} 1");
@@ -55,7 +61,7 @@ public partial class MainWindow
         PlayCommandsBox.Text = string.Join(";", lines) + (existing.Length > 0 ? ";" + existing : "");
     }
 
-    private void PlayClearCommands_Click(object sender, RoutedEventArgs e) => PlayCommandsBox.Clear();
+    private void PlayClearCommands_Click(object? sender, RoutedEventArgs e) => PlayCommandsBox.Clear();
 
     // Play pressed: the scene that is open is shown with Twinsen on it to be put where the game should start (unless that is switched
     // off), then the game starts.
@@ -89,7 +95,7 @@ public partial class MainWindow
         }
     }
 
-    private void ShowPlayOverlay(UIElement content, string status)
+    private void ShowPlayOverlay(Control content, string status)
     {
         PlayHostBorder.Child = content;
         PlayOverlay.Visibility = Visibility.Visible;
@@ -197,7 +203,7 @@ public partial class MainWindow
         playingGame = GameKind.Lba2;
         host.GameExited += OnGameExited;
         ShowPlayOverlay(host, $"Starting {label} ...");
-        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
+        await DispatcherCompat.Yield(DispatcherPriority.Render);
         if (!ReferenceEquals(gameHost, host)) return;
 
         (options.Width, options.Height) = host.FitSize();
@@ -238,9 +244,9 @@ public partial class MainWindow
         lba2Control = client;
         // A breakpoint hit during ordinary, unprompted play (not the result of Continue/Step,
         // which read their own outcome from the command's response instead -- see ResumeLba2).
-        client.BreakpointHit += (actor, kind, offset) => Dispatcher.Invoke(() =>
+        client.BreakpointHit += (actor, kind, offset) => Dispatcher.UIThread.Invoke(() =>
             ScriptBreakpoints.ReportExternalPause(lba2ControlScene, actor, (ScriptKind)kind, offset));
-        client.Disconnected += why => Dispatcher.Invoke(() =>
+        client.Disconnected += why => Dispatcher.UIThread.Invoke(() =>
         {
             if (!ReferenceEquals(lba2Control, client)) return;
             DebugLog.Log($"MainWindow: LBA2 control socket disconnected: {why}");

@@ -1,5 +1,12 @@
-using System.Windows;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -70,8 +77,9 @@ internal static class ZoneStyle
         {
             foreach (var (a, b) in Edges)
             {
-                ctx.BeginFigure(map(zone.Corners[a]), false, false);
-                ctx.LineTo(map(zone.Corners[b]), true, false);
+                ctx.BeginFigure(map(zone.Corners[a]), false);
+                ctx.LineTo(map(zone.Corners[b]));
+                ctx.EndFigure(false);
             }
         }
         geometry.Freeze();

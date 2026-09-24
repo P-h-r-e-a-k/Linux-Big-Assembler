@@ -1,10 +1,5 @@
-using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Numerics;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
 
 namespace LbaBodyStudio;
 
@@ -41,33 +36,34 @@ public sealed class Lba1Shading
 
 public static class Renderer
 {
+    // Every colour here and in Render's parameters is a packed 0xAARRGGBB (see Argb), alpha 0xFF: what System.Drawing.Color.ToArgb() used to give.
     // KeyBackground and KeyGrid are the colours a marker is made transparent by (Lba1ActorImages.Transparent): renders that become markers keep them; a picture shown as it is passes its own.
-    public static readonly Color KeyBackground=Color.FromArgb(25,30,39),KeyGrid=Color.FromArgb(44,52,64);
-    public static readonly Color ViewBackground=Color.FromArgb(232,240,250),ViewGrid=Color.FromArgb(203,221,240);
-    // The rest of the app's own light theme (Theme.xaml), so Body Studio's plain WinForms controls don't look like a different program.
-    public static readonly Color PanelBackground=Color.FromArgb(0xE8,0xF0,0xFA),FieldBackground=Color.White,ButtonBackground=Color.FromArgb(0xD6,0xE6,0xF7),
-        ButtonBorder=Color.FromArgb(0x9F,0xBE,0xE0),ButtonHover=Color.FromArgb(0xC3,0xDB,0xF5),Accent=Color.FromArgb(0x1B,0x6E,0xC2),
-        Border=Color.FromArgb(0xA9,0xC3,0xE0),Text=Color.FromArgb(0x10,0x24,0x3E),TextMuted=Color.FromArgb(0x4E,0x6B,0x8A);
-    public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null,Color? background=null,Color? gridLine=null)
+    public static readonly uint KeyBackground=Argb.Pack(25,30,39),KeyGrid=Argb.Pack(44,52,64);
+    public static readonly uint ViewBackground=Argb.Pack(232,240,250),ViewGrid=Argb.Pack(203,221,240);
+    // The rest of the app's own light theme (Theme.axaml), so Body Studio's Avalonia windows don't look like a different program.
+    public static readonly uint PanelBackground=Argb.Pack(0xE8,0xF0,0xFA),FieldBackground=Argb.Pack(0xFF,0xFF,0xFF),ButtonBackground=Argb.Pack(0xD6,0xE6,0xF7),
+        ButtonBorder=Argb.Pack(0x9F,0xBE,0xE0),ButtonHover=Argb.Pack(0xC3,0xDB,0xF5),Accent=Argb.Pack(0x1B,0x6E,0xC2),
+        Border=Argb.Pack(0xA9,0xC3,0xE0),Text=Argb.Pack(0x10,0x24,0x3E),TextMuted=Argb.Pack(0x4E,0x6B,0x8A);
+    // The picture is a plain BGRA buffer (FlatImage); everything is drawn straight into the pixel array, nothing is anti-aliased.
+    public static FlatImage Render(Body model,uint[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null,uint? background=null,uint? gridLine=null)
     {
         width=Math.Max(1,width);height=Math.Max(1,height);
-        var bitmap=new Bitmap(Math.Max(1,width),Math.Max(1,height));using var g=Graphics.FromImage(bitmap);
-        g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(background??KeyBackground);
+        var pixels=new int[width*height];Array.Fill(pixels,unchecked((int)(background??KeyBackground)));
         var neutral=model.World();var world=pose??neutral;float h=Math.Max(1,neutral.Max(v=>v.Y)-neutral.Min(v=>v.Y));float minY=neutral.Min(v=>v.Y);
         if(headOnly){minY+=h*.82f;h*=.18f;}
         float visibleWidth=headOnly?h*.85f:neutral.Max(v=>v.X)-neutral.Min(v=>v.X);
         float scale=Math.Min(height*0.80f/h,width*0.80f/Math.Max(h*0.65f,visibleWidth));
         var focus=headOnly&&model.Bones.Count>14?new Vector3(world[model.Bones[14].Pivot].X,0,0):Vector3.Zero;
         var rotated=world.Select(v=>new Vector3((v.X-focus.X)*MathF.Cos(yaw)+(v.Z-focus.Z)*MathF.Sin(yaw),v.Y-minY,-(v.X-focus.X)*MathF.Sin(yaw)+(v.Z-focus.Z)*MathF.Cos(yaw))).ToArray();
-        PointF Screen(Vector3 v)=>new(width/2f+v.X*scale,height*0.90f-v.Y*scale+v.Z*scale*0.08f);
-        using var grid=new Pen(gridLine??KeyGrid);
-        for(int x=-5;x<=5;x++)g.DrawLine(grid,width/2f+x*h*scale/6,height*0.92f,width/2f+x*h*scale/6,height*0.97f);
-        g.DrawLine(grid,20,height*0.92f,width-20,height*0.92f);
+        Vector2 Screen(Vector3 v)=>new(width/2f+v.X*scale,height*0.90f-v.Y*scale+v.Z*scale*0.08f);
+        // the ground grid goes under the body: the polygons (and their depth buffer) are drawn over it
+        int grid=unchecked((int)(gridLine??KeyGrid));
+        for(int x=-5;x<=5;x++)Line(pixels,width,height,width/2f+x*h*scale/6,height*0.92f,width/2f+x*h*scale/6,height*0.97f,grid);
+        Line(pixels,width,height,20,height*0.92f,width-20,height*0.92f,grid);
         // Polygon-average painter sorting loses narrow lettering at oblique angles.
         // Rasterize the actual surfaces with interpolated depth instead.
         var depth=Enumerable.Repeat(float.PositiveInfinity,width*height).ToArray();
-        var pixels=new int[width*height];
-        float Edge(PointF a,PointF b,float x,float y)=>(x-a.X)*(b.Y-a.Y)-(y-a.Y)*(b.X-a.X);
+        float Edge(Vector2 a,Vector2 b,float x,float y)=>(x-a.X)*(b.Y-a.Y)-(y-a.Y)*(b.X-a.X);
         var lit=shading!=null&&model.Game==1&&model.Normals.Count>0?shading.Intensities(model):null;
         // A generated body carries game lighting (Body.Lit): preview it with a light from above-left of the viewer, the game adds up to its
         // maximum number of ramp steps to each polygon's start colour.
@@ -77,9 +73,10 @@ public static class Renderer
             var normals=model.VertexNormals();var toLight=Vector3.Normalize(new Vector3(-0.35f,0.55f,-0.75f));float max=LightModel.Max(model.Game);
             previewLight=normals.Select(n=>{var r=new Vector3(n.X*MathF.Cos(yaw)+n.Z*MathF.Sin(yaw),n.Y,-n.X*MathF.Sin(yaw)+n.Z*MathF.Cos(yaw));return Math.Clamp(Vector3.Dot(r,toLight),0,1)*max;}).ToArray();
         }
+        int Colour(int index)=>unchecked((int)palette[Math.Clamp(index,0,255)]);
         foreach(var f in model.Faces)
         {
-            int colour=palette[Math.Clamp(f.Colour,0,255)].ToArgb();
+            int colour=Colour(f.Colour);
             bool faceLit=previewLight!=null&&LightModel.IsLit(f,model.Game,model.Lit);
             // the game's lighting: flat faces take one intensity, Gouraud faces one per corner (blended below)
             float[]? corner=null;
@@ -91,7 +88,7 @@ public static class Renderer
                     int normal=f.PointNormals!=null?f.PointNormals[k]:f.FaceNormal;
                     corner[k]=normal>=0&&normal<lit.Length?lit[normal]:0;
                 }
-                if(f.Material<9)colour=palette[Math.Clamp(f.Colour+(int)corner[0],0,255)].ToArgb();
+                if(f.Material<9)colour=Colour(f.Colour+(int)corner[0]);
             }
             for(int t=1;t<f.Points.Length-1;t++)
             {
@@ -117,10 +114,10 @@ public static class Renderer
                             int tx=((int)u>>8)&(mask&0xFF),ty=((int)v>>8)&((mask>>8)&0xFF);
                             int texel=model.TexturePage[((int)(info&0xFFFF)+ty*256+tx)&0xFFFF];
                             float shade=faceLit?wa*previewLight[f.Points[0]]+wb*previewLight[f.Points[t]]+wc*previewLight[f.Points[t+1]]:0;
-                            pixels[index]=palette[Math.Clamp(texel+(int)Math.Round(shade),0,255)].ToArgb();
+                            pixels[index]=Colour(texel+(int)Math.Round(shade));
                         }
-                        else if(faceLit){float shade=wa*previewLight[f.Points[0]]+wb*previewLight[f.Points[t]]+wc*previewLight[f.Points[t+1]];pixels[index]=palette[Math.Clamp(f.Colour+(int)Math.Round(shade),0,255)].ToArgb();}
-                        else if(corner!=null&&f.Material>=9){float shade=wa*corner[0]+wb*corner[t]+wc*corner[t+1];pixels[index]=palette[Math.Clamp(f.Colour+(int)Math.Round(shade),0,255)].ToArgb();}
+                        else if(faceLit){float shade=wa*previewLight[f.Points[0]]+wb*previewLight[f.Points[t]]+wc*previewLight[f.Points[t+1]];pixels[index]=Colour(f.Colour+(int)Math.Round(shade));}
+                        else if(corner!=null&&f.Material>=9){float shade=wa*corner[0]+wb*corner[t]+wc*corner[t+1];pixels[index]=Colour(f.Colour+(int)Math.Round(shade));}
                         else pixels[index]=colour;
                     }
                 }
@@ -131,7 +128,7 @@ public static class Renderer
         void Plot(int x,int y,float z,int colour){if(x<0||y<0||x>=width||y>=height)return;int i=y*width+x;if(z<=depth[i]){depth[i]=z;pixels[i]=colour;}}
         foreach(var l in model.Lines)
         {
-            var a=rotated[l.A];var b=rotated[l.B];var pa=Screen(a);var pb=Screen(b);int colour=palette[Math.Clamp(l.Colour,0,255)].ToArgb();
+            var a=rotated[l.A];var b=rotated[l.B];var pa=Screen(a);var pb=Screen(b);int colour=Colour(l.Colour);
             int steps=Math.Max(1,(int)MathF.Ceiling(Math.Max(Math.Abs(pb.X-pa.X),Math.Abs(pb.Y-pa.Y))));
             for(int k=0;k<=steps;k++)
             {
@@ -141,51 +138,82 @@ public static class Renderer
         }
         foreach(var s in model.Spheres)
         {
-            var c=rotated[s.Point];var p=Screen(c);float r=Math.Max(1f,s.Radius*scale);int colour=palette[Math.Clamp(s.Colour,0,255)].ToArgb();
+            var c=rotated[s.Point];var p=Screen(c);float r=Math.Max(1f,s.Radius*scale);int colour=Colour(s.Colour);
             for(int y=(int)MathF.Floor(p.Y-r);y<=(int)MathF.Ceiling(p.Y+r);y++)for(int x=(int)MathF.Floor(p.X-r);x<=(int)MathF.Ceiling(p.X+r);x++)
             {
                 float dx=x+.5f-p.X,dy=y+.5f-p.Y,d2=dx*dx+dy*dy;if(d2>r*r)continue;
                 Plot(x,y,c.Z-MathF.Sqrt(r*r-d2)/scale,colour);
             }
         }
-        using(var layer=new Bitmap(width,height,PixelFormat.Format32bppArgb))
-        {
-            var locked=layer.LockBits(new Rectangle(0,0,width,height),ImageLockMode.WriteOnly,PixelFormat.Format32bppArgb);
-            try{Marshal.Copy(pixels,0,locked.Scan0,pixels.Length);}finally{layer.UnlockBits(locked);}
-            g.DrawImageUnscaled(layer,0,0);
-        }
-        if(wire){using var pen=new Pen(Color.FromArgb(130,110,185,210),0.8f);foreach(var f in model.Faces)g.DrawPolygon(pen,f.Points.Select(i=>Screen(rotated[i])).ToArray());}
+        // the wireframe: every polygon's edges, a translucent light blue over the shaded picture
+        if(wire){int pen=unchecked((int)Argb.Pack(110,185,210));foreach(var f in model.Faces)for(int j=0;j<f.Points.Length;j++){var a=Screen(rotated[f.Points[j]]);var b=Screen(rotated[f.Points[(j+1)%f.Points.Length]]);Line(pixels,width,height,a.X,a.Y,b.X,b.Y,pen,130);}}
         if(bones)
         {
-            using var pen=new Pen(Color.FromArgb(255,195,74),2);using var brush=new SolidBrush(Color.FromArgb(255,195,74));
-            for(int i=1;i<model.Bones.Count;i++) {var b=model.Bones[i];var parent=model.Bones[b.Parent];var a=Screen(rotated[b.Pivot]);var z=Screen(rotated[parent.Pivot]);g.DrawLine(pen,a,z);g.FillEllipse(brush,a.X-3,a.Y-3,6,6);g.DrawString(i.ToString(),SystemFonts.SmallCaptionFont!,brush,a);}
+            // the skeleton: a 2-pixel amber line from each bone's pivot to its parent's, a dot on the pivot, and the bone's number beside it
+            int pen=unchecked((int)Argb.Pack(255,195,74));
+            for(int i=1;i<model.Bones.Count;i++)
+            {
+                var b=model.Bones[i];var parent=model.Bones[b.Parent];var a=Screen(rotated[b.Pivot]);var z=Screen(rotated[parent.Pivot]);
+                Line(pixels,width,height,a.X,a.Y,z.X,z.Y,pen);Line(pixels,width,height,a.X+1,a.Y,z.X+1,z.Y,pen);Line(pixels,width,height,a.X,a.Y+1,z.X,z.Y+1,pen);
+                FillCircle(pixels,width,height,a.X,a.Y,3,pen);
+                Digits(pixels,width,height,i.ToString(),(int)MathF.Round(a.X)+5,(int)MathF.Round(a.Y)+4,pen);
+            }
         }
-        return bitmap;
+        return FlatImage.FromArgb(width,height,pixels);
     }
-}
 
-public sealed class ModelView : Control
-{
-    public Generated? Model;
-    public float Yaw;
-    public bool Wire,Bones;
-    public bool HeadOnly;
-    // Overrides the body's own rest pose when set (e.g. AnimationStudioForm's own posed-per-keyframe
-    // preview, via Lba1Pose.World) -- null means "render the body's own neutral/modelled pose", the
-    // original behaviour.
-    public Vector3[]? Pose;
-    Point? drag;
-    public ModelView(){DoubleBuffered=true;BackColor=Renderer.ViewBackground;SetStyle(ControlStyles.ResizeRedraw,true);}
-    protected override void OnPaint(PaintEventArgs e)
+    // ---- drawing straight into the pixel buffer (what System.Drawing.Graphics did before) ----
+    // One pixel; `alpha` below 255 blends the colour over what is there.
+    static void Put(int[] pixels,int width,int height,int x,int y,int colour,int alpha=255)
     {
-        base.OnPaint(e);
-        if(Model==null){TextRenderer.DrawText(e.Graphics,"Generate a body to preview it here",Font,ClientRectangle,Color.Silver,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);return;}
-        using var bitmap=Renderer.Render(Model.Body,Model.Palette,Width,Height,Yaw,Wire,Bones,HeadOnly,Pose,background:Renderer.ViewBackground,gridLine:Renderer.ViewGrid);e.Graphics.DrawImageUnscaled(bitmap,0,0);
-        TextRenderer.DrawText(e.Graphics,$"LBA{Model.Body.Game}  •  {Model.Body.Vertices.Count} points  •  {Model.Body.Faces.Count} polygons  •  {Model.Body.Bones.Count} bones",Font,new Point(16,16),Color.LightGray);
-        TextRenderer.DrawText(e.Graphics,Pose==null?"Drag to rotate  |  Neutral pose  |  Palette colours":"Drag to rotate  |  Animated pose  |  Palette colours",Font,new Point(16,Height-32),Color.LightGray);
+        if(x<0||y<0||x>=width||y>=height)return;
+        int i=y*width+x;
+        if(alpha>=255){pixels[i]=colour;return;}
+        int d=pixels[i],inverse=255-alpha;
+        int r=(((colour>>16)&0xFF)*alpha+((d>>16)&0xFF)*inverse)/255,g=(((colour>>8)&0xFF)*alpha+((d>>8)&0xFF)*inverse)/255,b=((colour&0xFF)*alpha+(d&0xFF)*inverse)/255;
+        pixels[i]=unchecked((int)0xFF000000)|(r<<16)|(g<<8)|b;
     }
-    protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);drag=e.Location;Capture=true;}
-    protected override void OnMouseMove(MouseEventArgs e){base.OnMouseMove(e);if(drag is Point p){Yaw+=(e.X-p.X)*0.012f;drag=e.Location;Invalidate();}}
-    protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);drag=null;Capture=false;}
+    // Bresenham's line, end points rounded to pixels.
+    static void Line(int[] pixels,int width,int height,float fx0,float fy0,float fx1,float fy1,int colour,int alpha=255)
+    {
+        int x0=(int)MathF.Round(fx0),y0=(int)MathF.Round(fy0),x1=(int)MathF.Round(fx1),y1=(int)MathF.Round(fy1);
+        int dx=Math.Abs(x1-x0),sx=x0<x1?1:-1,dy=-Math.Abs(y1-y0),sy=y0<y1?1:-1,err=dx+dy;
+        while(true)
+        {
+            Put(pixels,width,height,x0,y0,colour,alpha);
+            if(x0==x1&&y0==y1)break;
+            int e2=2*err;
+            if(e2>=dy){err+=dy;x0+=sx;}
+            if(e2<=dx){err+=dx;y0+=sy;}
+        }
+    }
+    static void FillCircle(int[] pixels,int width,int height,float cx,float cy,float radius,int colour)
+    {
+        for(int y=(int)MathF.Floor(cy-radius);y<=(int)MathF.Ceiling(cy+radius);y++)for(int x=(int)MathF.Floor(cx-radius);x<=(int)MathF.Ceiling(cx+radius);x++)
+        {
+            float dx=x+.5f-cx,dy=y+.5f-cy;if(dx*dx+dy*dy<=radius*radius)Put(pixels,width,height,x,y,colour);
+        }
+    }
+    // A 3 x 5 pixel digit font (each row is 3 bits, top row first), drawn at twice its size: the bone-number labels.
+    static readonly byte[][] DigitFont=
+    [
+        [0b111,0b101,0b101,0b101,0b111],[0b010,0b110,0b010,0b010,0b111],[0b111,0b001,0b111,0b100,0b111],[0b111,0b001,0b111,0b001,0b111],[0b101,0b101,0b111,0b001,0b001],
+        [0b111,0b100,0b111,0b001,0b111],[0b111,0b100,0b111,0b101,0b111],[0b111,0b001,0b001,0b001,0b001],[0b111,0b101,0b111,0b101,0b111],[0b111,0b101,0b111,0b001,0b111],
+    ];
+    static void Digits(int[] pixels,int width,int height,string text,int x,int y,int colour,int size=2)
+    {
+        foreach(var ch in text)
+        {
+            if(ch>='0'&&ch<='9')
+            {
+                var glyph=DigitFont[ch-'0'];
+                for(int row=0;row<5;row++)for(int col=0;col<3;col++)
+                {
+                    if((glyph[row]&(4>>col))==0)continue;
+                    for(int sy=0;sy<size;sy++)for(int sx=0;sx<size;sx++)Put(pixels,width,height,x+col*size+sx,y+row*size+sy,colour);
+                }
+            }
+            x+=4*size;
+        }
+    }
 }
-

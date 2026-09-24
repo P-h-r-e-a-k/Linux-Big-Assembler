@@ -1,6 +1,13 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using LBAAssembler.Lba1;
 
 namespace LBAAssembler;
@@ -13,7 +20,7 @@ namespace LBAAssembler;
 // changes the open scene works the same whether it came from a menu or from the code.
 public partial class MainWindow
 {
-    private void GameMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+    private void GameMenu_SubmenuOpened(object? sender, RoutedEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, sender)) return;          // a nested submenu opening
         if (ReferenceEquals(sender, Lba1Menu)) BuildLba1Menu();

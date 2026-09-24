@@ -1,4 +1,12 @@
-using System.Windows;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -70,8 +78,8 @@ internal static class WindowPlacement
             // window remembered hard against a monitor's edge, with several more of its kind opened at
             // once); fall back to the un-offset spot rather than the window's own default placement, so it
             // still lands where the user last put windows of this kind instead of jumping back to centre.
-            if (!IsVisible(left, top, saved.Width, saved.Height)) { left = saved.X; top = saved.Y; }
-            if (IsVisible(left, top, saved.Width, saved.Height))
+            if (!IsVisible(window, left, top, saved.Width, saved.Height)) { left = saved.X; top = saved.Y; }
+            if (IsVisible(window, left, top, saved.Width, saved.Height))
             {
                 window.WindowStartupLocation = WindowStartupLocation.Manual;
                 window.Left = left;
@@ -80,14 +88,20 @@ internal static class WindowPlacement
             }
         }
 
+        // A minimized or maximized window's own position and size aren't a usable spot to come back to, so the
+        // last bounds it had while in its normal state are what gets remembered (WPF called these RestoreBounds).
+        WindowBounds? normal = null;
+        void Note()
+        {
+            if (window.WindowState != WindowState.Normal || window.Bounds.Width <= 0 || window.Bounds.Height <= 0) return;
+            normal = new WindowBounds { X = window.Position.X, Y = window.Position.Y, Width = window.Bounds.Width, Height = window.Bounds.Height };
+        }
+        window.PositionChanged += (_, _) => Note();
+        window.SizeChanged += (_, _) => Note();
         window.Closed += (_, _) =>
         {
-            // A minimized window's own Left/Top/Width/Height read back as its taskbar/tray position, not a
-            // usable screen spot -- RestoreBounds is what WPF calls the last normal (non-minimized/maximized)
-            // bounds regardless of the state it is actually in when closed, so that is what gets remembered.
-            var bounds = window.RestoreBounds;
-            if (bounds is { Width: > 0, Height: > 0 })
-                EditorSettings.Current.WindowPositions[key] = new WindowBounds { X = bounds.Left, Y = bounds.Top, Width = bounds.Width, Height = bounds.Height };
+            Note();
+            if (normal is { Width: > 0, Height: > 0 } bounds) EditorSettings.Current.WindowPositions[key] = bounds;
             EditorSettings.Current.Save();
         };
     }
@@ -95,12 +109,12 @@ internal static class WindowPlacement
     // Whether a rectangle this size at this position has at least MinVisible units showing on some monitor
     // that is actually connected right now (not just within the combined virtual desktop's own bounding
     // box, which stays "big enough" even once a monitor that used to sit inside it is unplugged).
-    private static bool IsVisible(double x, double y, double width, double height)
+    private static bool IsVisible(Window window, double x, double y, double width, double height)
     {
-        var rect = new System.Drawing.Rectangle((int)x, (int)y, (int)Math.Max(1, width), (int)Math.Max(1, height));
-        foreach (var screen in System.Windows.Forms.Screen.AllScreens)
+        var rect = new PixelRect((int)x, (int)y, (int)Math.Max(1, width), (int)Math.Max(1, height));
+        foreach (var screen in window.Screens.All)
         {
-            var overlap = System.Drawing.Rectangle.Intersect(rect, screen.WorkingArea);
+            var overlap = rect.Intersect(screen.WorkingArea);
             if (overlap.Width >= MinVisible && overlap.Height >= MinVisible) return true;
         }
         return false;

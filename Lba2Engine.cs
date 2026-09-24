@@ -5,18 +5,28 @@ using System.Text;
 
 namespace LBAAssembler;
 
-// The LBA2 community engine (native/lba2-classic-community) built as the full playable game, lba2cc.exe. It is a complete
-// port of the game (all of its assembly is C++), so "playing a scene" in the editor means running it against the game
-// folder the editor edits: what was saved is what plays. The exe is statically linked (no DLLs), and is embedded in the
-// editor's exe like the renderer library, extracted to a "native" folder beside it on first use.
+// The LBA2 community engine (native/lba2-classic-community) built as the full playable game: lba2cc on Linux, lba2cc.exe on
+// Windows. It is a complete port of the game (all of its assembly is C++), so "playing a scene" in the editor means running
+// it against the game folder the editor edits: what was saved is what plays. The executable is embedded in the editor's
+// own like the renderer library (see LBAAssembler.csproj), extracted to a "native" folder beside it on first use.
+//
+// Linux: the build in out/build/linux links SDL3 dynamically (libSDL3.so.0, found through the executable's RUNPATH of
+// /usr/local/lib, where the SDK on the build machine installed it, or the loader's usual paths). A release bundle must ship
+// libSDL3.so.0 next to lba2cc (or the CMake preset must link it statically, see the "Static-link SDL3" cache option) --
+// the editor only extracts the one executable. The engine talks to the X server of the DISPLAY it inherits from the editor.
 internal static class Lba2Engine
 {
-    private const string ResourceName = "lba2cc.exe";
-    private const string RelativeBuild = @"native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\lba2cc.exe";
+    // The engine's file name is also the name of the embedded resource (LBAAssembler.csproj's LogicalName).
+    public static readonly string ExeName = OperatingSystem.IsWindows() ? "lba2cc.exe" : "lba2cc";
+    private static readonly string ResourceName = ExeName;
+    // A development checkout's own build output, relative to the repository root.
+    private static readonly string RelativeBuild = OperatingSystem.IsWindows()
+        ? Path.Combine("native", "lba2-classic-community", "out", "build", "windows_ucrt64_static", "SOURCES", "lba2cc.exe")
+        : Path.Combine("native", "lba2-classic-community", "out", "build", "linux", "SOURCES", "lba2cc");
 
     public static string? Find()
     {
-        var beside = Path.Combine(AppContext.BaseDirectory, "lba2cc.exe");
+        var beside = Path.Combine(AppContext.BaseDirectory, ExeName);
         if (File.Exists(beside)) return beside;
 
         var assembly = Assembly.GetExecutingAssembly();
@@ -24,15 +34,17 @@ internal static class Lba2Engine
         {
             if (resource is not null)
             {
+                // keyed on the editor's own executable (its size and write time change with every build that embeds a new engine)
                 var info = new FileInfo(Environment.ProcessPath ?? "");
                 var key = info.Exists ? $"{info.Length}-{info.LastWriteTimeUtc.Ticks}" : resource.Length.ToString();
+                var extension = Path.GetExtension(ExeName);          // ".exe" or ""
                 foreach (var dir in new[]
                 {
                     Path.Combine(AppContext.BaseDirectory, "native"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBAAssembler", "native"),
                 })
                 {
-                    var path = Path.Combine(dir, $"lba2cc.{key}.exe");
+                    var path = Path.Combine(dir, $"lba2cc.{key}{extension}");
                     try
                     {
                         if (!File.Exists(path))
@@ -40,9 +52,12 @@ internal static class Lba2Engine
                             Directory.CreateDirectory(dir);
                             var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                             using (var file = File.Create(temp)) resource.CopyTo(file);
+                            // an extracted copy has no execute bit of its own on Unix
+                            if (!OperatingSystem.IsWindows())
+                                File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
                             File.Move(temp, path, overwrite: true);
-                            foreach (var old in Directory.EnumerateFiles(dir, "lba2cc.*.exe"))
-                                if (!string.Equals(old, path, StringComparison.OrdinalIgnoreCase)) { try { File.Delete(old); } catch (IOException) { } }
+                            foreach (var old in Directory.EnumerateFiles(dir, "lba2cc.*"))
+                                if (!string.Equals(old, path, StringComparison.OrdinalIgnoreCase) && !old.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) { try { File.Delete(old); } catch (IOException) { } }
                         }
                         return path;
                     }
@@ -216,7 +231,7 @@ internal static class Lba2Play
         problem = null;
         LastOptions = options;
         var engine = Lba2Engine.Find();
-        if (engine is null) { problem = "The LBA2 engine (lba2cc.exe) isn't part of this build."; return null; }
+        if (engine is null) { problem = $"The LBA2 engine ({Lba2Engine.ExeName}) isn't part of this build."; return null; }
         if (!Lba2Engine.IsGameFolder(gameDirectory)) { problem = "The LBA2 game folder isn't set. Choose it under File > Settings."; return null; }
         var user = UserDirectory(out problem);
         if (user is null) return null;
@@ -230,14 +245,20 @@ internal static class Lba2Play
         options.LoadSave = PrepareSceneSave(engine, gameDirectory, user, options.Scene);
         if (options.LoadSave is null) DebugLog.Log($"Lba2Play: no save for scene {options.Scene}; falling back to the cube command");
 
-        // The engine is a console program: without CreateNoWindow Windows opens a console (a terminal window) beside the game.
-        // Embedded, its window starts hidden as well, so the editor can take it over before anything is seen of it.
+        // The engine is a console program: without CreateNoWindow Windows opens a console (a terminal window) beside the game
+        // (both settings are meaningless, and harmless, on Linux). The environment is inherited, so the engine opens on the
+        // editor's own DISPLAY; see Lba2Engine for what it needs to find libSDL3.
         var start = new ProcessStartInfo(engine) { WorkingDirectory = gameDirectory, UseShellExecute = false, CreateNoWindow = true };
         start.Environment["LBA2_OVERLAY_FILE"] = OverlayFile(user);      // zone boxes and actor paths drawn by the engine (EDITOR_OVERLAY.CPP); an all-zero file draws nothing
         if (embedded)
         {
             start.WindowStyle = ProcessWindowStyle.Hidden;
-            // the engine creates its window where this says (see WINDOW.CPP); off screen it is never seen before the editor has taken it over
+            // The engine creates its window where this says (WINDOW.CPP reads LBA2_WINDOW_POS into the SDL create-time position
+            // on every platform): off screen, so it is never seen before the editor has taken it over (EmbeddedGameHost). On
+            // Windows the window really is created hidden there. On Linux SDL3 maps the window at once, at that position:
+            // without a window manager (or with one that honours a program-specified position) it is simply off screen; a
+            // window manager that keeps new windows on screen may show it for an instant before the host unmaps and re-parents
+            // it, which it does the moment the window exists.
             start.Environment["LBA2_WINDOW_POS"] = "-32000,-32000";
         }
         foreach (var arg in options.Arguments(gameDirectory, user)) start.ArgumentList.Add(arg);

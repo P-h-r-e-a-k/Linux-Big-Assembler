@@ -1,7 +1,13 @@
 using System.Globalization;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using LBAAssembler.Lba1.Runtime;
 
 namespace LBAAssembler;
@@ -37,7 +43,7 @@ internal sealed class Lba1LoadoutWindow : Window
         buttons.Children.Add(Make("New game", () => Fill(new Lba1Loadout())));
         buttons.Children.Add(Make("Everything", () => Fill(Lba1Loadout.Everything())));
         buttons.Children.Add(Make("OK", Accept, isDefault: true));
-        buttons.Children.Add(Make("Cancel", () => DialogResult = false, isCancel: true));
+        buttons.Children.Add(Make("Cancel", () => this.DialogResult = false, isCancel: true));
         DockPanel.SetDock(buttons, Dock.Bottom);
         root.Children.Add(buttons);
 
@@ -114,7 +120,7 @@ internal sealed class Lba1LoadoutWindow : Window
             loadout.Flags = extra;
             loadout.Life = N("life"); loadout.MagicLevel = N("magicLevel"); loadout.MagicPoint = N("magicPoint"); loadout.Gold = N("gold");
             loadout.Keys = N("keys"); loadout.CloverBoxes = N("boxes"); loadout.CloverLeaves = N("leaves"); loadout.Chapter = N("chapter");
-            DialogResult = true;
+            this.DialogResult = true;
         }
         catch (Exception error) when (error is FormatException or OverflowException or IndexOutOfRangeException)
         {

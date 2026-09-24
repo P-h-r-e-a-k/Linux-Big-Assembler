@@ -1,9 +1,13 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using LBAAssembler.Assets;
 using LBAAssembler.Lba1;
 
@@ -16,7 +20,7 @@ internal sealed class AssetEditorWindow : Window
     private readonly string? lba1Directory, lba2Directory;
     private readonly ComboBox libraryBox = new() { Width = 170, Margin = new Thickness(0, 0, 10, 0) };
     private readonly TextBox filterBox = new() { Width = 90, Padding = new Thickness(3), ToolTip = "Jump to a picture number" };
-    private readonly ListBox list = new() { Width = 140, FontFamily = new FontFamily("Consolas"), Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
+    private readonly ListBox list = new() { Width = 140, FontFamily = UiFonts.Mono, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
     private readonly Image picture = new();
     private readonly Canvas surface = new() { Background = Brushes.Transparent };
     private readonly Canvas paletteCanvas = new() { Width = 256, Height = 256 };
@@ -35,7 +39,7 @@ internal sealed class AssetEditorWindow : Window
     private readonly HashSet<int> changed = new();
     private bool dirty;
     private WriteableBitmap? bitmap;
-    private System.Windows.Shapes.Rectangle? swatch;
+    private Avalonia.Controls.Shapes.Rectangle? swatch;
 
     private sealed record Choice(string Title, Func<GphLibrary> Open);
 
@@ -66,7 +70,7 @@ internal sealed class AssetEditorWindow : Window
         DockPanel.SetDock(top, Dock.Top);
         top.Children.Add(new TextBlock { Text = "Library", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Foreground = UiBrushes.Muted });
         top.Children.Add(libraryBox);
-        foreach (var (text, tip, handler) in new (string, string, RoutedEventHandler)[]
+        foreach (var (text, tip, handler) in new (string, string, EventHandler<RoutedEventArgs>)[]
         {
             ("Undo", "Undo the last stroke", (_, _) => Undo()),
             ("Export PNG…", "Saves the picture as a PNG with transparency", (_, _) => Export()),
@@ -98,7 +102,7 @@ internal sealed class AssetEditorWindow : Window
 
         var right = new StackPanel { Width = 290, Margin = new Thickness(8) };
         right.Children.Add(new TextBlock { Text = "Colour (click to choose, right-click the picture to pick)", FontSize = 10, Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 0, 4) });
-        paletteCanvas.MouseLeftButtonDown += (_, e) => { var p = e.GetPosition(paletteCanvas); colour = (byte)(Math.Clamp((int)(p.Y / 16), 0, 15) * 16 + Math.Clamp((int)(p.X / 16), 0, 15)); UpdateSwatch(); };
+        paletteCanvas.PointerPressed += (_, e) => { if (!e.IsLeft) return; var p = e.GetPosition(paletteCanvas); colour = (byte)(Math.Clamp((int)(p.Y / 16), 0, 15) * 16 + Math.Clamp((int)(p.X / 16), 0, 15)); UpdateSwatch(); };
         right.Children.Add(new Border { BorderBrush = UiBrushes.Muted, BorderThickness = new Thickness(1), Child = paletteCanvas, HorizontalAlignment = HorizontalAlignment.Left });
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
         paintTool.Foreground = eraseTool.Foreground = Foreground; paintTool.Margin = new Thickness(0, 0, 12, 0);
@@ -113,16 +117,16 @@ internal sealed class AssetEditorWindow : Window
         DockPanel.SetDock(right, Dock.Right);
         root.Children.Add(right);
 
-        RenderOptions.SetBitmapScalingMode(picture, BitmapScalingMode.NearestNeighbor);
+        RenderOptions.SetBitmapInterpolationMode(picture, BitmapInterpolationMode.None);
         surface.Children.Add(picture);
-        surface.MouseLeftButtonDown += (_, e) => { BeginStroke(); Paint(e.GetPosition(picture), false); surface.CaptureMouse(); };
-        surface.MouseMove += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed && surface.IsMouseCaptured) Paint(e.GetPosition(picture), false); };
-        surface.MouseLeftButtonUp += (_, _) => surface.ReleaseMouseCapture();
-        surface.MouseRightButtonDown += (_, e) => PickColour(e.GetPosition(picture));
+        surface.PointerPressed += (_, e) => { if (!e.IsLeft) return; BeginStroke(); Paint(e.GetPosition(picture), false); surface.CaptureMouse(); };
+        surface.PointerMoved += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed && surface.IsMouseCaptured) Paint(e.GetPosition(picture), false); };
+        surface.PointerReleased += (_, e) => { if (!e.IsLeft) return; surface.ReleaseMouseCapture(); };
+        surface.PointerPressed += (_, e) => { if (!e.IsRight) return; PickColour(e.GetPosition(picture)); };
         var scroll = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = surface, Background = new SolidColorBrush(Color.FromRgb(0xC3, 0xDB, 0xF5)) };
         root.Children.Add(scroll);
         Content = root;
-        PreviewKeyDown += (_, e) => { if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Z) { Undo(); e.Handled = true; } else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S) { Save(); e.Handled = true; } };
+        AddHandler(KeyDownEvent, (_, e) => { if (Keyboard.Modifiers == KeyModifiers.Control && e.Key == Key.Z) { Undo(); e.Handled = true; } else if (Keyboard.Modifiers == KeyModifiers.Control && e.Key == Key.S) { Save(); e.Handled = true; } }, RoutingStrategies.Tunnel);
     }
 
     private sealed record Entry(int Number, string Text)
@@ -221,8 +225,8 @@ internal sealed class AssetEditorWindow : Window
                 var check = ((x + y) & 1) == 0 ? (byte)62 : (byte)86;
                 flat[i] = solid ? bgra[i] : check; flat[i + 1] = solid ? bgra[i + 1] : check; flat[i + 2] = solid ? bgra[i + 2] : check; flat[i + 3] = 255;
             }
-        bitmap = new WriteableBitmap(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null);
-        bitmap.WritePixels(new Int32Rect(0, 0, image.Width, image.Height), flat, image.Width * 4, 0);
+        bitmap = BitmapFactory.Writeable(image.Width, image.Height);
+        bitmap.WritePixels(new PixelRect(0, 0, image.Width, image.Height), flat, image.Width * 4, 0);
         picture.Source = bitmap;
         info.Text = $"Picture {number}\n{image.Width} x {image.Height} pixels\nhot spot {image.OffsetX}, {image.OffsetY}\n{image.Opaque.Count(o => o)} drawn pixels\nused colours: {image.Pixels.Where((_, i) => image.Opaque[i]).Distinct().Count()}"
             + (changed.Contains(number) ? "\n(changed - not saved)" : "");
@@ -235,11 +239,11 @@ internal sealed class AssetEditorWindow : Window
         for (var i = 0; i < 256; i++)
         {
             byte S(byte v) => sixBit ? (byte)Math.Min(255, v * 4) : v;
-            var r = new System.Windows.Shapes.Rectangle { Width = 16, Height = 16, Fill = new SolidColorBrush(Color.FromRgb(S(palette[i * 3]), S(palette[i * 3 + 1]), S(palette[i * 3 + 2]))), IsHitTestVisible = false };
+            var r = new Avalonia.Controls.Shapes.Rectangle { Width = 16, Height = 16, Fill = new SolidColorBrush(Color.FromRgb(S(palette[i * 3]), S(palette[i * 3 + 1]), S(palette[i * 3 + 2]))), IsHitTestVisible = false };
             Canvas.SetLeft(r, (i % 16) * 16); Canvas.SetTop(r, (i / 16) * 16);
             paletteCanvas.Children.Add(r);
         }
-        swatch = new System.Windows.Shapes.Rectangle { Width = 16, Height = 16, Stroke = Brushes.White, StrokeThickness = 2, IsHitTestVisible = false };
+        swatch = new Avalonia.Controls.Shapes.Rectangle { Width = 16, Height = 16, Stroke = Brushes.White, StrokeThickness = 2, IsHitTestVisible = false };
         paletteCanvas.Children.Add(swatch);
         UpdateSwatch();
     }
@@ -267,7 +271,7 @@ internal sealed class AssetEditorWindow : Window
     private void Paint(Point p, bool _)
     {
         if (image is null || PixelAt(p) is not { } px) return;
-        var erase = eraseTool.IsChecked == true || Keyboard.Modifiers == ModifierKeys.Shift;
+        var erase = eraseTool.IsChecked == true || Keyboard.Modifiers == KeyModifiers.Shift;
         image.Set(px.X, px.Y, colour, !erase);
         changed.Add(number); dirty = true;
         Commit();
@@ -361,27 +365,24 @@ internal sealed class AssetEditorWindow : Window
     private void Export()
     {
         if (image is null) return;
-        var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PNG image|*.png", FileName = $"picture{number}.png" };
+        var dialog = new SaveFileDialog { Filter = "PNG image|*.png", FileName = $"picture{number}.png" };
         if (dialog.ShowDialog(this) != true) return;
         var bgra = image.ToBgra(palette);
-        var bmp = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, bgra, image.Width * 4);
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bmp));
-        using (var stream = File.Create(dialog.FileName)) encoder.Save(stream);
+        var bmp = BitmapFactory.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, bgra, image.Width * 4);
+        bmp.Save(dialog.FileName);
         SetStatus($"Exported picture {number} to {dialog.FileName}.");
     }
 
     private void Import()
     {
         if (image is null || library is null) return;
-        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Images|*.png;*.bmp;*.gif;*.jpg" };
+        var dialog = new OpenFileDialog { Filter = "Images|*.png;*.bmp;*.gif;*.jpg" };
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            var decoder = BitmapDecoder.Create(new Uri(dialog.FileName), BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
-            var source = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
+            using var source = BitmapFactory.Load(dialog.FileName);     // decoded to BGRA by Avalonia (PNG, BMP, GIF, JPEG)
             if (source.PixelWidth > 255 || source.PixelHeight > 255) { MessageBox.Show(this, "A game picture can be at most 255 x 255 pixels.", Title, MessageBoxButton.OK, MessageBoxImage.Warning); return; }
-            var bgra = new byte[source.PixelWidth * source.PixelHeight * 4];
-            source.CopyPixels(bgra, source.PixelWidth * 4, 0);
+            var bgra = BitmapFactory.ToBgra(source);
             var sizeChanged = source.PixelWidth != image.Width || source.PixelHeight != image.Height;
             BeginStroke();
             var fresh = GphImage.FromBgra(bgra, source.PixelWidth, source.PixelHeight, palette, image.OffsetX, image.OffsetY, library.Raw);
@@ -390,7 +391,7 @@ internal sealed class AssetEditorWindow : Window
             Layout();
             SetStatus(sizeChanged ? $"Imported {System.IO.Path.GetFileName(dialog.FileName)}. The picture's size changed: a brick that is not the size of the others can look wrong in the game's map." : $"Imported {System.IO.Path.GetFileName(dialog.FileName)}.");
         }
-        catch (Exception e) when (e is IOException or NotSupportedException or FileFormatException or InvalidDataException or ArgumentException)
+        catch (Exception e) when (e is IOException or NotSupportedException or InvalidDataException or ArgumentException or InvalidOperationException)
         {
             MessageBox.Show(this, $"Couldn't import that picture: {e.Message}", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
         }

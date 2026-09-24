@@ -1,5 +1,6 @@
-using System.Drawing;
-using System.Drawing.Imaging;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Threading;
 using LBAAssembler;
 using LbaBodyStudio;
 
@@ -151,8 +152,7 @@ internal static class Program
             if (input == "-")
             {
                 sheetPath = Path.Combine(user, "sheet.png");
-                using var bmp = ToBitmap(FlatSheet.Render(original, palette));
-                bmp.Save(sheetPath, ImageFormat.Png);
+                FlatBitmap.Save(FlatSheet.Render(original, palette), sheetPath);
             }
             Shoot(engine, sandbox, user, Path.Combine(outDirectory, "base.png"));
             foreach (var mode in modes)
@@ -196,11 +196,9 @@ internal static class Program
         ShootRaw(engine, gameDir, user, png);
         if (!File.Exists(png)) return;
         // a close-up of the hero (the frame is 1280x960; he stands a little below the middle)
-        using var frame = new Bitmap(png);
-        var box = new Rectangle(frame.Width / 2 - 130, frame.Height * 11 / 20 - 120, 260, 300);
-        using var zoom = new Bitmap(box.Width * 3, box.Height * 3);
-        using (var g = Graphics.FromImage(zoom)) { g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor; g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half; g.DrawImage(frame, new Rectangle(0, 0, zoom.Width, zoom.Height), box, GraphicsUnit.Pixel); }
-        zoom.Save(Path.ChangeExtension(png, null) + "_zoom.png", ImageFormat.Png);
+        var frame = FlatBitmap.Load(png);
+        var zoom = Zoom(frame.Crop(frame.Width / 2 - 130, frame.Height * 11 / 20 - 120, 260, 300), 3);
+        FlatBitmap.Save(zoom, Path.ChangeExtension(png, null) + "_zoom.png");
     }
 
     private static void ShootRaw(string engine, string gameDir, string user, string png)
@@ -244,10 +242,10 @@ internal static class Program
             error += LabColour.Distance(LabColour.FromRgb(p.R, p.G, p.B), LabColour.FromRgb(q.R, q.G, q.B)); n++;
         }
         Console.WriteLine($"LBA{game} body {body}: silhouette overlap {overlap:P0}, mean colour error {error / Math.Max(1, n):F1} (dE), {result.PaletteIndices.Length} colours, {result.Regions} regions; {result.Notes}");
-        using (var bmp = ToBitmap(art)) bmp.Save(Path.Combine(Path.GetTempPath(), $"styletest_lba{game}_{body}_art.png"), ImageFormat.Png);
-        using (var bmp = ToBitmap(result.Sheet)) bmp.Save(Path.Combine(Path.GetTempPath(), $"styletest_lba{game}_{body}_result.png"), ImageFormat.Png);
+        FlatBitmap.Save(art, Path.Combine(Path.GetTempPath(), $"styletest_lba{game}_{body}_art.png"));
+        FlatBitmap.Save(result.Sheet, Path.Combine(Path.GetTempPath(), $"styletest_lba{game}_{body}_result.png"));
         var both = GameStyle.Convert(art, palette, new StyleOptions { Colours = 12, Allowed = stats.RecommendedDisplay(3), BackFromFront = true });
-        using (var bmp = ToBitmap(both.Sheet)) bmp.Save(Path.Combine(Path.GetTempPath(), $"styletest_lba{game}_{body}_sheet.png"), ImageFormat.Png);
+        FlatBitmap.Save(both.Sheet, Path.Combine(Path.GetTempPath(), $"styletest_lba{game}_{body}_sheet.png"));
         return 0;
     }
 
@@ -411,8 +409,7 @@ internal static class Program
         var body = Body.Read(new Hqr(Path.Combine(folder, file)).Read(index), game, true);
         if (game == 2) body.TexturePage = new Hqr(Path.Combine(folder, "RESS.HQR")).Read(6);
         var palette = Generator.Palette(folder);
-        using var bmp = Renderer.Render(body, palette, 700, 700, (float)(yaw * Math.PI / 180), false);
-        bmp.Save(output, ImageFormat.Png);
+        FlatBitmap.Save(Renderer.Render(body, palette, 700, 700, (float)(yaw * Math.PI / 180), false), output);
         Console.WriteLine($"{output}: {body.Vertices.Count} points, {body.Faces.Count} polygons ({body.Faces.Count(f => f.Texture is not null)} textured), {body.Textures.Length} textures");
         return 0;
     }
@@ -458,19 +455,33 @@ internal static class Program
     }
 
     // formsmoke: Body Studio's window builds and shows with its new controls (the flat-picture buttons, the game lighting box).
+    // It is an Avalonia window now, so Avalonia's platform is set up first (a display is needed, as WinForms needed one).
     [STAThread]
     private static int FormSmoke()
     {
-        System.Windows.Forms.Application.EnableVisualStyles();
-        using var form = new MainForm();
-        form.Show();
-        System.Windows.Forms.Application.DoEvents();
-        static IEnumerable<System.Windows.Forms.Control> All(System.Windows.Forms.Control c) { foreach (System.Windows.Forms.Control child in c.Controls) { yield return child; foreach (var d in All(child)) yield return d; } }
-        var texts = All(form).Select(c => c.Text).Where(t => t.Length > 0).ToList();
+        AppBuilder.Configure<Application>().UsePlatformDetect().SetupWithoutStarting();
+        Application.Current!.Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
+        var window = new BodyStudioWindow();
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        static IEnumerable<Control> All(Control c)
+        {
+            IEnumerable<Control> children = c switch
+            {
+                Panel p => p.Children,
+                Decorator d => d.Child is Control child ? [child] : [],
+                ItemsControl items => items.Items.OfType<Control>(),
+                ContentControl content => content.Content is Control inner ? [inner] : [],
+                _ => [],
+            };
+            foreach (var child in children) { yield return child; foreach (var d in All(child)) yield return d; }
+        }
+        // every control's caption: a text block's text, a button's / check box's / tab's string content, a text box's text
+        var texts = All(window).Select(c => c switch { TextBlock t => t.Text ?? "", TextBox t => t.Text ?? "", ContentControl cc => cc.Content as string ?? "", _ => "" }).Where(t => t.Length > 0).ToList();
         var wanted = new[] { "Convert the reference image to game style", "Export a flat sheet of the selected template…", "Game lighting: shade the body like the game's own characters", "Flat colours" };
         var missing = wanted.Where(w => !texts.Any(t => t == w)).ToList();
         Console.WriteLine(missing.Count == 0 ? $"body studio window: ok ({texts.Count} labelled controls)" : "MISSING: " + string.Join(" | ", missing));
-        form.Close();
+        window.Close();
         return missing.Count == 0 ? 0 : 1;
     }
 
@@ -592,23 +603,70 @@ internal static class Program
         return 0;
     }
 
-    private static Bitmap ToBitmap(FlatImage image)
+    // ---- drawing on a FlatImage (the little System.Drawing.Graphics did for this tool: the hand-drawn test silhouettes and a zoomed crop) ----
+    private static readonly uint White = Argb.Pack(255, 255, 255), Black = Argb.Pack(0, 0, 0);
+    // the backdrop of every 3D render here, and the loud magenta of the hip close-ups (a gap between torso and leg shows as it)
+    private static readonly uint Backdrop = Argb.Pack(40, 60, 90), Magenta = Argb.Pack(230, 30, 200);
+
+    private static FlatImage Blank(int width, int height, uint colour)
     {
-        var bmp = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppArgb);
-        var data = bmp.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-        System.Runtime.InteropServices.Marshal.Copy(image.Bgra, 0, data.Scan0, image.Bgra.Length);
-        bmp.UnlockBits(data);
-        return bmp;
+        var image = new FlatImage(width, height);
+        for (var y = 0; y < height; y++) for (var x = 0; x < width; x++) image.SetArgb(x, y, colour);
+        return image;
     }
 
-    private static FlatImage FromBitmap(Bitmap bmp)
+    // Nearest-neighbour enlargement by a whole factor.
+    private static FlatImage Zoom(FlatImage source, int factor)
     {
-        using var copy = bmp.Clone(new Rectangle(0, 0, bmp.Width, bmp.Height), PixelFormat.Format32bppArgb);
-        var data = copy.LockBits(new Rectangle(0, 0, copy.Width, copy.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-        var bytes = new byte[copy.Width * copy.Height * 4];
-        System.Runtime.InteropServices.Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
-        copy.UnlockBits(data);
-        return new FlatImage(copy.Width, copy.Height, bytes);
+        var zoom = new FlatImage(source.Width * factor, source.Height * factor);
+        for (var y = 0; y < zoom.Height; y++) for (var x = 0; x < zoom.Width; x++) zoom.SetArgb(x, y, source.Argb(x / factor, y / factor));
+        return zoom;
+    }
+
+    private static void FillRectangle(FlatImage image, int x, int y, int width, int height, uint colour)
+    {
+        for (var row = Math.Max(0, y); row < Math.Min(image.Height, y + height); row++)
+            for (var col = Math.Max(0, x); col < Math.Min(image.Width, x + width); col++) image.SetArgb(col, row, colour);
+    }
+
+    // The ellipse inscribed in the rectangle (x, y, width, height).
+    private static void FillEllipse(FlatImage image, float x, float y, float width, float height, uint colour)
+    {
+        float cx = x + width / 2, cy = y + height / 2, rx = width / 2, ry = height / 2;
+        for (var row = Math.Max(0, (int)MathF.Floor(y)); row <= Math.Min(image.Height - 1, (int)MathF.Ceiling(y + height)); row++)
+            for (var col = Math.Max(0, (int)MathF.Floor(x)); col <= Math.Min(image.Width - 1, (int)MathF.Ceiling(x + width)); col++)
+            {
+                float dx = (col + 0.5f - cx) / rx, dy = (row + 0.5f - cy) / ry;
+                if (dx * dx + dy * dy <= 1) image.SetArgb(col, row, colour);
+            }
+    }
+
+    // Scan-line fill, even-odd rule, pixel centres.
+    private static void FillPolygon(FlatImage image, (float X, float Y)[] points, uint colour)
+    {
+        int top = Math.Max(0, (int)MathF.Floor(points.Min(p => p.Y))), bottom = Math.Min(image.Height - 1, (int)MathF.Ceiling(points.Max(p => p.Y)));
+        var crossings = new List<float>();
+        for (var row = top; row <= bottom; row++)
+        {
+            var y = row + 0.5f; crossings.Clear();
+            for (var i = 0; i < points.Length; i++)
+            {
+                var a = points[i]; var b = points[(i + 1) % points.Length];
+                if ((a.Y <= y) == (b.Y <= y)) continue;
+                crossings.Add(a.X + (y - a.Y) * (b.X - a.X) / (b.Y - a.Y));
+            }
+            crossings.Sort();
+            for (var i = 0; i + 1 < crossings.Count; i += 2)
+                for (var col = Math.Max(0, (int)MathF.Round(crossings[i])); col < Math.Min(image.Width, (int)MathF.Round(crossings[i + 1])); col++) image.SetArgb(col, row, colour);
+        }
+    }
+
+    // A line of the given thickness (a filled quad).
+    private static void DrawLine(FlatImage image, float x0, float y0, float x1, float y1, float thickness, uint colour)
+    {
+        float dx = x1 - x0, dy = y1 - y0, length = MathF.Max(0.001f, MathF.Sqrt(dx * dx + dy * dy));
+        float nx = -dy / length * thickness / 2, ny = dx / length * thickness / 2;
+        FillPolygon(image, [(x0 + nx, y0 + ny), (x1 + nx, y1 + ny), (x1 - nx, y1 - ny), (x0 - nx, y0 - ny)], colour);
     }
 
     private static int Sheet(int game, int body, string output)
@@ -616,8 +674,7 @@ internal static class Program
         var palette = PaletteBytes(game);
         var model = Body.Read(new Hqr(Generator.BodyArchive(Folder(game))).Read(body), game);
         var sheet = FlatSheet.Render(model, palette);
-        using var bmp = ToBitmap(sheet);
-        bmp.Save(output, ImageFormat.Png);
+        FlatBitmap.Save(sheet, output);
         Console.WriteLine($"{output}: {sheet.Width}x{sheet.Height}, {FlatSheet.Colours(model).Length} colours, {model.Faces.Count} polygons");
         return 0;
     }
@@ -632,8 +689,7 @@ internal static class Program
             Body model;
             try { model = Body.Read(data, game); } catch (InvalidDataException) { continue; }
             var sheet = FlatSheet.Render(model, palette, new FlatSheet.Options { Height = 384 });
-            using var bmp = ToBitmap(sheet);
-            bmp.Save(Path.Combine(directory, $"lba{game}_body{index}.png"), ImageFormat.Png);
+            FlatBitmap.Save(sheet, Path.Combine(directory, $"lba{game}_body{index}.png"));
             Console.WriteLine($"body {index}: {model.Faces.Count} polygons, {FlatSheet.Colours(model).Length} colours");
             if (++done >= count) break;
         }
@@ -644,10 +700,8 @@ internal static class Program
     {
         var palette = PaletteBytes(game);
         var stats = BodyStyleStats.Analyse(game, AllBodies(game).Select(b => b.Data));
-        using var source = new Bitmap(input);
-        var result = GameStyle.Convert(FromBitmap(source), palette, new StyleOptions { Colours = colours, Allowed = stats.RecommendedDisplay(3) });
-        using var bmp = ToBitmap(result.Sheet);
-        bmp.Save(output, ImageFormat.Png);
+        var result = GameStyle.Convert(FlatBitmap.Load(input), palette, new StyleOptions { Colours = colours, Allowed = stats.RecommendedDisplay(3) });
+        FlatBitmap.Save(result.Sheet, output);
         Console.WriteLine($"{output}: {result.Sheet.Width}x{result.Sheet.Height}; {result.Notes}; palette indices {string.Join(",", result.PaletteIndices)}");
         return 0;
     }
@@ -664,7 +718,7 @@ internal static class Program
         try
         {
             var path = Path.Combine(work, "sheet.png");
-            using (var bmp = ToBitmap(sheet)) bmp.Save(path, ImageFormat.Png);
+            FlatBitmap.Save(sheet, path);
             foreach (var method in new[] { "New humanoid", "Fit template" })
             {
                 var settings = new Settings
@@ -681,11 +735,9 @@ internal static class Program
                 var overlap = Overlap(sheet, again);
                 var colours = FlatSheet.Colours(generated.Body);
                 Console.WriteLine($"  {method}: {generated.Body.Faces.Count} polygons (original {model.Faces.Count}), {colours.Length} colours (original {FlatSheet.Colours(model).Length}), front/back silhouette overlap {overlap.Front:P0} / {overlap.Back:P0}");
-                using var bmp = ToBitmap(again);
-                bmp.Save(Path.Combine(Path.GetTempPath(), $"roundtrip_lba{game}_{body}_{method.Split(' ')[0]}.png"), ImageFormat.Png);
+                FlatBitmap.Save(again, Path.Combine(Path.GetTempPath(), $"roundtrip_lba{game}_{body}_{method.Split(' ')[0]}.png"));
             }
-            using var original = ToBitmap(sheet);
-            original.Save(Path.Combine(Path.GetTempPath(), $"roundtrip_lba{game}_{body}_original.png"), ImageFormat.Png);
+            FlatBitmap.Save(sheet, Path.Combine(Path.GetTempPath(), $"roundtrip_lba{game}_{body}_original.png"));
         }
         finally { try { Directory.Delete(work, true); } catch (IOException) { } }
         return 0;
@@ -700,18 +752,12 @@ internal static class Program
         var body = Body.Read(bytes, 2);
         var palette = Generator.Palette(Folder(2));
         foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2), ("back", MathF.PI) })
-        {
-            using var render = Renderer.Render(body, palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
-            render.Save(Path.Combine(outDir, $"currentdummy_{name}.png"), ImageFormat.Png);
-        }
+            FlatBitmap.Save(Renderer.Render(body, palette, 700, 900, yaw, false, background: Backdrop), Path.Combine(outDir, $"currentdummy_{name}.png"));
         foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("angle", 0.5f) })
-        using (var headClose = Renderer.Render(body, palette, 900, 900, yaw, false, headOnly: true, background: Color.FromArgb(40, 60, 90)))
-            headClose.Save(Path.Combine(outDir, $"currentdummy_head_closeup_{name}.png"), ImageFormat.Png);
-        using (var close = Renderer.Render(body, palette, 1400, 1800, 0.5f, false, background: Color.FromArgb(230, 30, 200)))
+            FlatBitmap.Save(Renderer.Render(body, palette, 900, 900, yaw, false, headOnly: true, background: Backdrop), Path.Combine(outDir, $"currentdummy_head_closeup_{name}.png"));
         {
-            var hipArea = new Rectangle(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5);
-            using var cropped = close.Clone(hipArea, close.PixelFormat);
-            cropped.Save(Path.Combine(outDir, "currentdummy_hip_closeup.png"), ImageFormat.Png);
+            var close = Renderer.Render(body, palette, 1400, 1800, 0.5f, false, background: Magenta);
+            FlatBitmap.Save(close.Crop(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5), Path.Combine(outDir, "currentdummy_hip_closeup.png"));
         }
         Console.WriteLine($"  current dummy: {body.Faces.Count} polygons, {body.Vertices.Count} points, Lit={body.Lit}, colours used: {string.Join(",", FlatSheet.Colours(body))}");
         Console.WriteLine($"  renders in {outDir}");
@@ -727,26 +773,23 @@ internal static class Program
     {
         Directory.CreateDirectory(outDir);
         const int w = 300, h = 700;
-        using var bmp = new Bitmap(w, h);
-        using (var g = Graphics.FromImage(bmp))
+        var bmp = Blank(w, h, White);
         {
-            g.Clear(Color.White);
-            using var black = new SolidBrush(Color.Black);
             int cx = w / 2;
-            g.FillEllipse(black, cx - 30, 20, 60, 70);                                                     // head
-            g.FillPolygon(black, new PointF[] { new(cx - 45, 95), new(cx + 45, 95), new(cx + 55, 330), new(cx - 55, 330) }); // torso, tapering out slightly to the hips
-            g.FillRectangle(black, cx - 90, 100, 30, 220);                                                  // left arm
-            g.FillRectangle(black, cx + 60, 100, 30, 220);                                                  // right arm
+            FillEllipse(bmp, cx - 30, 20, 60, 70, Black);                                                     // head
+            FillPolygon(bmp, [(cx - 45, 95), (cx + 45, 95), (cx + 55, 330), (cx - 55, 330)], Black);          // torso, tapering out slightly to the hips
+            FillRectangle(bmp, cx - 90, 100, 30, 220, Black);                                                 // left arm
+            FillRectangle(bmp, cx + 60, 100, 30, 220, Black);                                                 // right arm
             // legs together (a normal stance, not the wide-stance stress test): each leg starts right where the torso
             // ends and the inner edges stay close and roughly parallel, the kind of small, constant gap a standing
             // figure's own crotch and ankles actually have -- this is the easy case for HipAttach, not the hard one.
-            g.FillPolygon(black, new PointF[] { new(cx - 58, 328), new(cx - 6, 328), new(cx - 8, 650), new(cx - 38, 650) });  // left leg
-            g.FillPolygon(black, new PointF[] { new(cx + 6, 328), new(cx + 58, 328), new(cx + 38, 650), new(cx + 8, 650) });  // right leg
-            g.FillRectangle(black, cx - 48, 650, 45, 30);                                                   // left foot
-            g.FillRectangle(black, cx + 3, 650, 45, 30);                                                    // right foot
+            FillPolygon(bmp, [(cx - 58, 328), (cx - 6, 328), (cx - 8, 650), (cx - 38, 650)], Black);          // left leg
+            FillPolygon(bmp, [(cx + 6, 328), (cx + 58, 328), (cx + 38, 650), (cx + 8, 650)], Black);          // right leg
+            FillRectangle(bmp, cx - 48, 650, 45, 30, Black);                                                  // left foot
+            FillRectangle(bmp, cx + 3, 650, 45, 30, Black);                                                   // right foot
         }
         var path = Path.Combine(outDir, "dummybody_source.png");
-        bmp.Save(path, ImageFormat.Png);
+        FlatBitmap.Save(bmp, path);
 
         var settings = new Settings
         {
@@ -768,19 +811,13 @@ internal static class Program
         var colours = FlatSheet.Colours(generated.Body);
         Console.WriteLine($"  {generated.Body.Faces.Count} polygons, {generated.Body.Vertices.Count} points, {colours.Length} distinct colours, {written.Length} bytes -> {Path.Combine(outDir, "dummybody.lm2")}");
         foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2), ("back", MathF.PI) })
+            FlatBitmap.Save(Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Backdrop), Path.Combine(outDir, $"dummybody_{name}.png"));
         {
-            using var render = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
-            render.Save(Path.Combine(outDir, $"dummybody_{name}.png"), ImageFormat.Png);
-        }
-        using (var close = Renderer.Render(generated.Body, generated.Palette, 1400, 1800, 0.5f, false, background: Color.FromArgb(230, 30, 200)))
-        {
-            var hipArea = new Rectangle(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5);
-            using var cropped = close.Clone(hipArea, close.PixelFormat);
-            cropped.Save(Path.Combine(outDir, "dummybody_hip_closeup.png"), ImageFormat.Png);
+            var close = Renderer.Render(generated.Body, generated.Palette, 1400, 1800, 0.5f, false, background: Magenta);
+            FlatBitmap.Save(close.Crop(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5), Path.Combine(outDir, "dummybody_hip_closeup.png"));
         }
         foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("angle", 0.5f) })
-        using (var headClose = Renderer.Render(generated.Body, generated.Palette, 900, 900, yaw, false, headOnly: true, background: Color.FromArgb(40, 60, 90)))
-            headClose.Save(Path.Combine(outDir, $"dummybody_head_closeup_{name}.png"), ImageFormat.Png);
+            FlatBitmap.Save(Renderer.Render(generated.Body, generated.Palette, 900, 900, yaw, false, headOnly: true, background: Backdrop), Path.Combine(outDir, $"dummybody_head_closeup_{name}.png"));
         Console.WriteLine($"  source + renders in {outDir}");
         return 0;
     }
@@ -793,31 +830,27 @@ internal static class Program
     {
         Directory.CreateDirectory(outDir);
         const int w = 300, h = 700;
-        using var bmp = new Bitmap(w, h);
-        using (var g = Graphics.FromImage(bmp))
+        var bmp = Blank(w, h, White);
         {
-            g.Clear(Color.White);
-            using var black = new SolidBrush(Color.Black);
             // head
-            g.FillEllipse(black, w / 2 - 30, 20, 60, 70);
+            FillEllipse(bmp, w / 2 - 30, 20, 60, 70, Black);
             // torso, tapering slightly to the hips
-            g.FillPolygon(black, new PointF[] { new(w / 2 - 45, 95), new(w / 2 + 45, 95), new(w / 2 + 55, 330), new(w / 2 - 55, 330) });
+            FillPolygon(bmp, [(w / 2 - 45, 95), (w / 2 + 45, 95), (w / 2 + 55, 330), (w / 2 - 55, 330)], Black);
             // arms, straight down at the sides
-            g.FillRectangle(black, w / 2 - 90, 100, 30, 220);
-            g.FillRectangle(black, w / 2 + 60, 100, 30, 220);
+            FillRectangle(bmp, w / 2 - 90, 100, 30, 220, Black);
+            FillRectangle(bmp, w / 2 + 60, 100, 30, 220, Black);
             // legs: a wide stance -- already two separate silhouettes well above the torso's own bottom (y=330),
             // splitting apart from as high as y=300 -- and asymmetric (the right leg planted further out).
-            g.FillPolygon(black, new PointF[] { new(w / 2 - 55, 300), new(w / 2 - 15, 300), new(w / 2 - 30, 650), new(w / 2 - 85, 650) });   // left leg
-            g.FillPolygon(black, new PointF[] { new(w / 2 + 15, 300), new(w / 2 + 65, 300), new(w / 2 + 110, 650), new(w / 2 + 40, 650) });  // right leg, wider stance
+            FillPolygon(bmp, [(w / 2 - 55, 300), (w / 2 - 15, 300), (w / 2 - 30, 650), (w / 2 - 85, 650)], Black);   // left leg
+            FillPolygon(bmp, [(w / 2 + 15, 300), (w / 2 + 65, 300), (w / 2 + 110, 650), (w / 2 + 40, 650)], Black);  // right leg, wider stance
             // a thin "held object" (knife/weapon) along the right leg only, from hip to knee
-            using var pen = new Pen(Color.Black, 6);
-            g.DrawLine(pen, w / 2 + 70, 310, w / 2 + 95, 470);
+            DrawLine(bmp, w / 2 + 70, 310, w / 2 + 95, 470, 6, Black);
             // feet
-            g.FillRectangle(black, w / 2 - 95, 650, 65, 30);
-            g.FillRectangle(black, w / 2 + 30, 650, 90, 30);
+            FillRectangle(bmp, w / 2 - 95, 650, 65, 30, Black);
+            FillRectangle(bmp, w / 2 + 30, 650, 90, 30, Black);
         }
         var path = Path.Combine(outDir, "widestance_source.png");
-        bmp.Save(path, ImageFormat.Png);
+        FlatBitmap.Save(bmp, path);
 
         var settings = new Settings
         {
@@ -829,17 +862,13 @@ internal static class Program
         var suffix = headDetails ? "_bandana" : "";
         foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2) })
         {
-            using var render = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
-            render.Save(Path.Combine(outDir, $"widestance{suffix}_{name}.png"), ImageFormat.Png);
-            using var wire = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, true, background: Color.FromArgb(40, 60, 90));
-            wire.Save(Path.Combine(outDir, $"widestance{suffix}_{name}_wire.png"), ImageFormat.Png);
+            FlatBitmap.Save(Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Backdrop), Path.Combine(outDir, $"widestance{suffix}_{name}.png"));
+            FlatBitmap.Save(Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, true, background: Backdrop), Path.Combine(outDir, $"widestance{suffix}_{name}_wire.png"));
         }
         // A tight crop right around the hip/leg join, zoomed, so a gap of even a few pixels is unambiguous.
-        using (var close = Renderer.Render(generated.Body, generated.Palette, 1400, 1800, 0.5f, false, background: Color.FromArgb(230, 30, 200)))
         {
-            var hipArea = new Rectangle(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5);
-            using var cropped = close.Clone(hipArea, close.PixelFormat);
-            cropped.Save(Path.Combine(outDir, $"widestance{suffix}_hip_closeup.png"), ImageFormat.Png);
+            var close = Renderer.Render(generated.Body, generated.Palette, 1400, 1800, 0.5f, false, background: Magenta);
+            FlatBitmap.Save(close.Crop(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5), Path.Combine(outDir, $"widestance{suffix}_hip_closeup.png"));
         }
         Console.WriteLine($"  source + renders in {outDir}");
         return 0;
@@ -861,12 +890,8 @@ internal static class Program
         var generated = Generator.Generate(settings, 2);
         var tag = Environment.GetEnvironmentVariable("REFTEST_TAG") ?? "";
         foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2), ("back", MathF.PI) })
-        {
-            using var render = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
-            render.Save(Path.Combine(outDir, $"reftest{tag}_{name}.png"), ImageFormat.Png);
-        }
-        using (var boned = Renderer.Render(generated.Body, generated.Palette, 700, 900, 0f, false, bones: true, background: Color.FromArgb(40, 60, 90)))
-            boned.Save(Path.Combine(outDir, $"reftest{tag}_bones.png"), ImageFormat.Png);
+            FlatBitmap.Save(Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Backdrop), Path.Combine(outDir, $"reftest{tag}_{name}.png"));
+        FlatBitmap.Save(Renderer.Render(generated.Body, generated.Palette, 700, 900, 0f, false, bones: true, background: Backdrop), Path.Combine(outDir, $"reftest{tag}_bones.png"));
         if (Environment.GetEnvironmentVariable("REFTEST_DUMP") == "1")
         {
             var world = generated.Body.World();
@@ -1215,13 +1240,10 @@ internal static class Program
             var paletteOffset = BitConverter.ToInt32(xpl, 4);
             raw = xpl[paletteOffset..(paletteOffset + 768)];
         }
-        var palette = new Color[256];
-        for (var i = 0; i < 256; i++) palette[i] = Color.FromArgb(raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]);
+        var palette = new uint[256];
+        for (var i = 0; i < 256; i++) palette[i] = Argb.Pack(raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]);
         foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2) })
-        {
-            using var render = Renderer.Render(body, palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
-            render.Save(Path.Combine(outDir, $"hqrpreviewress_{index}_ress{ressEntry}_{name}.png"), ImageFormat.Png);
-        }
+            FlatBitmap.Save(Renderer.Render(body, palette, 700, 900, yaw, false, background: Backdrop), Path.Combine(outDir, $"hqrpreviewress_{index}_ress{ressEntry}_{name}.png"));
         Console.WriteLine($"  entry {index} under RESS entry {ressEntry}: {body.Faces.Count} polygons -> {outDir}");
         return 0;
     }
@@ -1232,10 +1254,7 @@ internal static class Program
         var body = Body.Read(new Hqr(hqrPath).Read(index), previewGame);
         var palette = Generator.Palette(Folder(previewGame));
         foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2) })
-        {
-            using var render = Renderer.Render(body, palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
-            render.Save(Path.Combine(outDir, $"hqrpreview_{index}_{name}.png"), ImageFormat.Png);
-        }
+            FlatBitmap.Save(Renderer.Render(body, palette, 700, 900, yaw, false, background: Backdrop), Path.Combine(outDir, $"hqrpreview_{index}_{name}.png"));
         Console.WriteLine($"  entry {index}: {body.Faces.Count} polygons, {body.Vertices.Count} points, {body.Bones.Count} bones -> {outDir}");
         return 0;
     }
@@ -1255,7 +1274,7 @@ internal static class Program
         try
         {
             var path = Path.Combine(work, "sheet.png");
-            using (var bmp = ToBitmap(sheet)) bmp.Save(path, ImageFormat.Png);
+            FlatBitmap.Save(sheet, path);
             var settings = new Settings
             {
                 // New humanoid always needs the Twinsen-rig donor (body 0), regardless of which body's own silhouette
@@ -1265,10 +1284,7 @@ internal static class Program
             };
             var generated = Generator.Generate(settings, game);
             foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2), ("back", MathF.PI) })
-            {
-                using var bmp = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
-                bmp.Save(Path.Combine(outDir, $"render3d_lba{game}_{body}_{name}.png"), ImageFormat.Png);
-            }
+                FlatBitmap.Save(Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Backdrop), Path.Combine(outDir, $"render3d_lba{game}_{body}_{name}.png"));
             Console.WriteLine($"  rendered to {outDir}");
         }
         finally { try { Directory.Delete(work, true); } catch (IOException) { } }

@@ -1,7 +1,12 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace LBAAssembler;
 
@@ -15,7 +20,7 @@ namespace LBAAssembler;
 // One shared, static implementation (not a copy per window) since the app is otherwise all on the UI thread:
 // loading a scene, rendering a joined map, saving an actor edit, and everything else this wraps runs
 // synchronously, so the only way the cursor/progress strip actually get a chance to paint before the blocking
-// call starts is to force one dispatcher frame through first -- Dispatcher.Invoke at Render priority does
+// call starts is to force one dispatcher frame through first -- Dispatcher.UIThread.Invoke at Render priority does
 // nothing itself, but doesn't return until WPF's own next render pass (which now includes the cursor and the
 // progress strip) has actually happened. Scopes nest correctly (an inner one changes nothing when an outer one
 // is already active) so a wrapped call is free to call another wrapped call.
@@ -28,16 +33,16 @@ internal static class UiBusy
     public static IDisposable Cursor() => new Scope(null);
 
     // A longer, or unpredictable-duration, operation: the wait cursor plus `text…` in the given progress strip
-    // (a FrameworkElement to show/hide and the TextBlock inside it to set the label on -- MainWindow's own
+    // (a Control to show/hide and the TextBlock inside it to set the label on -- MainWindow's own
     // BusyPanel/BusyLabel, say). Pass null for panel/label to fall back to the cursor alone (e.g. a window with
     // nowhere to put a progress strip).
-    public static IDisposable Progress(FrameworkElement? panel, TextBlock? label, string text) => new Scope(panel is null || label is null ? null : (panel, label, text));
+    public static IDisposable Progress(Control? panel, TextBlock? label, string text) => new Scope(panel is null || label is null ? null : (panel, label, text));
 
     private sealed class Scope : IDisposable
     {
-        private readonly (FrameworkElement Panel, TextBlock Label, string Text)? progress;
+        private readonly (Control Panel, TextBlock Label, string Text)? progress;
 
-        public Scope((FrameworkElement Panel, TextBlock Label, string Text)? progress)
+        public Scope((Control Panel, TextBlock Label, string Text)? progress)
         {
             this.progress = progress;
             if (depth == 0) previousCursor = Mouse.OverrideCursor;

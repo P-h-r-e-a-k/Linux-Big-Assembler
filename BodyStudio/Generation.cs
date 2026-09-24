@@ -1,4 +1,3 @@
-using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -59,23 +58,32 @@ public sealed class Settings
     public string OutputFolder { get; set; } = "";
 }
 
-public sealed class ReferenceImage : IDisposable
+// A pixel rectangle of a picture (what System.Drawing.Rectangle was): X, Y and size, Right and Bottom exclusive.
+public readonly record struct ImageRect(int X,int Y,int Width,int Height)
 {
-    public Bitmap Bitmap { get; }
-    public Rectangle Crop { get; }
+    public int Left=>X;public int Top=>Y;public int Right=>X+Width;public int Bottom=>Y+Height;
+    public static ImageRect FromLTRB(int left,int top,int right,int bottom)=>new(left,top,right-left,bottom-top);
+}
+
+// The reference picture (one view of it): the pixels it projects colours from (Image, a FlatImage), the subject's crop, and the
+// subject's silhouette per row (Rows, Runs), read from a mask of the subject.
+public sealed class ReferenceImage
+{
+    public FlatImage Image { get; }
+    public ImageRect Crop { get; }
     public (float Left,float Right)[] Rows { get; }
     public List<(float Left,float Right)>[] Runs { get; }
-    public ReferenceImage(Bitmap source,Rectangle region,Settings settings)
+    public ReferenceImage(FlatImage source,ImageRect region,Settings settings)
     {
         // Work at bounded resolution; projection keeps the original image pixels.
-        Bitmap=source.Clone(region,System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        using var small=new Bitmap(Bitmap,new Size(Math.Min(384,Bitmap.Width),Math.Min(768,Bitmap.Height)));
+        Image=source.Crop(region.X,region.Y,region.Width,region.Height);
+        var small=Image.Resize(Math.Min(384,Image.Width),Math.Min(768,Image.Height));
         int w=small.Width,h=small.Height;
-        Color bg=small.GetPixel(0,0);
+        var bg=small.Pixel(0,0);
         bool[,] mask=new bool[w,h];
         for(int y=0;y<h;y++)for(int x=0;x<w;x++)
         {
-            var c=small.GetPixel(x,y);int lum=(c.R*299+c.G*587+c.B*114)/1000;
+            var c=small.Pixel(x,y);int lum=(c.R*299+c.G*587+c.B*114)/1000;
             mask[x,y]=settings.Mask switch
             {
                 "Transparent background"=>c.A>128,
@@ -85,22 +93,22 @@ public sealed class ReferenceImage : IDisposable
             };
         }
         // Ignore foreground components touching the edge (dark backdrop corners).
-        bool[,] seen=new bool[w,h];var components=new List<List<Point>>();
+        bool[,] seen=new bool[w,h];var components=new List<List<(int X,int Y)>>();
         for(int y=0;y<h;y++)for(int x=0;x<w;x++)
         {
             if(seen[x,y]||!mask[x,y])continue;
-            var list=new List<Point>();var queue=new Queue<Point>();queue.Enqueue(new(x,y));seen[x,y]=true;bool edge=false;
+            var list=new List<(int X,int Y)>();var queue=new Queue<(int X,int Y)>();queue.Enqueue((x,y));seen[x,y]=true;bool edge=false;
             while(queue.Count>0)
             {
                 var a=queue.Dequeue();list.Add(a);edge|=a.X==0||a.Y==0||a.X==w-1||a.Y==h-1;
-                foreach(var d in new[]{new Point(1,0),new Point(-1,0),new Point(0,1),new Point(0,-1)})
-                { int xx=a.X+d.X,yy=a.Y+d.Y;if(xx>=0&&xx<w&&yy>=0&&yy<h&&!seen[xx,yy]&&mask[xx,yy]){seen[xx,yy]=true;queue.Enqueue(new(xx,yy));} }
+                foreach(var d in new (int X,int Y)[]{(1,0),(-1,0),(0,1),(0,-1)})
+                { int xx=a.X+d.X,yy=a.Y+d.Y;if(xx>=0&&xx<w&&yy>=0&&yy<h&&!seen[xx,yy]&&mask[xx,yy]){seen[xx,yy]=true;queue.Enqueue((xx,yy));} }
             }
             if(!edge&&list.Count>30)components.Add(list);
         }
         if(!settings.AutoCrop)
         {
-            Crop=new(0,0,Bitmap.Width,Bitmap.Height);
+            Crop=new(0,0,Image.Width,Image.Height);
         }
         else
         {
@@ -114,13 +122,13 @@ public sealed class ReferenceImage : IDisposable
                 int cx=c.Sum(p=>p.X)/c.Count,cy=c.Sum(p=>p.Y)/c.Count;
                 if(cx>minX&&cx<maxX&&cy<maxY&&c.Max(p=>p.Y)>=minY-h/6){minY=Math.Min(minY,c.Min(p=>p.Y));}
             }
-            Crop=Rectangle.FromLTRB(minX*Bitmap.Width/w,minY*Bitmap.Height/h,Math.Min(Bitmap.Width,(maxX+1)*Bitmap.Width/w),Math.Min(Bitmap.Height,(maxY+1)*Bitmap.Height/h));
+            Crop=ImageRect.FromLTRB(minX*Image.Width/w,minY*Image.Height/h,Math.Min(Image.Width,(maxX+1)*Image.Width/w),Math.Min(Image.Height,(maxY+1)*Image.Height/h));
         }
         Rows=new (float,float)[256];Runs=new List<(float,float)>[256];
         for(int r=0;r<Rows.Length;r++)
         {
-            int y=Math.Clamp((int)((Crop.Top+((r+0.5f)/256)*Crop.Height)*h/Bitmap.Height),0,h-1);
-            int a=Math.Clamp(Crop.Left*w/Bitmap.Width,0,w-1),z=Math.Clamp(Crop.Right*w/Bitmap.Width-1,0,w-1);
+            int y=Math.Clamp((int)((Crop.Top+((r+0.5f)/256)*Crop.Height)*h/Image.Height),0,h-1);
+            int a=Math.Clamp(Crop.Left*w/Image.Width,0,w-1),z=Math.Clamp(Crop.Right*w/Image.Width-1,0,w-1);
             int left=z,right=a;Runs[r]=[];int runStart=-1;
             for(int x=a;x<=z+1;x++)
             {
@@ -131,16 +139,17 @@ public sealed class ReferenceImage : IDisposable
             Rows[r]=right>=left?((float)(left-a)/(z-a+1),(float)(right-a+1)/(z-a+1)):(0.35f,0.65f);
         }
     }
-    public Color Sample(float u,float v)
+    // The picture's colour at (u, v) of the crop, packed ARGB.
+    public uint Sample(float u,float v)
     {
         int x=Math.Clamp(Crop.Left+(int)(u*(Crop.Width-1)),Crop.Left,Crop.Right-1);
         int y=Math.Clamp(Crop.Top+(int)(v*(Crop.Height-1)),Crop.Top,Crop.Bottom-1);
-        return Bitmap.GetPixel(x,y);
+        return Image.Argb(x,y);
     }
-    public void Dispose()=>Bitmap.Dispose();
 }
 
-public sealed record Generated(Body Body,Color[] Palette,int TemplateIndex,string SourceArchive,string ImagePath);
+// Palette: the game's 256 colours as packed 0xAARRGGBB (alpha 0xFF).
+public sealed record Generated(Body Body,uint[] Palette,int TemplateIndex,string SourceArchive,string ImagePath);
 
 public static class Generator
 {
@@ -150,11 +159,12 @@ public static class Generator
         string backup=Path.Combine(folder,"OrigBODY.HQR");
         return File.Exists(backup)?backup:Path.Combine(folder,"BODY.HQR");
     }
-    public static Color[] Palette(string folder)
+    // The game's palette (RESS.HQR entry 0) as 256 packed 0xAARRGGBB colours, alpha 0xFF.
+    public static uint[] Palette(string folder)
     {
         var bytes=new Hqr(Path.Combine(folder,"RESS.HQR")).Read(0);
         if(bytes.Length!=768)throw new InvalidDataException("Expected a 256-colour RGB palette in RESS.HQR entry 0.");
-        return Enumerable.Range(0,256).Select(i=>Color.FromArgb(bytes[i*3],bytes[i*3+1],bytes[i*3+2])).ToArray();
+        return Enumerable.Range(0,256).Select(i=>Argb.Pack(bytes[i*3],bytes[i*3+1],bytes[i*3+2])).ToArray();
     }
     public static Generated Generate(Settings settings,int game)
     {
@@ -168,10 +178,10 @@ public static class Generator
         var model=Body.Read(new Hqr(archive).Read(index),game);var palette=Palette(folder);
         var donorWorld=model.World();
         var jointOrigins=model.Bones.Select(b=>b.Parent<0?Vector3.Zero:donorWorld[b.Pivot]).ToArray();
-        using var original=new Bitmap(settings.ImagePath);
+        var original=FlatBitmap.Load(settings.ImagePath);
         bool split=settings.Layout=="Front + back";
-        using var front=new ReferenceImage(original,new(0,0,split?original.Width/2:original.Width,original.Height),settings);
-        using var back=split?new ReferenceImage(original,new(original.Width/2,0,original.Width-original.Width/2,original.Height),settings):null;
+        var front=new ReferenceImage(original,new(0,0,split?original.Width/2:original.Width,original.Height),settings);
+        var back=split?new ReferenceImage(original,new(original.Width/2,0,original.Width-original.Width/2,original.Height),settings):null;
         if(settings.Method=="New humanoid")model=Humanoid.Build(model,front,settings);
         var world=model.World();float minY=world.Min(v=>v.Y),height=world.Max(v=>v.Y)-minY;
         float minX=world.Min(v=>v.X),maxX=world.Max(v=>v.X),centreX=(minX+maxX)/2;
@@ -206,7 +216,7 @@ public static class Generator
         for(int b=1;b<model.Bones.Count;b++)world[model.Bones[b].Pivot]=jointOrigins[b];
         model.SetWorld(world);
         float outputHeight=world.Max(v=>v.Y),projectionWidth=targetWidth*settings.Width;
-        Color Sample(Vector3 p)
+        uint Sample(Vector3 p)
         {
             bool isFront=settings.NegativeZFront?p.Z<=0:p.Z>=0;
             var reference=isFront||back==null?front:back;
@@ -223,11 +233,11 @@ public static class Generator
             }
             return reference.Sample(Math.Clamp(u,0,1),v);
         }
-        int NearestColour(Color c)
+        int NearestColour(uint c)
         {
-            int best=1;double score=double.MaxValue;
+            int best=1;double score=double.MaxValue;int r=Argb.R(c),g=Argb.G(c),b=Argb.B(c);
             // Index zero is reserved by a number of asset tools; use another black when possible.
-            for(int i=1;i<256;i++){var q=palette[i];double d=(c.R-q.R)*(c.R-q.R)+(c.G-q.G)*(c.G-q.G)+(c.B-q.B)*(c.B-q.B);if(d<score){score=d;best=i;}}
+            for(int i=1;i<256;i++){var q=palette[i];double d=(r-Argb.R(q))*(r-Argb.R(q))+(g-Argb.G(q))*(g-Argb.G(q))+(b-Argb.B(q))*(b-Argb.B(q));if(d<score){score=d;best=i;}}
             return best;
         }
         int Colour(Vector3 p)=>NearestColour(Sample(p));
@@ -235,7 +245,7 @@ public static class Generator
         world=model.World();
         // Lit polygons are shaded by adding the light (0..~11 ramp steps) to their colour, so their colour is the bottom of the ramp the picture's colour sits in.
         int Face(int index)=>settings.Lit?LitBase(index,game):index;
-        for(int i=0;i<model.Faces.Count;i++){var f=model.Faces[i];model.Faces[i]=f with{Colour=Face(f.DetailTone>=0?NearestColour(Color.FromArgb(f.DetailTone,f.DetailTone,f.DetailTone)):Colour(f.Points.Select(p=>world[p]).Aggregate(Vector3.Zero,(a,b)=>a+b)/f.Points.Length))};}
+        for(int i=0;i<model.Faces.Count;i++){var f=model.Faces[i];model.Faces[i]=f with{Colour=Face(f.DetailTone>=0?NearestColour(Argb.Pack(f.DetailTone,f.DetailTone,f.DetailTone)):Colour(f.Points.Select(p=>world[p]).Aggregate(Vector3.Zero,(a,b)=>a+b)/f.Points.Length))};}
         for(int i=0;i<model.Lines.Count;i++){var l=model.Lines[i];model.Lines[i]=l with{Colour=Colour((world[l.A]+world[l.B])/2)};}
         for(int i=0;i<model.Spheres.Count;i++){var sp=model.Spheres[i];model.Spheres[i]=sp with{Colour=Colour(world[sp.Point]),Radius=(int)Math.Round(sp.Radius*Math.Min(settings.Width,settings.Depth))};}
         // Quantize through the native representation used by the exported preview.
@@ -245,7 +255,7 @@ public static class Generator
     }
     // See LightModel: a picture colour is what shows on screen, the body stores the ramp start the game's light lifts to it.
     public static int LitBase(int index,int game)=>LightModel.BaseOf(index,game);
-    static void AddDetail(Body model,Vector3[] world,Func<Vector3,Color> sample,int budget)
+    static void AddDetail(Body model,Vector3[] world,Func<Vector3,uint> sample,int budget)
     {
         var points=world.ToList();var owners=new List<int>();
         for(int i=0;i<model.Bones.Count;i++)owners.AddRange(Enumerable.Repeat(i,model.Bones[i].Count));
@@ -259,7 +269,7 @@ public static class Generator
                 if(model.Game==1&&model.DrawBufferBytes+f.Points.Length*22-(4+f.Points.Length*6)>9900)continue;
                 var centre=f.Points.Select(p=>points[p]).Aggregate(Vector3.Zero,(a,b)=>a+b)/f.Points.Length;
                 var colours=f.Points.Select(p=>sample(points[p]*0.75f+centre*0.25f)).Append(sample(centre)).ToArray();
-                double variance=colours.Max(c=>c.R+c.G+c.B)-colours.Min(c=>c.R+c.G+c.B);
+                double variance=colours.Max(c=>Argb.R(c)+Argb.G(c)+Argb.B(c))-colours.Min(c=>Argb.R(c)+Argb.G(c)+Argb.B(c));
                 var a=points[f.Points[0]];var b=points[f.Points[1]];var c=points[f.Points[2]];
                 double area=Vector3.Cross(b-a,c-a).Length()/2;
                 double score=variance*Math.Sqrt(area);
@@ -310,13 +320,13 @@ public static class Generator
                 File.WriteAllBytes(Path.Combine(dir,"BODY.HQR"),archive);
             }
             ExportObj(g,dir);
-            using var preview=Renderer.Render(g.Body,g.Palette,900,1000,0.4f,false);preview.Save(Path.Combine(dir,"preview.png"));
+            FlatBitmap.Save(Renderer.Render(g.Body,g.Palette,900,1000,0.4f,false),Path.Combine(dir,"preview.png"));
             if(settings.HeadDetails)
             {
                 float frontYaw=settings.NegativeZFront?0:MathF.PI;
-                using var headFront=Renderer.Render(g.Body,g.Palette,900,700,frontYaw,false,headOnly:true);headFront.Save(Path.Combine(dir,"head-front.png"));
-                using var headBack=Renderer.Render(g.Body,g.Palette,900,700,frontYaw+MathF.PI,false,headOnly:true);headBack.Save(Path.Combine(dir,"head-back.png"));
-                using var headAngle=Renderer.Render(g.Body,g.Palette,900,700,frontYaw+.55f,false,headOnly:true);headAngle.Save(Path.Combine(dir,"head-angle.png"));
+                FlatBitmap.Save(Renderer.Render(g.Body,g.Palette,900,700,frontYaw,false,headOnly:true),Path.Combine(dir,"head-front.png"));
+                FlatBitmap.Save(Renderer.Render(g.Body,g.Palette,900,700,frontYaw+MathF.PI,false,headOnly:true),Path.Combine(dir,"head-back.png"));
+                FlatBitmap.Save(Renderer.Render(g.Body,g.Palette,900,700,frontYaw+.55f,false,headOnly:true),Path.Combine(dir,"head-angle.png"));
             }
             File.WriteAllText(Path.Combine(dir,"manifest.json"),JsonSerializer.Serialize(new{game=$"LBA{g.Body.Game}",bodyIndex=g.TemplateIndex,sourceArchive=g.SourceArchive,sourceImage=g.ImagePath,archiveCompression="HQR method 1",skeleton="Donor rest joint positions and hierarchy preserved",vertices=g.Body.Vertices.Count,polygons=g.Body.Faces.Count,bones=g.Body.Bones.Count,headDetails=settings.HeadDetails,bandanaText=settings.HeadDetails?settings.BandanaText:null,method=settings.Method+(settings.HeadDetails?": image-derived body, authored bandana, geometric lettering, individual teeth and rear ties on the head bone":": silhouette fitting, rigid bone hierarchy, palette projection, adaptive face refinement"),validated="Native body readback and archive readback. In-game playback not verified."},new JsonSerializerOptions{WriteIndented=true}));
         }
@@ -327,7 +337,7 @@ public static class Generator
     {
         using var obj=new StreamWriter(Path.Combine(folder,"character.obj"));using var mtl=new StreamWriter(Path.Combine(folder,"character.mtl"));obj.WriteLine("mtllib character.mtl");
         foreach(var v in g.Body.World())obj.WriteLine(FormattableString.Invariant($"v {v.X} {v.Y} {v.Z}"));
-        foreach(int c in g.Body.Faces.Select(f=>f.Colour).Distinct()){var p=g.Palette[c];mtl.WriteLine(FormattableString.Invariant($"newmtl palette{c}\nKd {p.R/255f} {p.G/255f} {p.B/255f}"));}
+        foreach(int c in g.Body.Faces.Select(f=>f.Colour).Distinct()){var p=g.Palette[c];mtl.WriteLine(FormattableString.Invariant($"newmtl palette{c}\nKd {Argb.R(p)/255f} {Argb.G(p)/255f} {Argb.B(p)/255f}"));}
         foreach(var f in g.Body.Faces){obj.WriteLine($"usemtl palette{f.Colour}");obj.WriteLine("f "+string.Join(" ",f.Points.Select(p=>p+1)));}
     }
 }

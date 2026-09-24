@@ -1,9 +1,15 @@
 using System.Diagnostics;
 using System.IO;
-using System.Windows;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using System.Runtime.InteropServices;
-using System.Windows.Media;
 
 namespace LBAAssembler;
 
@@ -29,8 +35,11 @@ internal sealed class CommunityRendererBackend
         var editorRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
         var vendoredRoot = Path.Combine(editorRoot, "native", "lba2-classic-community");
         var siblingRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "lba2-classic-community"));
-        var vendoredLibrary = Path.Combine(vendoredRoot, "out", "build", "windows_ucrt64", "SOURCES", "3DEXT", "liblba2_renderer.dll");
-        var siblingLibrary = Path.Combine(siblingRoot, "out", "build", "windows_ucrt64", "SOURCES", "3DEXT", "liblba2_renderer.dll");
+        // the development build tree of the vendored engine: the "linux" CMake preset here, MSYS2's UCRT64 one on Windows
+        var buildTree = OperatingSystem.IsWindows() ? "windows_ucrt64" : "linux";
+        var libraryFile = OperatingSystem.IsWindows() ? "liblba2_renderer.dll" : "liblba2_renderer.so";
+        var vendoredLibrary = Path.Combine(vendoredRoot, "out", "build", buildTree, "SOURCES", "3DEXT", libraryFile);
+        var siblingLibrary = Path.Combine(siblingRoot, "out", "build", buildTree, "SOURCES", "3DEXT", libraryFile);
         var repoRoot = File.Exists(vendoredLibrary) ? vendoredRoot : File.Exists(siblingLibrary) ? siblingRoot : vendoredRoot;
         enginePath = Path.Combine(repoRoot, "out", "build", "windows_ucrt64", "SOURCES", "lba2cc.exe");
         referenceDirectory = Path.Combine(repoRoot, "out", "named-probes");
@@ -146,7 +155,7 @@ internal sealed class CommunityRendererBackend
     // drawSky asserts the sky flag for this frame, and the sea flag is always turned back on: the
     // minimap render (RenderIslandTopDown) leaves sea off, and setting either flag from outside
     // this lock could land in the middle of a minimap render and put sea back over its land.
-    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0, bool drawSky = true)
+    public Bitmap? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0, bool drawSky = true)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
@@ -185,7 +194,7 @@ internal sealed class CommunityRendererBackend
             var pixels = new byte[width * height];
             for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
             if (!pixels.Any(value => value != 0)) { directFailure = "native framebuffer contains only zero indices"; return null; }
-            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            var bitmap = BitmapFactory.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
             bitmap.Freeze();
             return bitmap;
         }
@@ -214,7 +223,7 @@ internal sealed class CommunityRendererBackend
     // starting point once the user starts
     // scrolling, since there's otherwise no way to know where this fixed
     // camera actually ended up.
-    public BitmapSource? RenderInteriorSceneDirect(int numscene, byte[] paletteBytes, out int cameraX, out int cameraY, out int cameraZ)
+    public Bitmap? RenderInteriorSceneDirect(int numscene, byte[] paletteBytes, out int cameraX, out int cameraY, out int cameraZ)
     {
         cameraX = cameraY = cameraZ = 0;
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
@@ -237,7 +246,7 @@ internal sealed class CommunityRendererBackend
             if (pointer == IntPtr.Zero || width <= 0 || height <= 0) { directFailure = $"framebuffer invalid: {width}x{height}, {pitch}"; return null; }
             var pixels = new byte[width * height];
             for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
-            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            var bitmap = BitmapFactory.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
             bitmap.Freeze();
             return bitmap;
         }
@@ -256,7 +265,7 @@ internal sealed class CommunityRendererBackend
     public void ReleaseInterior() => interiorLoaded = false;
 
     // RenderInteriorSceneDirect + RenderInteriorFullDirect as one step under the render lock.
-    public BitmapSource? RenderInteriorSceneFullDirect(int numscene, byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> actors, out InteriorOverlay overlay)
+    public Bitmap? RenderInteriorSceneFullDirect(int numscene, byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> actors, out InteriorOverlay overlay)
     {
         actors = new();
         overlay = InteriorOverlay.Empty;
@@ -277,7 +286,7 @@ internal sealed class CommunityRendererBackend
     // lba2_renderer_render_interior_full), plus each scene actor's position
     // and hit size in that bitmap's pixel space, and the actors' patrol routes
     // and the scene's zones projected into the same space.
-    public BitmapSource? RenderInteriorFullDirect(byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> actors, out InteriorOverlay overlay)
+    public Bitmap? RenderInteriorFullDirect(byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> actors, out InteriorOverlay overlay)
     {
         actors = new();
         overlay = InteriorOverlay.Empty;
@@ -329,7 +338,7 @@ internal sealed class CommunityRendererBackend
             }
             overlay = new InteriorOverlay(routes, zones);
 
-            var bitmap = BitmapSource.Create(InteriorCanvasWidth, InteriorCanvasHeight, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, InteriorCanvasWidth);
+            var bitmap = BitmapFactory.Create(InteriorCanvasWidth, InteriorCanvasHeight, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, InteriorCanvasWidth);
             bitmap.Freeze();
             return bitmap;
         }
@@ -337,7 +346,7 @@ internal sealed class CommunityRendererBackend
 
     // A SPRITE_3D actor's sprite (a key, coin, chest...) on a transparent-looking
     // black frame, cropped to the sprite, for the attributes window's preview.
-    public BitmapSource? RenderSpritePreview(int sprite, byte[] paletteBytes)
+    public Bitmap? RenderSpritePreview(int sprite, byte[] paletteBytes)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
         lock (directRenderLock)
@@ -347,8 +356,8 @@ internal sealed class CommunityRendererBackend
             if (pointer == IntPtr.Zero || width <= 0 || height <= 0) return null;
             var pixels = new byte[width * height];
             for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
-            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
-            var crop = new CroppedBitmap(bitmap, new Int32Rect(Math.Max(0, sx), Math.Max(0, sy), Math.Min(sw, width - Math.Max(0, sx)), Math.Min(sh, height - Math.Max(0, sy))));
+            var bitmap = BitmapFactory.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            var crop = BitmapFactory.Crop(bitmap, new PixelRect(Math.Max(0, sx), Math.Max(0, sy), Math.Min(sw, width - Math.Max(0, sx)), Math.Min(sh, height - Math.Max(0, sy))));
             crop.Freeze();
             return crop;
         }
@@ -361,7 +370,7 @@ internal sealed class CommunityRendererBackend
     // threads at once. Returns null if the body doesn't resolve to anything
     // drawable (e.g. NO_BODY) or the renderer isn't ready; the caller should
     // show a fallback message rather than a stale frame in that case.
-    public BitmapSource? RenderBodyPreview(int genBody, int genAnim, int cameraBeta, int cameraDistance, byte[] paletteBytes)
+    public Bitmap? RenderBodyPreview(int genBody, int genAnim, int cameraBeta, int cameraDistance, byte[] paletteBytes)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
         lock (directRenderLock)
@@ -371,7 +380,7 @@ internal sealed class CommunityRendererBackend
             if (pointer == IntPtr.Zero || width <= 0 || height <= 0) return null;
             var pixels = new byte[width * height];
             for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
-            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            var bitmap = BitmapFactory.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
             bitmap.Freeze();
             return bitmap;
         }
@@ -384,7 +393,7 @@ internal sealed class CommunityRendererBackend
     // selection changes again (recomputing every tick would make the crop
     // visibly resize as the silhouette's own bounding box changes shape
     // while animating/rotating).
-    public readonly record struct BodyPreviewCalibration(int Distance, Int32Rect CropRect);
+    public readonly record struct BodyPreviewCalibration(int Distance, PixelRect CropRect);
 
     // Solves for a camera distance that fills roughly targetFraction of the
     // frame with the body's own silhouette, since there's no reliable
@@ -498,7 +507,7 @@ internal sealed class CommunityRendererBackend
             var top = Math.Clamp(centerY - halfH, 0, height - 1);
             var right = Math.Clamp(centerX + halfW, left + 1, width);
             var bottom = Math.Clamp(centerY + halfH, top + 1, height);
-            return new BodyPreviewCalibration(distance, new Int32Rect(left, top, right - left, bottom - top));
+            return new BodyPreviewCalibration(distance, new PixelRect(left, top, right - left, bottom - top));
         }
     }
 
@@ -610,7 +619,7 @@ internal sealed class CommunityRendererBackend
     // TopDownTileSize tile; the result reads a little more blocky than the
     // old bilinear-filtered renderer but is honest about being the same
     // point-sampled palette data the 3D view itself draws with.
-    public BitmapSource? RenderIslandTopDown(string islandName, byte[] paletteBytes, IReadOnlyList<(int CubeX, int CubeY)> presentCubes, int minCubeX, int minCubeY, int cubeSpanX, int cubeSpanY)
+    public Bitmap? RenderIslandTopDown(string islandName, byte[] paletteBytes, IReadOnlyList<(int CubeX, int CubeY)> presentCubes, int minCubeX, int minCubeY, int cubeSpanX, int cubeSpanY)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady || presentCubes.Count == 0) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
@@ -719,7 +728,7 @@ internal sealed class CommunityRendererBackend
                 }
             }
 
-            var bitmap = BitmapSource.Create(masterWidth, masterHeight, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), master, masterWidth);
+            var bitmap = BitmapFactory.Create(masterWidth, masterHeight, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), master, masterWidth);
             bitmap.Freeze();
             return bitmap;
         }
@@ -756,13 +765,13 @@ internal sealed class CommunityRendererBackend
 
     public string Diagnostics => $"Engine={enginePath}\nExists={File.Exists(enginePath)}\nGame={gameDirectory}\nExists={Directory.Exists(gameDirectory)}\nSaves={saveDirectory}\nDirect={directFailure}";
 
-    public BitmapImage? RenderIsland(string islandName)
+    public Bitmap? RenderIsland(string islandName)
         => RenderIsland(islandName, null, CancellationToken.None);
 
-    public BitmapImage? RenderIsland(string islandName, string? cameraCommand)
+    public Bitmap? RenderIsland(string islandName, string? cameraCommand)
         => RenderIsland(islandName, cameraCommand, CancellationToken.None);
 
-    public BitmapImage? RenderIsland(string islandName, string? cameraCommand, CancellationToken cancellationToken)
+    public Bitmap? RenderIsland(string islandName, string? cameraCommand, CancellationToken cancellationToken)
     {
         var saveName = islandName.ToUpperInvariant() switch
         {
@@ -808,16 +817,10 @@ internal sealed class CommunityRendererBackend
         return image;
     }
 
-    private static BitmapImage? LoadImage(string path)
+    private static Bitmap? LoadImage(string path)
     {
         if (!File.Exists(path)) return null;
-        using var stream = File.OpenRead(path);
-        var image = new BitmapImage();
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.StreamSource = stream;
-        image.EndInit();
-        image.Freeze();
-        return image;
+        try { return BitmapFactory.Load(path); }
+        catch (Exception error) when (error is IOException or ArgumentException or InvalidOperationException) { DebugLog.Log($"CommunityRendererBackend: couldn't load {path}: {error.Message}"); return null; }
     }
 }

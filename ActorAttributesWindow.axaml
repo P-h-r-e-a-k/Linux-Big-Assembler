@@ -1,0 +1,145 @@
+<Window x:Class="LBAAssembler.ActorAttributesWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Actor Attributes" Height="620" Width="780" MinHeight="480" MinWidth="660"
+        Background="#FFFFFF" Foreground="#10243E" FontFamily="{StaticResource EditorFont}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="22">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="20"/>
+            <ColumnDefinition Width="240"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Grid.Column="0">
+            <TextBlock x:Name="EyebrowLabel" Text="Actor attributes" Classes="Eyebrow"/>
+            <TextBlock x:Name="TitleLabel" Text="Actor 0" FontSize="19" Margin="0,4,0,4"/>
+            <TextBlock x:Name="StatusLabel" Text="" Foreground="#1B6EC2" FontSize="11" Margin="0,0,0,4"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+            <StackPanel>
+                <StackPanel x:Name="EntityPanel" IsVisible="False">
+                    <TextBlock Text="Kind of actor (needed to save a new actor to the game files)" Classes="FieldLabel"/>
+                    <ComboBox x:Name="EntityCombo" Classes="DropdownBox" IsEditable="True"/>
+                </StackPanel>
+
+                <TextBlock Text="Body" Classes="FieldLabel"/>
+                <ComboBox x:Name="BodyCombo" Classes="DropdownBox" IsEditable="True"/>
+
+                <TextBlock Text="Animation" Classes="FieldLabel"/>
+                <ComboBox x:Name="AnimCombo" Classes="DropdownBox" IsEditable="True"/>
+
+                <TextBlock Text="Position (X, Y, Z) / Facing" Classes="FieldLabel"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PositionXBox" Grid.Column="0" Classes="FieldBox"/>
+                    <TextBox x:Name="PositionYBox" Grid.Column="2" Classes="FieldBox"/>
+                    <TextBox x:Name="PositionZBox" Grid.Column="4" Classes="FieldBox"/>
+                    <TextBox x:Name="BetaBox" Grid.Column="6" Classes="FieldBox"/>
+                </Grid>
+
+                <!-- Same 7-column split as the Position/Facing row above (four equal
+                     fields plus 6px gaps), one combined label instead of the four
+                     separate ones this used to have across two rows. -->
+                <TextBlock Text="Life points / Armour / Hit force / Move type" Classes="FieldLabel"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" x:Name="LifePointBox" Classes="FieldBox"/>
+                    <TextBox Grid.Column="2" x:Name="ArmourBox" Classes="FieldBox"/>
+                    <TextBox Grid.Column="4" x:Name="HitForceBox" Classes="FieldBox"/>
+                    <TextBox Grid.Column="6" x:Name="MoveBox" Classes="FieldBox"/>
+                </Grid>
+
+                <TextBlock Text="Flags" Classes="FieldLabel"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <ItemsControl Grid.Column="0" Grid.ColumnSpan="3" x:Name="FlagsListLeft">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                          ToolTip.Tip="{Binding Description}" Foreground="#10243E" Margin="0,3,0,3"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ItemsControl Grid.Column="4" Grid.ColumnSpan="3" x:Name="FlagsListRight">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                          ToolTip.Tip="{Binding Description}" Foreground="#10243E" Margin="0,3,0,3"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+
+                <TextBlock x:Name="WaypointsLabel" Text="" Foreground="#7C93AC" FontFamily="{StaticResource EditorMonoFont}" FontSize="10" Margin="0,16,0,0"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="1" Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border x:Name="PreviewBorder" Grid.Row="0" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1">
+                <Grid>
+                    <Image x:Name="BodyPreviewImage" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="None" Cursor="SizeWE"
+                           PointerPressed="BodyPreviewImage_MouseLeftButtonDown" PointerMoved="BodyPreviewImage_MouseMove"
+                           PointerReleased="BodyPreviewImage_MouseLeftButtonUp"/>
+                    <TextBlock x:Name="BodyPreviewFallbackLabel" Text="preview unavailable" Foreground="#8FB0D6" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="12"/>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="1" Margin="0,8,0,0">
+                <CheckBox x:Name="PauseAnimationCheck" Content="Pause animation" Foreground="#10243E" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"
+                          IsCheckedChanged="PauseAnimationCheck_Changed"/>
+                <TextBlock Text="Rotation speed" Classes="FieldLabel" Margin="0,8,0,2"/>
+                <Slider x:Name="RotationSpeedSlider" Minimum="0" Maximum="96" Value="24" TickFrequency="8" IsSnapToTickEnabled="True"
+                        ValueChanged="RotationSpeedSlider_ValueChanged"/>
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,16,0,0">
+            <Button x:Name="ApplyButton" Content="Apply" Click="Apply_Click" Classes="PrimaryButton"/>
+            <Button Content="Edit Script&#8230;" Click="EditScript_Click" Classes="QuietButton"/>
+            <Button Content="Close" Click="Close_Click" Classes="QuietButton"/>
+        </StackPanel>
+
+        <!-- Full ColumnSpan (matching the Apply/Edit Script/Close row below it) rather than confined to
+             the 240px preview column: three buttons at this padding are about 380px wide, comfortably
+             wider than that column alone, so a right-aligned StackPanel scoped to just Grid.Column="2"
+             had to overflow past its own cell to fit, which proved unreliable (invisible and non-hit-
+             testable in a real run, confirmed via a temporary visual-tree dump, despite otherwise-
+             correct WPF state). Spanning the full row like Apply/EditScript/Close already does keeps it
+             within one cell's own bounds, no overflow needed. -->
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Load Debug Body&#8230;" Click="LoadDebugBody_Click" Classes="QuietButton" Padding="9,5"
+                    ToolTip.Tip="Load a body from a project test archive (e.g. mario.hqr) into a throwaway preview copy of BODY.HQR. Never modifies your real game files."/>
+            <Button Content="Load Debug Anim&#8230;" Click="LoadDebugAnim_Click" Classes="QuietButton" Padding="9,5"
+                    ToolTip.Tip="Load an animation from a project test archive into a throwaway preview copy of ANIM.HQR. Requires a debug body already loaded. Never modifies your real game files."/>
+            <Button Content="Create New Body&#8230;" Click="CreateNewBody_Click" Classes="QuietButton" Margin="0" Padding="9,5"/>
+        </StackPanel>
+    </Grid>
+</Window>

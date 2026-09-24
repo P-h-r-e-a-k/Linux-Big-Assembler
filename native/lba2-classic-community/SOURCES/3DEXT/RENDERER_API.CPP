@@ -17,8 +17,13 @@
 
 extern void AdjustHQRMem(void);
 #include <string.h>
-#include <direct.h>
 #include <stdlib.h>
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <unistd.h>
+#define _chdir chdir
+#endif
 
 extern void AffGrilleExt(void);
 extern void Init3DExtView(void);

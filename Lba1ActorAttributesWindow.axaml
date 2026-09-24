@@ -1,0 +1,136 @@
+<Window x:Class="LBAAssembler.Lba1ActorAttributesWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LBA1 Actor Attributes" Height="620" Width="780" MinHeight="480" MinWidth="660"
+        Background="#FFFFFF" Foreground="#10243E" FontFamily="{StaticResource EditorFont}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="22">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="20"/>
+            <ColumnDefinition Width="240"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3">
+            <TextBlock x:Name="EyebrowLabel" Text="LBA1 actor attributes" Classes="Eyebrow"/>
+            <TextBlock x:Name="TitleLabel" Text="Actor 0" FontSize="19" Margin="0,4,0,4"/>
+            <TextBlock x:Name="StatusLabel" Text="" Foreground="#1B6EC2" FontSize="11" Margin="0,0,0,4"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+            <StackPanel>
+                <TextBlock Text="Position (X, Y, Z) / Facing" Classes="FieldLabel"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PositionXBox" Grid.Column="0" Classes="FieldBox"/>
+                    <TextBox x:Name="PositionYBox" Grid.Column="2" Classes="FieldBox"/>
+                    <TextBox x:Name="PositionZBox" Grid.Column="4" Classes="FieldBox"/>
+                    <TextBox x:Name="BetaBox" Grid.Column="6" Classes="FieldBox"/>
+                </Grid>
+
+                <TextBlock x:Name="EntityLabel" Text="Entity (FILE3D.HQR)" Classes="FieldLabel"/>
+                <ComboBox x:Name="EntityCombo" Classes="DropdownBox" IsEditable="True"/>
+
+                <TextBlock x:Name="BodyLabel" Text="Body" Classes="FieldLabel"/>
+                <ComboBox x:Name="BodyCombo" Classes="DropdownBox" IsEditable="True"/>
+
+                <TextBlock x:Name="AnimLabel" Text="Animation" Classes="FieldLabel"/>
+                <ComboBox x:Name="AnimCombo" Classes="DropdownBox" IsEditable="True"/>
+
+                <!-- Same 7-column split as the Position/Facing row above (three
+                     equal fields plus 6px gaps) so the left box here lines up
+                     exactly under fields 1-2 and the right box under fields
+                     3-4, rather than an independent even 50/50 split. -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Column="0" Grid.ColumnSpan="3" Text="Life points" Classes="FieldLabel"/>
+                    <TextBlock Grid.Column="4" Grid.ColumnSpan="3" Text="Armour" Classes="FieldLabel"/>
+                    <TextBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" x:Name="LifePointBox" Classes="FieldBox"/>
+                    <TextBox Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="3" x:Name="ArmourBox" Classes="FieldBox"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Text="Hit force" Classes="FieldLabel"/>
+                    <TextBlock Grid.Row="2" Grid.Column="4" Grid.ColumnSpan="3" Text="Move type" Classes="FieldLabel"/>
+                    <TextBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" x:Name="HitForceBox" Classes="FieldBox"/>
+                    <TextBox Grid.Row="3" Grid.Column="4" Grid.ColumnSpan="3" x:Name="MoveBox" Classes="FieldBox"/>
+                </Grid>
+
+                <TextBlock Text="Flags" Classes="FieldLabel"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <ItemsControl Grid.Column="0" Grid.ColumnSpan="3" x:Name="FlagsListLeft">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                          ToolTip.Tip="{Binding Description}" Foreground="#10243E" Margin="0,3,0,3"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ItemsControl Grid.Column="4" Grid.ColumnSpan="3" x:Name="FlagsListRight">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                          ToolTip.Tip="{Binding Description}" Foreground="#10243E" Margin="0,3,0,3"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+
+                <TextBlock x:Name="WaypointsLabel" Text="" Foreground="#7C93AC" FontFamily="{StaticResource EditorMonoFont}" FontSize="10" Margin="0,16,0,0"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="1" Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border x:Name="PreviewBorder" Grid.Row="0" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1">
+                <Grid>
+                    <Image x:Name="BodyPreviewImage" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="None" Cursor="SizeWE"
+                           PointerPressed="BodyPreviewImage_MouseLeftButtonDown" PointerMoved="BodyPreviewImage_MouseMove"
+                           PointerReleased="BodyPreviewImage_MouseLeftButtonUp"/>
+                    <TextBlock x:Name="BodyPreviewFallbackLabel" Text="preview unavailable" Foreground="#8FB0D6" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="12"/>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="1" Margin="0,8,0,0">
+                <CheckBox x:Name="PauseAnimationCheck" Content="Pause animation" Foreground="#10243E" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"
+                          IsCheckedChanged="PauseAnimationCheck_Changed"/>
+                <TextBlock Text="Rotation speed" Classes="FieldLabel" Margin="0,8,0,2"/>
+                <Slider x:Name="RotationSpeedSlider" Minimum="0" Maximum="96" Value="24" TickFrequency="8" IsSnapToTickEnabled="True"
+                        ValueChanged="RotationSpeedSlider_ValueChanged"/>
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,16,0,0">
+            <Button x:Name="ApplyButton" Content="Apply" Click="Apply_Click" Classes="PrimaryButton"/>
+            <Button Content="Edit Script&#8230;" Click="EditScript_Click" Classes="QuietButton"/>
+            <Button Content="Close" Click="Close_Click" Classes="QuietButton"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,5 +1,12 @@
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using System.IO;
 using System.Buffers.Binary;
 
@@ -187,7 +194,7 @@ internal sealed class IslandDocument
 
     private static byte[] DefaultPalette() => Enumerable.Repeat((byte)0, 768).ToArray();
 
-    public BitmapSource CreatePreview()
+    public Bitmap CreatePreview()
     {
         var pixels = new byte[MapSize * MapSize * 4];
         for (var y = 0; y < MapSize; y++)
@@ -200,10 +207,10 @@ internal sealed class IslandDocument
             pixels[pixel + 2] = cube == 0 ? (byte)150 : (byte)Math.Min(255, pixels[pixel] + 52);
             pixels[pixel + 3] = 255;
         }
-        return BitmapSource.Create(MapSize, MapSize, 96, 96, PixelFormats.Bgra32, null, pixels, MapSize * 4);
+        return BitmapFactory.Create(MapSize, MapSize, 96, 96, PixelFormats.Bgra32, null, pixels, MapSize * 4);
     }
 
-    public BitmapSource CreateGroundBitmap(int lightLevel = -1)
+    public Bitmap CreateGroundBitmap(int lightLevel = -1)
     {
         var pixels = new byte[256 * 256 * 4];
         var sixBitPalette = Palette.Take(768).Max() <= 63;
@@ -221,7 +228,7 @@ internal sealed class IslandDocument
             pixels[pixel + 2] = red;
             pixels[pixel + 3] = 255;
         }
-        return BitmapSource.Create(256, 256, 96, 96, PixelFormats.Bgra32, null, pixels, 256 * 4);
+        return BitmapFactory.Create(256, 256, 96, 96, PixelFormats.Bgra32, null, pixels, 256 * 4);
     }
 
     private static byte ScalePalette(byte value, bool sixBitPalette) => sixBitPalette ? (byte)Math.Min(255, value * 4) : value;

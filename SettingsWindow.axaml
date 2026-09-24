@@ -1,0 +1,77 @@
+<Window x:Class="LBAAssembler.SettingsWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Height="600" Width="620" MinHeight="600" MinWidth="560"
+        Background="#FFFFFF" Foreground="#10243E" FontFamily="{StaticResource EditorFont}"
+        WindowStartupLocation="CenterOwner" CanResize="False">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="8"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="10"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="22"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="8"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="10"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="LBA2 game folder  (optional)" Classes="Eyebrow"/>
+
+        <DockPanel Grid.Row="2">
+            <Button DockPanel.Dock="Right" Content="Browse..." Click="Browse_Click" Classes="QuietButton" Margin="8,0,0,0"/>
+            <TextBox x:Name="GameDirectoryBox" Classes="FieldBox" VerticalContentAlignment="Center"/>
+        </DockPanel>
+
+        <TextBlock Grid.Row="4" Text="Folder containing the .ILE islands, RESS.HQR, SCENE.HQR, etc. Leave blank if you only have LBA1." TextWrapping="Wrap" FontSize="11" Foreground="#7C93AC"/>
+        <TextBlock x:Name="ValidationText" Grid.Row="0" Text="" FontSize="11" Foreground="#E08A6A" HorizontalAlignment="Right"/>
+
+        <TextBlock Grid.Row="6" Text="LBA1 game folder  (optional)" Classes="Eyebrow"/>
+
+        <DockPanel Grid.Row="8">
+            <Button DockPanel.Dock="Right" Content="Browse..." Click="BrowseLba1_Click" Classes="QuietButton" Margin="8,0,0,0"/>
+            <TextBox x:Name="Lba1DirectoryBox" Classes="FieldBox" VerticalContentAlignment="Center"/>
+        </DockPanel>
+
+        <TextBlock Grid.Row="10" Text="Folder containing SCENE.HQR, LBA_GRI.HQR, LBA_BLL.HQR, LBA_BRK.HQR, RESS.HQR. Leave blank if you only have LBA2." TextWrapping="Wrap" FontSize="11" Foreground="#7C93AC"/>
+        <TextBlock x:Name="Lba1ValidationText" Grid.Row="6" Text="" FontSize="11" Foreground="#E08A6A" HorizontalAlignment="Right"/>
+
+        <StackPanel Grid.Row="11" VerticalAlignment="Top" Margin="0,22,0,0">
+            <CheckBox x:Name="LowercaseNamesCheck" Foreground="#10243E"
+                      Content="Lowercase function names in script text (set_track(…) instead of SET_TRACK(…))"/>
+
+            <TextBlock Text="Undo history" Classes="Eyebrow" Margin="0,20,0,8"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Steps to remember" FontSize="11" Foreground="#7C93AC" Margin="0,0,0,4"/>
+                    <TextBox x:Name="UndoStepsBox" Classes="FieldBox"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Storage limit (MB)" FontSize="11" Foreground="#7C93AC" Margin="0,0,0,4"/>
+                    <TextBox x:Name="UndoMegabytesBox" Classes="FieldBox"/>
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="Undo steps are kept on disk (undo_history.dat, next to the exe) so they carry over between sessions. The oldest step is dropped once either limit is reached." TextWrapping="Wrap" FontSize="11" Foreground="#7C93AC" Margin="0,8,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                <Button Content="Clear undo history now" Click="ClearUndoHistory_Click" Classes="QuietButton" Margin="0"/>
+                <TextBlock x:Name="UndoHistorySizeText" Text="" FontSize="11" Foreground="#7C93AC" VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </StackPanel>
+            <TextBlock x:Name="UndoValidationText" Text="" FontSize="11" Foreground="#E08A6A" Margin="0,6,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="12" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Cancel" Click="Cancel_Click" Classes="QuietButton" Margin="0"/>
+            <Button Content="Save" Click="Save_Click" Classes="PrimaryButton"/>
+        </StackPanel>
+    </Grid>
+</Window>
