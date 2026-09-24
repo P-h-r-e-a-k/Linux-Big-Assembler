@@ -95,6 +95,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         // WPF's Preview* handlers and second mouse-button handlers, wired here (Avalonia's XAML takes one handler per event and tunnels through AddHandler).
         ViewportHost.PointerPressed += TerrainViewport_MouseRightButtonDown;
+        InteriorViewImage.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Absolute);     // WPF's default origin; Avalonia's is the centre
         WindowPlacement.Attach(this, "MainWindow");
         Scenes.SceneHistory.PersistPath = Path.Combine(AppContext.BaseDirectory, "undo_history.dat");
         Scenes.SceneHistory.ConfirmClearWhenFull = (used, limit) => MessageBox.Show(this,

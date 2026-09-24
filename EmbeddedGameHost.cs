@@ -112,8 +112,12 @@ internal sealed class EmbeddedGameHost : NativeControlHost
         }
     }
 
+    private static int otherConnectionErrors;
+
     private static int OnXError(IntPtr errorDisplay, ref X11.XErrorEvent error)
     {
+        // errors of Avalonia's own connection (it raises a few BadAtom ones at start-up) are noted a few times, then dropped
+        if (errorDisplay != display && ++otherConnectionErrors > 5) return 0;
         DebugLog.Log($"EmbeddedGameHost: X error {error.error_code} on {(errorDisplay == display ? "our" : "another")} connection (request {error.request_code}.{error.minor_code}, resource 0x{error.resourceid:x})");
         return 0;
     }

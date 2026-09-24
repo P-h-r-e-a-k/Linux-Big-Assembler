@@ -1,8 +1,0 @@
-<Project>
-  <!-- Temporary, while the port is in progress: the files being ported in parallel are left out of the build (Compat/PortStubs.cs stands in). -->
-  <ItemGroup>
-    <Compile Remove="BodyStudio\AnimationStudioForm.cs;BodyStudio\MainForm.cs;BodyStudio\Renderer.cs;BodyStudio\Generation.cs;BodyStudio\Flat\FlatBitmap.cs;BodyStudio\Humanoid.cs;BodyStudio\HeadDecoration.cs;BodyStudio\*Custom.cs;BodyStudio\ModelView.cs;BodyStudio\BodyStudioWindow.cs;BodyStudio\AnimationStudioWindow.cs" />
-    <Compile Remove="BodyStudioLauncher.cs;AnimationStudioLauncher.cs;WinFormsCompat.cs;DummyBodyPreview.cs;Lba1\Lba1ActorImages.cs" />
-    <Compile Remove="EmbeddedGameHost.cs" />
-  </ItemGroup>
-</Project>

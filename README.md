@@ -1,55 +1,73 @@
-# LBA Assembler
+# Linux Big Assembler
 
-A native Windows WPF viewer and editor for Little Big Adventure 1 and 2.
+The Linux port of [LBA Assembler](https://github.com/P-h-r-e-a-k/LBAAssembler), a viewer and editor for Little Big
+Adventure 1 and 2. The original is a Windows WPF (and Windows Forms) application; this copy of it is built on
+[Avalonia](https://avaloniaui.net/) and runs on Linux (it also still builds and runs on Windows and macOS, Avalonia
+being cross-platform). The editor's own code -- the game file formats, the LBA1 runtime, the script compiler, the
+terrain tools -- is the same; what changed is the UI layer, the native engine hosting and a few Windows-only
+services. See **The port** at the end of this file for the details and the known differences.
 
-## Run
+## Build and run (Linux)
 
-Build and launch with the .NET 10 SDK or Visual Studio:
+Needs: the .NET 10 SDK, a C/C++ toolchain with CMake and Ninja (for the vendored game engine), SDL3 (the engine's
+platform library; Ubuntu 24.04 has no package for it yet, so it is built from source below), and for sound:
+`fluidsynth` with a General MIDI soundfont (`fluid-soundfont-gm`) for LBA1's music. libX11 is needed for playing an
+LBA2 scene inside the editor (the engine's window is embedded through X11).
 
 ```text
+# SDL3, once (into /usr/local)
+git clone --depth 1 --branch release-3.2.24 https://github.com/libsdl-org/SDL.git /tmp/SDL3
+cmake -S /tmp/SDL3 -B /tmp/SDL3/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSDL_STATIC=ON -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
+ninja -C /tmp/SDL3/build && sudo ninja -C /tmp/SDL3/build install && sudo ldconfig
+
+# the native renderer library and the playable engine (once, and after native changes)
+cd native/lba2-classic-community
+cmake --preset linux -DCMAKE_PREFIX_PATH=/usr/local -DLBA2_BUILD_TESTS=OFF
+ninja -C out/build/linux lba2_renderer lba2cc
+cd ../..
+
+# the editor
 dotnet build
 dotnet run
 ```
+
+`dotnet build` copies `liblba2_renderer.so` and `lba2cc` from the native build tree next to the executable (and embeds
+them for a single-file publish); without them the editor still runs, using its own software terrain renderer and
+with "play scene" unavailable. Both need `libSDL3.so.0` at run time (installed above).
 
 ## First run and game folders
 
 The editor opens empty until a game folder is set under File > Settings. Each folder is optional (LBA1 and LBA2 are
 independent, so owning only one is fine): the Game selector switches between whichever are set, and setting a folder
 in Settings loads that game straight away (if nothing was open, or the open game lost its folder, it moves to the game
-that is available).
+that is available). The game files can be in either case (`SCENE.HQR` or `scene.hqr`); the folder pickers accept both.
 
 Everything the editor keeps lives next to the executable, so the app is portable (copy the folder, keep everything):
-`settings.json` (game folders and options), `native\` (the renderer DLL, unpacked from the exe on first launch and
-replaced when the exe changes), `Body Exports\` (Body Studio's default output folder) and `editor.log` (a running
-trace of what the UI and the native engine are each doing, timestamped and interleaved, rotated to `editor.log.old`
-past 5 MB; `DebugLog`/`NativeDebugLog`, on in every build **while this is under test** - see that file's own comment
-for turning it off before a formal release). If the folder isn't writable it falls back to
-`%AppData%\LBAAssembler` / `%LOCALAPPDATA%\LBAAssembler`; a `settings.json` found only in `%AppData%` from an
-earlier version is copied next to the exe on first run.
-
-The one thing outside the folder is not ours: a single-file .NET app unpacks WPF's own native libraries to
-`%TEMP%\.net\LBAAssembler` on launch (a disposable cache the .NET host manages). To redirect it, set the
-`DOTNET_BUNDLE_EXTRACT_BASE_DIR` environment variable before starting the exe (for example from a `.cmd` file).
+`settings.json` (game folders and options), `native/` (the renderer library and the engine, unpacked from a single-file
+executable on first launch and replaced when the executable changes), `Body Exports/` (Body Studio's default output
+folder) and `editor.log` (a running trace of what the UI and the native engine are each doing, timestamped and
+interleaved, rotated to `editor.log.old` past 5 MB; `DebugLog`/`NativeDebugLog`, on in every build **while this is under
+test** - see that file's own comment for turning it off before a formal release). If the folder isn't writable it falls
+back to `~/.config/LBAAssembler` / `~/.local/share/LBAAssembler` (`%AppData%` / `%LOCALAPPDATA%` on Windows); a
+`settings.json` found only there from an earlier version is copied next to the executable on first run.
 
 ## Release build (single executable)
 
 ```text
-# once, and after native changes: the statically linked renderer (MSYS2 UCRT64 shell tools on PATH)
-cd native\lba2-classic-community
-cmake --build out/build/windows_ucrt64_static --target lba2_renderer
-cd ..\..
-dotnet publish -p:PublishProfile=SingleFile
+cd native/lba2-classic-community && ninja -C out/build/linux lba2_renderer lba2cc && cd ../..
+dotnet publish -p:PublishProfile=SingleFileLinux
 ```
 
-This writes `release\LBAAssembler.exe`: self-contained (no .NET install needed), with the native renderer, the dummy
-body and the scene/body/animation name lists embedded. Debug logging is off in that build unless
-`LBA2_EDITOR_DEBUG_LOG` names a file.
+This writes `release/LBAAssembler`: self-contained (no .NET install needed), with the native renderer, the engine, the
+dummy body and the scene/body/animation name lists embedded. `libSDL3.so.0` is not embedded: install it (or put a copy
+next to the executable). Debug logging is off in that build unless `LBA2_EDITOR_DEBUG_LOG` names a file. The Windows
+single-file profile (`Properties/PublishProfiles`) still works on Windows with the `windows_ucrt64_static` native tree.
 
 The current first slice provides an editable exterior-map workspace with terrain painting, level selection, zoom, reset, and JSON draft export.
 
 ## Native renderer backend
 
-The editor includes a vendored native renderer at `native/lba2-classic-community`, exposed to WPF through `liblba2_renderer.dll` (a `lba2_renderer`/`lba2_renderer_engine` CMake target that excludes `PERSO.CPP` and the playable game loop). Build it with MSYS2 UCRT64, CMake, and Ninja; the generated DLL is placed under `native/lba2-classic-community/out/build/windows_ucrt64/SOURCES/3DEXT/`.
+The editor includes a vendored native renderer at `native/lba2-classic-community`, exposed to the editor through `liblba2_renderer.so` (`liblba2_renderer.dll` on Windows; a `lba2_renderer`/`lba2_renderer_engine` CMake target that excludes `PERSO.CPP` and the playable game loop). Build it with the `linux` CMake preset (GCC or Clang, CMake, Ninja, SDL3 installed) as above; the library is placed under `native/lba2-classic-community/out/build/linux/SOURCES/3DEXT/`. On Windows, build it with MSYS2 UCRT64 into `out/build/windows_ucrt64/`.
 
 The renderer-only bootstrap in `RENDERER_API.CPP`/`RENDERER_BOOT.CPP` now completes cleanly and produces real textured frames (terrain, decor, palette-correct lighting) without launching the playable game or generating PNG screenshots. Getting there required matching the retail boot sequence in several places the renderer-only build had diverged from it:
 
@@ -59,9 +77,9 @@ The renderer-only bootstrap in `RENDERER_API.CPP`/`RENDERER_BOOT.CPP` now comple
 - `IsleMapIndex`/`GroundTexture`/`ObjTexture`/`ListTriExt` are reassigned via the engine's own `Malloc`/`NormMalloc` during boot; the renderer API's `initialize()`/`shutdown()` used plain `malloc`/`free` on them, corrupting the heap on shutdown.
 - `ClipXMin/ClipYMin/ClipXMax/ClipYMax` (and `ModeResX/ModeResY`) are established by `InitGraphics()` (window + video surface + screen buffers + clip rect), which the renderer-only path never called; without it every projected vertex was flagged out-of-bounds and nothing was ever rasterized.
 
-The WPF viewport now tries the native renderer first for any island (`nativeViewActive`), and falls back to the editor's own movable CPU rasterizer (`SoftwareTerrainRenderer`) if the native renderer library itself is unavailable.
+The editor's viewport tries the native renderer first for any island (`nativeViewActive`), and falls back to the editor's own movable CPU rasterizer (`SoftwareTerrainRenderer`) if the native renderer library itself is unavailable.
 
-Panning across a whole island (not just orbiting a single fixed cube) is done through `lba2_renderer_set_view_target(worldX, worldY, worldZ)`, a native export that maps an absolute world position into the 16x16 cube grid (each cube spans 32768 world units, matching HOLO.H's `SCE`), loads whichever cube contains it if that differs from the one currently loaded, and sets the cube-local `VueOffsetX/Y/Z` camera target. Mouse drag, mouse wheel, the zoom buttons, and the arrow keys all update a single world-space `(targetX, targetY, targetZ)` in `MainWindow.xaml.cs`, which `CommunityRendererBackend.RenderIslandDirect()` feeds straight into `SetViewTarget` on every frame -- so terrain streams in continuously as the camera crosses cube boundaries. Panning is clamped per-axis against `IslandDocument.CubeAt()` so a drag that would leave the island's mapped cubes stops cleanly on that axis instead of handing the renderer a position with no data.
+Panning across a whole island (not just orbiting a single fixed cube) is done through `lba2_renderer_set_view_target(worldX, worldY, worldZ)`, a native export that maps an absolute world position into the 16x16 cube grid (each cube spans 32768 world units, matching HOLO.H's `SCE`), loads whichever cube contains it if that differs from the one currently loaded, and sets the cube-local `VueOffsetX/Y/Z` camera target. Mouse drag, mouse wheel, the zoom buttons, and the arrow keys all update a single world-space `(targetX, targetY, targetZ)` in `MainWindow.axaml.cs`, which `CommunityRendererBackend.RenderIslandDirect()` feeds straight into `SetViewTarget` on every frame -- so terrain streams in continuously as the camera crosses cube boundaries. Panning is clamped per-axis against `IslandDocument.CubeAt()` so a drag that would leave the island's mapped cubes stops cleanly on that axis instead of handing the renderer a position with no data.
 
 **LBA1 has no equivalent library.** `native/lba1-classic` is a vendored copy of LBALab's LBA1 source (see its
 `VENDORED.txt`): an OpenWatcom DOS / Win9x build with no SDL or modern-Windows target. Its game logic (about 18k lines of
@@ -73,7 +91,7 @@ of game data (see `Lba1GridEdit`, `Lba1GridValidator`, `SceneValidator`).
 ## Little Big Adventure 1
 
 The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA1 install folder under File > Settings
-(default `E:\GOG Games\Little Big Adventure`). LBA1 is read in C# (`Lba1/`), not through the native LBA2 engine:
+(no default on Linux; `E:\GOG Games\Little Big Adventure` on Windows). LBA1 is read in C# (`Lba1/`), not through the native LBA2 engine:
 
 - `SCENE.HQR` scenes are parsed by `Lba1Scene` (header, actors, 24-byte zones, track points); every one of the 120
   scenes parses to exactly its byte length. A scene's first byte is its island (the game's text bank), which groups the
@@ -742,3 +760,39 @@ process, with module-relative return addresses, to the file named by the environ
 resolve the addresses with `nm -C -n` on the DLL (the image base is added to each offset). That is how a sporadic crash when
 opening an interior scene was traced to the renderer's boot never setting up the engine's particle-flow tables
 (`InitPartFlow`), which the animations of some actors use while a scene loads.
+
+## The port
+
+This repository is the Linux port of the WPF editor; the first commit is the original code base, unmodified, and the
+history from there is the port. What changed:
+
+- **UI toolkit.** WPF and Windows Forms are replaced by Avalonia 11 (the Fluent theme underneath, restyled to the
+  editor's light blue scheme in `Theme.axaml`). The windows' XAML is Avalonia XAML (`*.axaml`); their code-behind is the
+  same code with the WPF spellings that Avalonia lacks provided once in `Compat/` (`MessageBox`, the file and folder
+  dialogs, `Visibility`, `Keyboard`/`Mouse`, `Cursors`, the bitmap factories, `Line.X1`, `ShowDialog()` in the blocking
+  style, `DialogResult`, `ActualWidth` ...), as small shims and C# 14 extension members in the `LBAAssembler` namespace.
+- **Docking.** The main window's AvalonDock layout has no Avalonia counterpart here: the panels sit in a fixed
+  arrangement (the location strip on top, the viewport left of a splitter, the mode chips, the side panels as tabs and
+  the minimap on the right). View > Panels still brings a hidden panel back; the mode switch still hides the panels
+  that don't apply.
+- **Body Studio and Animation Studio** are Avalonia windows now (`BodyStudio/BodyStudioWindow.cs`,
+  `AnimationStudioWindow.cs`); the body renderer draws into its own pixel buffer (`FlatImage`) and PNG files go through
+  SkiaSharp (`FlatBitmap`), so nothing uses System.Drawing any more (the `tools/BodyPipeline` harness included).
+- **Native engine.** The renderer library is `liblba2_renderer.so`, built with the vendored engine's `linux` CMake
+  preset and loaded with `NativeLibrary`; the playable engine is `lba2cc`. Both are embedded in a single-file publish
+  and unpacked to `native/` on first use, as on Windows. Playing an LBA2 scene inside the editor embeds the engine's
+  SDL window through X11 (`EmbeddedGameHost`: the window is found by process id and reparented into the editor's; it
+  needs X11 or XWayland, on a pure Wayland session the play area stays black and the game can still be played in its
+  own window from the scene editors). The live-preview folder uses hard links through `link(2)`.
+- **Sound.** LBA1's speech and effects play through SDL3's audio API (`Compat/SoundPlayer.cs`, the stand-in for
+  System.Media.SoundPlayer); its MIDI music plays through `fluidsynth` (or `timidity`) as a child process, looped by the
+  play view's own tick, with the CD tracks through the same sound player. Without a synthesiser the music is silent and
+  the log says so once.
+- **Fonts.** Segoe UI and Consolas are asked for first, then Noto Sans / DejaVu Sans and DejaVu Sans Mono / Liberation
+  Mono (whatever fontconfig has), so the look is the same shape on either platform.
+- **Tools.** `tools/ScriptRoundTrip` and `tools/BodyPipeline` build and run on Linux; `tools/UiSmoke` opens any window
+  on Avalonia's headless platform (`UiSmoke MainWindow ViewportHost`, `UISMOKE_PNG=out.png` for a rendering) and
+  complements the XAML compiler, which already fails the build on an unknown property or handler.
+
+Windows keeps working: the same project builds with `dotnet build` on Windows (Avalonia's Win32 backend; the engine
+host keeps its HWND code path there) and the `SingleFile` publish profile still produces `release\LBAAssembler.exe`.

@@ -15,6 +15,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Lba1GridRenderer draws with Avalonia's Point/Bitmap (WPF's before the port): the core package only, no desktop platform. -->
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="..\..\LbaScript\**\*.cs" Link="LbaScript\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\HqrArchive.cs" Link="HqrArchive.cs" />
     <Compile Include="..\..\HqrWriter.cs" Link="HqrWriter.cs" />
@@ -56,6 +60,7 @@
     <Compile Include="..\..\Assets\**\*.cs" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Grids\**\*.cs" Link="Grids\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Lba1\Lba1GridRenderer.cs" Link="Lba1\Lba1GridRenderer.cs" />
+    <Compile Include="..\..\Compat\BitmapCompat.cs" Link="Compat\BitmapCompat.cs" />
     <Compile Include="..\..\Lba2Areas.cs" Link="Lba2Areas.cs" />
     <Compile Include="..\..\Lba2Interiors.cs" Link="Lba2Interiors.cs" />
     <Compile Include="..\..\Lba2ActorPersistence.cs" Link="Lba2ActorPersistence.cs" />

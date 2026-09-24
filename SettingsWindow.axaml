@@ -43,7 +43,7 @@
 
         <StackPanel Grid.Row="11" VerticalAlignment="Top" Margin="0,22,0,0">
             <CheckBox x:Name="LowercaseNamesCheck" Foreground="#10243E"
-                      Content="Lowercase function names in script text (set_track(…) instead of SET_TRACK(…))"/>
+                      Content="Lowercase function names in script text (set__track(…) instead of SET__TRACK(…))"/>
 
             <TextBlock Text="Undo history" Classes="Eyebrow" Margin="0,20,0,8"/>
             <Grid>

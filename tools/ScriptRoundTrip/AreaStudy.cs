@@ -61,7 +61,7 @@ internal static class AreaRender
             var i = (y * image.Width + x) * 4;
             px[i] = b; px[i + 1] = g; px[i + 2] = r; px[i + 3] = 255;
         }
-        void Line(System.Windows.Point a, System.Windows.Point c, byte b, byte g, byte r)
+        void Line(Avalonia.Point a, Avalonia.Point c, byte b, byte g, byte r)
         {
             int x0 = (int)a.X, y0 = (int)a.Y, x1 = (int)c.X, y1 = (int)c.Y;
             int dx = Math.Abs(x1 - x0), dy = -Math.Abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy;
