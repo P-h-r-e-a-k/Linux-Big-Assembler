@@ -548,9 +548,14 @@ public partial class Lba1SceneEditorWindow : Window
         }
     }
 
-    private void ActorList_SelectionChanged(object? sender, SelectionChangedEventArgs e) { if (!loading && ActorList.SelectedIndex >= 0) { Select(Kind.Actor, ActorList.SelectedIndex); CenterOnSelection(); } }
-    private void ZoneList_SelectionChanged(object? sender, SelectionChangedEventArgs e) { if (!loading && ZoneList.SelectedIndex >= 0) { Select(Kind.Zone, ZoneList.SelectedIndex); CenterOnSelection(); } }
-    private void PointList_SelectionChanged(object? sender, SelectionChangedEventArgs e) { if (!loading && PointList.SelectedIndex >= 0) { Select(Kind.Point, PointList.SelectedIndex); CenterOnSelection(); } }
+    // A pick in one of the lists is acted on once the list has finished raising its own SelectionChanged: Select rebuilds all three
+    // lists (RefreshLists), and Avalonia -- unlike WPF -- throws when a ListBox's items are replaced while it is still inside that
+    // event ("Index was out of range" from its selection model), which ended the whole app on the first click in a list.
+    private void SelectLater(Kind kind, int index) => Dispatcher.UIThread.Post(() => { Select(kind, index); CenterOnSelection(); });
+
+    private void ActorList_SelectionChanged(object? sender, SelectionChangedEventArgs e) { if (!loading && ActorList.SelectedIndex >= 0) SelectLater(Kind.Actor, ActorList.SelectedIndex); }
+    private void ZoneList_SelectionChanged(object? sender, SelectionChangedEventArgs e) { if (!loading && ZoneList.SelectedIndex >= 0) SelectLater(Kind.Zone, ZoneList.SelectedIndex); }
+    private void PointList_SelectionChanged(object? sender, SelectionChangedEventArgs e) { if (!loading && PointList.SelectedIndex >= 0) SelectLater(Kind.Point, PointList.SelectedIndex); }
     private void ListTabs_SelectionChanged(object? sender, SelectionChangedEventArgs e) { }
     private void ActorList_DoubleClick(object? sender, TappedEventArgs e) { if (selKind == Kind.Actor && selIndex > 0) EditActorInMain(false); }
 

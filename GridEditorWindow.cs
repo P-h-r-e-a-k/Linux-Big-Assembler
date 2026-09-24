@@ -185,7 +185,7 @@ internal sealed class GridEditorWindow : Window
     private void FillGrids()
     {
         if (backend is null) return;
-        var text = filter.Text.Trim();
+        var text = (filter.Text ?? "").Trim();
         grids.Items.Clear();
         foreach (var (id, label) in backend.Grids.Where(g => text.Length == 0 || g.Label.Contains(text, StringComparison.OrdinalIgnoreCase))) grids.Items.Add(new GridItem(id, label));
     }
@@ -458,6 +458,7 @@ internal sealed class GridEditorWindow : Window
         planBitmap ??= BitmapFactory.Writeable(64 * Cell, 64 * Cell);
         planBitmap.WritePixels(new PixelRect(0, 0, 64 * Cell, 64 * Cell), planPixels, 64 * Cell * 4, 0);
         plan.Source = planBitmap;
+        plan.InvalidateVisual();     // Avalonia doesn't notice pixels rewritten in place (WPF's WriteableBitmap did): repaint the Image
     }
 
     private void DirtyIso() { isoTimer.Stop(); isoTimer.Start(); }

@@ -17,8 +17,7 @@ internal static class NativeMap
     public static int Run()
     {
         var gameRoot = Path.GetDirectoryName(Program.HqrPath)!;
-        var dll = Environment.GetEnvironmentVariable("LBA2_RENDERER_DLL") ??
-                  @"E:\dump\LBAAssembler\native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll";
+        var dll = Portable.RendererLibrary;
         using var lib = new RendererLibraryApi(dll);
         if (!lib.IsLoaded) { Console.WriteLine($"could not load {dll}"); return 2; }
         if (!lib.SetDataRoot(gameRoot) || !lib.Initialize()) { Console.WriteLine("native init failed"); return 2; }

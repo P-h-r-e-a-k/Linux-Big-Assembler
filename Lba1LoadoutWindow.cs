@@ -109,9 +109,9 @@ internal sealed class Lba1LoadoutWindow : Window
     {
         try
         {
-            int N(string key) => int.Parse(numbers[key].Text.Trim(), CultureInfo.InvariantCulture);
+            int N(string key) => int.Parse((numbers[key].Text ?? "").Trim(), CultureInfo.InvariantCulture);
             var extra = new Dictionary<int, int>();
-            foreach (var part in flags.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var part in (flags.Text ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 var kv = part.Split('=');
                 extra[int.Parse(kv[0], CultureInfo.InvariantCulture)] = int.Parse(kv[1], CultureInfo.InvariantCulture);

@@ -86,11 +86,33 @@ public static class BitmapFactory
         return bytes;
     }
 
-    // Scales a picture by an integer or fractional factor (WPF's TransformedBitmap with a ScaleTransform).
+    // Scales a picture by an integer or fractional factor (WPF's TransformedBitmap with a ScaleTransform). Done with Skia on the
+    // picture's own pixels: Avalonia's Bitmap.CreateScaledBitmap only accepts a decoded (immutable) bitmap and throws "Invalid
+    // source bitmap type" for the WriteableBitmaps every picture here is drawn into.
     public static Bitmap Scale(Bitmap source, double scaleX, double scaleY, BitmapInterpolationMode mode = BitmapInterpolationMode.HighQuality)
     {
-        var size = new PixelSize(Math.Max(1, (int)Math.Round(source.PixelSize.Width * scaleX)), Math.Max(1, (int)Math.Round(source.PixelSize.Height * scaleY)));
-        return source.CreateScaledBitmap(size, mode);
+        int width = source.PixelSize.Width, height = source.PixelSize.Height;
+        var size = new PixelSize(Math.Max(1, (int)Math.Round(width * scaleX)), Math.Max(1, (int)Math.Round(height * scaleY)));
+        var pixels = ToBgra(source);
+        var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+        try
+        {
+            using var from = new SkiaSharp.SKBitmap();
+            from.InstallPixels(new SkiaSharp.SKImageInfo(width, height, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Unpremul), handle.AddrOfPinnedObject(), width * 4);
+            using var to = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(size.Width, size.Height, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Unpremul));
+            var quality = mode switch
+            {
+                BitmapInterpolationMode.None => SkiaSharp.SKFilterQuality.None,
+                BitmapInterpolationMode.LowQuality => SkiaSharp.SKFilterQuality.Low,
+                BitmapInterpolationMode.MediumQuality => SkiaSharp.SKFilterQuality.Medium,
+                _ => SkiaSharp.SKFilterQuality.High,
+            };
+            if (!from.ScalePixels(to, quality)) throw new InvalidOperationException("Skia couldn't scale the picture.");
+            var result = new byte[size.Width * size.Height * 4];
+            Marshal.Copy(to.GetPixels(), result, 0, result.Length);
+            return FromBgra(size.Width, size.Height, result);
+        }
+        finally { handle.Free(); }
     }
 }
 

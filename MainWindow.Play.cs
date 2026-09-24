@@ -57,7 +57,7 @@ public partial class MainWindow
     {
         // the inventory is game variables 0..40; money (8) is a count, not an item
         var lines = Enumerable.Range(0, 41).Where(i => i != 8).Select(i => $"vargame {i} 1");
-        var existing = PlayCommandsBox.Text.Trim();
+        var existing = (PlayCommandsBox.Text ?? "").Trim();
         PlayCommandsBox.Text = string.Join(";", lines) + (existing.Length > 0 ? ";" + existing : "");
     }
 
@@ -191,7 +191,7 @@ public partial class MainWindow
         var options = Lba2Play.LastOptions is { } last ? last.WithScene(scene) : new Lba2PlayOptions { Scene = scene };
         options.Audio = EditorSettings.Current.Lba2Audio;      // (Launch writes the volumes to the engine's cfg and mutes it when asked)
         options.KeepFocus = true;                              // the game sits in the editor's window and must keep running while the side panel has the focus
-        options.Commands = PlayCommandsBox.Text;
+        options.Commands = PlayCommandsBox.Text ?? "";
         options.Spawn = spawn;
         options.ZoneMask = ZoneMask();
         options.Paths = pathsVisible;

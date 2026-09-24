@@ -119,7 +119,7 @@ public partial class ActorScriptWindow : Window
     // WPF's TextBox reports newlines as \r\n; the compiler and the stored
     // decompilation use \n. Normalise so that merely viewing a script never
     // looks like an edit.
-    private string EditorText => ScriptTextBox.Text.Replace("\r\n", "\n");
+    private string EditorText => (ScriptTextBox.Text ?? "").Replace("\r\n", "\n");
 
     // Called both to first open the window for an actor and to re-point an
     // already-open window at a newly re-selected actor.
@@ -257,7 +257,7 @@ public partial class ActorScriptWindow : Window
 
     private int FindDisassemblyLineForOffset(ScriptKind kind, int offset)
     {
-        var lines = DisassemblyTextBox.Text.Replace("\r\n", "\n").Split('\n');
+        var lines = (DisassemblyTextBox.Text ?? "").Replace("\r\n", "\n").Split('\n');
         var k = ScriptKind.Life;
         for (var i = 0; i < lines.Length; i++)
         {
@@ -305,11 +305,11 @@ public partial class ActorScriptWindow : Window
         var kind = ScriptKind.Life;
         for (var i = 0; i <= caretLine; i++)
         {
-            var text = DisassemblyTextBox.Text.Substring(DisassemblyTextBox.GetCharacterIndexFromLineIndex(i), DisassemblyTextBox.GetLineLength(i));
+            var text = (DisassemblyTextBox.Text ?? "").Substring(DisassemblyTextBox.GetCharacterIndexFromLineIndex(i), DisassemblyTextBox.GetLineLength(i));
             if (text.Contains("TRACK SCRIPT")) kind = ScriptKind.Track;
             else if (text.Contains("LIFE SCRIPT")) kind = ScriptKind.Life;
         }
-        var lineText = DisassemblyTextBox.Text.Substring(DisassemblyTextBox.GetCharacterIndexFromLineIndex(caretLine), DisassemblyTextBox.GetLineLength(caretLine));
+        var lineText = (DisassemblyTextBox.Text ?? "").Substring(DisassemblyTextBox.GetCharacterIndexFromLineIndex(caretLine), DisassemblyTextBox.GetLineLength(caretLine));
         var body = lineText.Length >= 2 ? lineText[2..] : lineText;
         var m = OffsetLineRegex.Match(body);
         if (!m.Success) return;
@@ -538,7 +538,7 @@ public partial class ActorScriptWindow : Window
     private (int Start, string Word) GetCurrentWord()
     {
         var caret = ScriptTextBox.CaretIndex;
-        var text = ScriptTextBox.Text;
+        var text = ScriptTextBox.Text ?? "";
         var start = caret;
         while (start > 0 && !char.IsWhiteSpace(text[start - 1]) && text[start - 1] != '(' && text[start - 1] != '[' && text[start - 1] != ',')
             start--;
@@ -622,7 +622,7 @@ public partial class ActorScriptWindow : Window
 
     private void KeywordFilterBox_TextChanged(object? sender, TextChangedEventArgs? e)
     {
-        var text = KeywordFilterBox.Text;
+        var text = KeywordFilterBox.Text ?? "";
         KeywordFilterPlaceholder.Visibility = text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         KeywordList.ItemsSource = text.Length == 0
             ? currentKeywords

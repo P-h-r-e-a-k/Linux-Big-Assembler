@@ -537,6 +537,7 @@ internal sealed class IslandEditorView
             renderer.HeightMin = lo; renderer.HeightMax = Math.Max(lo + 1, hi);
             renderer.RenderAll(view);
             bitmap.WritePixels(new PixelRect(0, 0, renderer.PixelWidth, renderer.PixelHeight), renderer.Pixels, renderer.PixelWidth * 4, 0);
+            mapImage.InvalidateVisual();     // Avalonia doesn't notice pixels rewritten in place (WPF's WriteableBitmap did): repaint the Image
             RebuildOverlay();
             DrawProfile();
         }
@@ -555,6 +556,7 @@ internal sealed class IslandEditorView
         renderer.Render(view, x0, z0, x1, z1);
         var rect = new PixelRect((x0 - renderer.OriginX) * renderer.Scale, (z0 - renderer.OriginZ) * renderer.Scale, (x1 - x0 + 1) * renderer.Scale, (z1 - z0 + 1) * renderer.Scale);
         bitmap.WritePixels(rect, renderer.Pixels, renderer.PixelWidth * 4, rect.X, rect.Y);
+        mapImage.InvalidateVisual();     // Avalonia doesn't notice pixels rewritten in place (WPF's WriteableBitmap did): repaint the Image
     }
 
     private double CellToPixelX(double cellX) => (cellX - renderer!.OriginX) * renderer.Scale;
@@ -665,7 +667,7 @@ internal sealed class IslandEditorView
         SetStatus(tip);
     }
 
-    private static double Number(TextBox box, double fallback) => double.TryParse(box.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : fallback;
+    private static double Number(TextBox box, double fallback) => double.TryParse((box.Text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : fallback;
 
     private BakeOptions BakeSettings() => new()
     {

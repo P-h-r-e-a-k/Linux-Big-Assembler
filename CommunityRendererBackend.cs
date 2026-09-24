@@ -734,6 +734,9 @@ internal sealed class CommunityRendererBackend
         }
     }
 
+    // The colour the renderer's bitmaps show palette entry `index` as.
+    public static Color PaletteColor(byte[] paletteBytes, int index) => CreatePalette(paletteBytes).Colors[index];
+
     private static BitmapPalette CreatePalette(byte[] paletteBytes)
     {
         var colors = new List<Color>(256);

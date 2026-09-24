@@ -198,12 +198,12 @@ public partial class ActorAttributesWindow : Window
         bodyFilter.Committed += CommitPreviewChange;
         animFilter.Committed += CommitPreviewChange;
         entityFilter.Committed += CommitEntityChange;
-        EntityCombo.LostFocus += (_, _) => CommitEntityChange();
+        entityFilter.FocusLeft += CommitEntityChange;
         // A typed number (rather than a picked entry, which the Committed events above already cover)
         // commits when focus leaves the box -- not on every keystroke, which would recalibrate and re-render
         // against unparseable mid-typing text constantly.
-        BodyCombo.LostFocus += (_, _) => { RevertIfInvalid(BodyCombo, cachedBodyOptions!, previewBody); CommitPreviewChange(); };
-        AnimCombo.LostFocus += (_, _) => { RevertIfInvalid(AnimCombo, animOptionsForActor, previewAnim); CommitPreviewChange(); };
+        bodyFilter.FocusLeft += () => { RevertIfInvalid(BodyCombo, cachedBodyOptions!, previewBody); CommitPreviewChange(); };
+        animFilter.FocusLeft += () => { RevertIfInvalid(AnimCombo, animOptionsForActor, previewAnim); CommitPreviewChange(); };
         // Re-fetches this actor's own native moveset every time the dropdown is actually opened, rather than
         // only once at construction -- the native lookup only succeeds while this actor's scene happens to be
         // the one currently loaded (see BuildAnimOptionsForActor's own comment), which frequently isn't true
@@ -484,7 +484,7 @@ public partial class ActorAttributesWindow : Window
 
     private void CommitEntityChange()
     {
-        if (int.TryParse(ParseLeadingIndex(EntityCombo.Text), out var id)) EntityChanged(id);
+        if (int.TryParse(ParseLeadingIndex(EntityCombo.Text ?? ""), out var id)) EntityChanged(id);
     }
 
     private void EntityChanged(int entityId)
@@ -595,7 +595,7 @@ public partial class ActorAttributesWindow : Window
     // for it, so the box does too.
     private static void RevertIfInvalid(ComboBox combo, IReadOnlyList<FilterableComboBox.Option> options, int committedValue)
     {
-        if (int.TryParse(ParseLeadingIndex(combo.Text), out _)) return;
+        if (int.TryParse(ParseLeadingIndex(combo.Text ?? ""), out _)) return;
         combo.Text = options.FirstOrDefault(o => o.Index == committedValue)?.Display ?? committedValue.ToString();
     }
 
@@ -608,8 +608,8 @@ public partial class ActorAttributesWindow : Window
     // a second.
     private void CommitPreviewChange()
     {
-        if (!int.TryParse(ParseLeadingIndex(BodyCombo.Text), out var body)) return;
-        var anim = int.TryParse(ParseLeadingIndex(AnimCombo.Text), out var parsedAnim) ? parsedAnim : 0;
+        if (!int.TryParse(ParseLeadingIndex(BodyCombo.Text ?? ""), out var body)) return;
+        var anim = int.TryParse(ParseLeadingIndex(AnimCombo.Text ?? ""), out var parsedAnim) ? parsedAnim : 0;
         // a different body: its own kind of actor's animations, and an animation that belongs to it
         if (syncedBody is { } before && body != before) anim = SyncAnimationsToBody(body, anim);
         syncedBody = body;
@@ -814,9 +814,9 @@ public partial class ActorAttributesWindow : Window
         var library = nativeRenderer.RendererLibrary;
         if (library is null) { StatusLabel.Text = "Renderer unavailable."; return; }
 
-        if (!TryParseAll(PositionXBox.Text, PositionYBox.Text, PositionZBox.Text, BetaBox.Text,
-                ParseLeadingIndex(BodyCombo.Text), ParseLeadingIndex(AnimCombo.Text),
-                LifePointBox.Text, ArmourBox.Text, HitForceBox.Text, MoveBox.Text,
+        if (!TryParseAll(PositionXBox.Text ?? "", PositionYBox.Text ?? "", PositionZBox.Text ?? "", BetaBox.Text ?? "",
+                ParseLeadingIndex(BodyCombo.Text ?? ""), ParseLeadingIndex(AnimCombo.Text ?? ""),
+                LifePointBox.Text ?? "", ArmourBox.Text ?? "", HitForceBox.Text ?? "", MoveBox.Text ?? "",
                 out var x, out var y, out var z, out var beta, out var body, out var anim,
                 out var lifePoint, out var armor, out var hitForce, out var move))
         {

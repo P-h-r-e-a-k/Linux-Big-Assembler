@@ -537,15 +537,17 @@ public partial class MainWindow : Window
 
         var width = CommunityRendererBackend.InteriorCanvasWidth;
         var height = CommunityRendererBackend.InteriorCanvasHeight;
-        var pixels = new byte[width * height];
-        canvas.CopyPixels(pixels, width, 0);
+        // (the canvas holds colours, not WPF's palette indices: the empty canvas around the scene is palette colour 0)
+        var pixels = BitmapFactory.ToBgra(canvas);
+        var empty = CommunityRendererBackend.PaletteColor(palette, 0);
         int minX = width, minY = height, maxX = -1, maxY = -1;
         for (var y = 0; y < height; y++)
         {
             var row = y * width;
             for (var x = 0; x < width; x++)
             {
-                if (pixels[row + x] == 0) continue;
+                var at = (row + x) * 4;
+                if (pixels[at] == empty.B && pixels[at + 1] == empty.G && pixels[at + 2] == empty.R) continue;
                 if (x < minX) minX = x;
                 if (x > maxX) maxX = x;
                 if (y < minY) minY = y;
@@ -2470,7 +2472,7 @@ public partial class MainWindow : Window
 
     private void ApplyZoomFromTextBox()
     {
-        var text = ZoomLabel.Text.Trim().TrimEnd('%');
+        var text = (ZoomLabel.Text ?? "").Trim().TrimEnd('%');
         if (!double.TryParse(text, out var percent) || percent <= 0)
         {
             UpdateZoomLabel();
@@ -2813,7 +2815,7 @@ public partial class MainWindow : Window
                         // stop this loop -- nativeViewActive is now false, so
                         // there's nothing left for it to render.
                         nativeViewActive = false;
-                        DocumentSummary.Text = DocumentSummary.Text.Replace("native 3D", "software 3D (native unavailable)");
+                        DocumentSummary.Text = (DocumentSummary.Text ?? "").Replace("native 3D", "software 3D (native unavailable)");
                         RenderSoftwareTerrain();
                         stopLoop = true;
                         return;

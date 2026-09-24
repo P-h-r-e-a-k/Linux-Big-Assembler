@@ -69,24 +69,24 @@ public partial class SettingsWindow : Window
         UndoValidationText.Text = "";
 
         // Either folder can stay blank (a user may own only one of the games); anything filled in must be the real thing.
-        var path = GameDirectoryBox.Text.Trim();
+        var path = (GameDirectoryBox.Text ?? "").Trim();
         if (path.Length > 0 && !Lba2Folder.IsValid(path))
         {
             ValidationText.Text = "Not an LBA2 folder (needs RESS.HQR, SCENE.HQR and the .ILE islands).";
             return;
         }
-        var lba1Path = Lba1DirectoryBox.Text.Trim();
+        var lba1Path = (Lba1DirectoryBox.Text ?? "").Trim();
         if (lba1Path.Length > 0 && !Lba1.Lba1Game.IsInstalled(lba1Path))
         {
             Lba1ValidationText.Text = "Not an LBA1 folder (needs SCENE, LBA_GRI, LBA_BLL, LBA_BRK, RESS).";
             return;
         }
-        if (!int.TryParse(UndoStepsBox.Text.Trim(), out var undoSteps) || undoSteps < 1)
+        if (!int.TryParse((UndoStepsBox.Text ?? "").Trim(), out var undoSteps) || undoSteps < 1)
         {
             UndoValidationText.Text = "Steps to remember must be a whole number of 1 or more.";
             return;
         }
-        if (!int.TryParse(UndoMegabytesBox.Text.Trim(), out var undoMegabytes) || undoMegabytes < 1)
+        if (!int.TryParse((UndoMegabytesBox.Text ?? "").Trim(), out var undoMegabytes) || undoMegabytes < 1)
         {
             UndoValidationText.Text = "Storage limit must be a whole number of 1 or more.";
             return;

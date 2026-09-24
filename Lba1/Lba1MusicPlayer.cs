@@ -206,7 +206,7 @@ internal sealed class Lba1MusicPlayer : IDisposable
                 try { if (!process.HasExited) return; }
                 catch (InvalidOperationException) { }
                 var code = ExitCode(process);
-                var elapsed = started?.ElapsedMilliseconds ?? long.MaxValue;
+                var elapsed = RunMilliseconds(process);
                 Forget();
                 if (code == 0 || elapsed > 2000) { fastFailures = 0; Launch(); return; }
                 if (++fastFailures < 3) { Launch(); return; }
@@ -236,6 +236,18 @@ internal sealed class Lba1MusicPlayer : IDisposable
         private static int ExitCode(Process p)
         {
             try { return p.ExitCode; } catch (InvalidOperationException) { return -1; }
+        }
+
+        // How long the synthesiser actually ran: its own start to its own exit. Not "since it was started, as of now" -- the
+        // play view only asks every few seconds, so a fluidsynth that quit after 0.2 s for want of an audio device looked like
+        // a piece that had played out, and was started again every tick for ever instead of being given up (and logged).
+        private long RunMilliseconds(Process p)
+        {
+            try { return (long)(p.ExitTime - p.StartTime).TotalMilliseconds; }
+            catch (Exception error) when (error is InvalidOperationException or NotSupportedException or System.ComponentModel.Win32Exception)
+            {
+                return started?.ElapsedMilliseconds ?? long.MaxValue;
+            }
         }
 
         // Under the lock: starts the synthesiser for `file` with the current driver choice.
@@ -278,7 +290,7 @@ internal sealed class Lba1MusicPlayer : IDisposable
             lock (gate)
             {
                 if (mine != generation || !ReferenceEquals(p, process)) return;
-                var elapsed = started?.ElapsedMilliseconds ?? long.MaxValue;
+                var elapsed = RunMilliseconds(p);
                 var code = ExitCode(p);
                 onTrial = false;
                 lock (choice)

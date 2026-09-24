@@ -195,7 +195,7 @@ public partial class MainWindow
         if (!zoneFormLoading) UpdateZoneDerived();
     }
 
-    private static bool TryInt(TextBox box, out int value) => int.TryParse(box.Text.Trim(), out value);
+    private static bool TryInt(TextBox box, out int value) => int.TryParse((box.Text ?? "").Trim(), out value);
 
     // Size of the box and, for a cube change, where it leads, from whatever is typed right now.
     private void UpdateZoneDerived()

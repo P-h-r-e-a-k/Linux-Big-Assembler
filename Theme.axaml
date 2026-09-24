@@ -344,12 +344,19 @@
         <Setter Property="MinHeight" Value="0"/>
     </Style>
     <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{StaticResource ThemeHoverBrush}"/></Style>
+    <!-- The selected row: the accent with white text while the list has the keyboard, the pale hover colour when it doesn't (WPF's
+         active / inactive selection, which the WPF theme set through HighlightBrushKey and InactiveSelectionHighlightBrushKey). A
+         list whose items carry their own accent-coloured text (the script window's suggestions, shown while the editor keeps
+         the keyboard) stays readable that way. -->
     <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource ThemeHoverBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource ThemeTextBrush}"/>
+    </Style>
+    <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{StaticResource ThemeHoverBrush}"/></Style>
+    <Style Selector="ListBox:focus-within ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{StaticResource ThemeSelectedBrush}"/>
         <Setter Property="Foreground" Value="#FFFFFF"/>
     </Style>
-    <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{StaticResource ThemeSelectedBrush}"/></Style>
-    <Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{StaticResource ThemeSelectedBrush}"/></Style>
     <Style Selector="CheckBox">
         <Setter Property="Foreground" Value="{StaticResource ThemeTextBrush}"/>
         <Setter Property="MinHeight" Value="0"/>

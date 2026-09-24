@@ -31,23 +31,55 @@ internal sealed class FilterableComboBox
     private readonly ComboBox combo;
     private readonly Func<IReadOnlyList<Option>> allOptions;
     private bool suppress;
+    private bool replacing;      // (the list is being replaced: the selection changes that causes are not picks)
+    private bool selecting;      // (a selection change is being handled: the list can't be replaced until it is over)
 
     public event Action? Committed;
+
+    // The focus has left the combo box (for its owner to take a typed-in value). Its LostFocus isn't that in Avalonia: clicking an
+    // entry of the drop-down takes the focus from the text box too, and a typed value taken then would undo the pick being made.
+    public event Action? FocusLeft;
 
     public FilterableComboBox(ComboBox combo, Func<IReadOnlyList<Option>> allOptions)
     {
         this.combo = combo;
         this.allOptions = allOptions;
         combo.PropertyChanged += (_, e) => { if (e.Property == ComboBox.TextProperty) OnTextChanged(); };
-        combo.GotFocus += (_, _) => ResetFilter();
+        combo.GotFocus += (_, _) => { if (!combo.IsDropDownOpen) ResetFilter(); };      // (not an entry of the drop-down being clicked: that would lose the click)
         combo.SelectionChanged += OnSelectionChanged;
+        combo.LostFocus += (_, _) => Dispatcher.UIThread.Post(() => { if (!combo.IsKeyboardFocusWithin && !combo.IsDropDownOpen) FocusLeft?.Invoke(); });
     }
 
-    public void Refresh() => combo.ItemsSource = allOptions();
+    public void Refresh() => SetItems(allOptions());
+
+    // Replaces the list. Avalonia can't do that from inside a selection change (one its own text-to-selection sync makes, when the
+    // text is set in code, included): it takes the new list but throws before the selection has it ("Cannot change source while
+    // update is in progress"), and the combo box then selects nothing that is only in the new list. So a replacement asked for
+    // then waits, and the whole list is put back as soon as the change is over (with retry). False when it had to wait.
+    private bool SetItems(IReadOnlyList<Option> items, bool retry = true)
+    {
+        if (!replacing && !selecting)
+        {
+            replacing = true;
+            try { combo.ItemsSource = items; return true; }
+            catch (InvalidOperationException)
+            {
+                // (a change Avalonia was still in the middle of: empty the list, so the one put back below goes in from scratch)
+                try { combo.ItemsSource = null; } catch (InvalidOperationException) { }
+                retry = true;
+            }
+            finally { replacing = false; }
+        }
+        if (retry) Dispatcher.UIThread.Post(() => ResetFilter(retry: false));
+        return false;
+    }
 
     private void OnTextChanged()
     {
-        if (suppress) return;
+        // Only typing filters. Avalonia also raises this when the combo box copies a selection made in code into its text (the
+        // island chosen at startup, or through the Scenes menu); filtering then would narrow the list to that one entry, and a
+        // later selection in code of anything else would find nothing to select.
+        if (suppress || !combo.IsKeyboardFocusWithin) return;
         var options = allOptions();
         var text = combo.Text ?? "";
         var editBox = combo.EditableTextBox;
@@ -57,26 +89,38 @@ internal sealed class FilterableComboBox
             : options.Where(o => o.Display.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
 
         suppress = true;
-        combo.ItemsSource = filtered;
+        if (!SetItems(filtered, retry: false)) { suppress = false; return; }      // (the text changed with a pick, not by typing: nothing to filter)
         combo.Text = text;
         if (editBox is not null) editBox.CaretIndex = Math.Min(caret, text.Length);
         combo.IsDropDownOpen = combo.IsKeyboardFocusWithin && filtered.Count > 0 && filtered.Count < options.Count;
         suppress = false;
     }
 
-    private void ResetFilter()
+    private void ResetFilter() => ResetFilter(retry: true);
+
+    private void ResetFilter(bool retry)
     {
         suppress = true;
         var text = combo.Text;
-        combo.ItemsSource = allOptions();
+        SetItems(allOptions(), retry);
         combo.Text = text;
         suppress = false;
-        combo.EditableTextBox?.SelectAll();
+        if (combo.IsKeyboardFocusWithin) combo.EditableTextBox?.SelectAll();      // (Avalonia shows a selection in a box without the focus too)
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (suppress) return;
+        // (Avalonia empties the selection as soon as the typed text matches no entry: that's typing, not a pick, and treating it as
+        // one would select the typed text, for the next key to replace)
+        if (suppress || replacing || combo.SelectedItem is null) return;
+        selecting = true;
+        try { OnPicked(); }
+        finally { selecting = false; }
+        Dispatcher.UIThread.Post(ResetFilter, DispatcherPriority.Background);
+    }
+
+    private void OnPicked()
+    {
         // Also fixes a second, related bug found while testing this: picking
         // an item from an already-*filtered* list (type a few letters, then
         // click one of the narrowed-down matches) left the text box blank
@@ -93,8 +137,9 @@ internal sealed class FilterableComboBox
             combo.Text = selected.Display;
             suppress = false;
         }
+        // Committed runs at once, as in WPF: callers chain on it (the Scenes menu selects an island, whose handler loads that
+        // island's scene list, and then selects a scene from that list).
         Committed?.Invoke();
-        ResetFilter();
-        Dispatcher.UIThread.Post(ResetFilter, DispatcherPriority.Background);
+        ResetFilter();      // (waits for the change to be over, see SetItems)
     }
 }

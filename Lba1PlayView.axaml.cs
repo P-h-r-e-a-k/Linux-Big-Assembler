@@ -301,6 +301,7 @@ public partial class Lba1PlayView : UserControl
             bgra[i * 4] = f.Palette[c + 2]; bgra[i * 4 + 1] = f.Palette[c + 1]; bgra[i * 4 + 2] = f.Palette[c]; bgra[i * 4 + 3] = 255;
         }
         filmBitmap!.WritePixels(new PixelRect(0, 0, f.Width, f.Height), bgra, f.Width * 4, 0);
+        FilmImage.InvalidateVisual();     // Avalonia doesn't notice pixels rewritten in place (WPF's WriteableBitmap did): repaint the Image
     }
 
     private void PlayFilmSound(Lba1Fla.Sound sound)

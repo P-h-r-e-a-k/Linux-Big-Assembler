@@ -84,11 +84,12 @@ public partial class Lba1ActorAttributesWindow : Window
         entityFilter = new FilterableComboBox(EntityCombo, () => entityOptions);
         bodyFilter = new FilterableComboBox(BodyCombo, () => bodyOptions);
         animFilter = new FilterableComboBox(AnimCombo, () => animOptions);
-        entityFilter.Committed += EntityCommitted;
-        bodyFilter.Committed += () => { bodyId = ParseIndex(BodyCombo.Text, bodyId); BodyChanged(); };
-        animFilter.Committed += () => { animId = ParseIndex(AnimCombo.Text, animId); RefreshPreviewTarget(); };
-        foreach (var (combo, ident) in new[] { (EntityCombo, 0), (BodyCombo, 1), (AnimCombo, 2) })
-            combo.LostFocus += (_, _) => CommitTyped(ident);
+        // (Avalonia also selects in these boxes when their text is set in code, as it is while `loading`: those aren't picks)
+        entityFilter.Committed += () => { if (!loading) EntityCommitted(); };
+        bodyFilter.Committed += () => { if (loading) return; bodyId = ParseIndex(BodyCombo.Text ?? "", bodyId); BodyChanged(); };
+        animFilter.Committed += () => { if (loading) return; animId = ParseIndex(AnimCombo.Text ?? "", animId); RefreshPreviewTarget(); };
+        foreach (var (filter, ident) in new[] { (entityFilter, 0), (bodyFilter, 1), (animFilter, 2) })
+            filter.FocusLeft += () => CommitTyped(ident);
 
         loading = true;
         entityFilter.Refresh(); bodyFilter.Refresh(); animFilter.Refresh();
@@ -109,7 +110,9 @@ public partial class Lba1ActorAttributesWindow : Window
         var track = Lba1TrackScript.Points(game.LoadScene(scene).Actors.ElementAtOrDefault(actorIndex)?.TrackScript ?? Array.Empty<byte>());
         WaypointsLabel.Text = actorIndex == 0 || track.Count == 0 ? "" : $"{track.Count} waypoint{(track.Count == 1 ? "" : "s")} on this actor's track script";
 
+        loading = true;
         ApplyActorKindLimits();
+        loading = false;
 
         // A brand new preview target, drawn as soon as the layout knows the panel's size.
         Loaded += (_, _) => { RefreshPreviewTarget(); previewTimer.Start(); };
@@ -197,7 +200,7 @@ public partial class Lba1ActorAttributesWindow : Window
     {
         if (loading) return;
         var combo = which switch { 0 => EntityCombo, 1 => BodyCombo, _ => AnimCombo };
-        if (!int.TryParse(LeadingIndex(combo.Text), out var value))
+        if (!int.TryParse(LeadingIndex(combo.Text ?? ""), out var value))
         {
             SetComboText();
             return;
@@ -213,7 +216,7 @@ public partial class Lba1ActorAttributesWindow : Window
 
     private void EntityCommitted()
     {
-        var value = ParseIndex(EntityCombo.Text, entity);
+        var value = ParseIndex(EntityCombo.Text ?? "", entity);
         if (value == entity) return;
         entity = Math.Max(0, value);
         EntityChanged();
@@ -375,7 +378,7 @@ public partial class Lba1ActorAttributesWindow : Window
         var edited = data.Clone();
         bool Int(TextBox box, string what, out int value)
         {
-            if (int.TryParse(box.Text.Trim(), out value)) return true;
+            if (int.TryParse((box.Text ?? "").Trim(), out value)) return true;
             StatusLabel.Text = $"“{what}” must be a whole number.";
             return false;
         }

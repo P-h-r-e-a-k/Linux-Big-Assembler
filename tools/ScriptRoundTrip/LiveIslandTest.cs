@@ -11,10 +11,9 @@ internal static class LiveIslandTest
 {
     public static int Run(string[] args)
     {
-        var sandbox = args.Length > 1 ? args[1] : @"E:\dump\_lba2isl";
+        var sandbox = args.Length > 1 ? args[1] : Portable.Sandbox("_lba2isl");
         if (!Directory.Exists(sandbox) || !File.Exists(Path.Combine(sandbox, "DESERT.ILE"))) { Console.WriteLine($"no sandbox game folder at {sandbox}"); return 2; }
-        var dll = Environment.GetEnvironmentVariable("LBA2_RENDERER_DLL") ??
-                  @"E:\dump\LBAAssembler\native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll";
+        var dll = Portable.RendererLibrary;
         var realBefore = File.ReadAllBytes(Path.Combine(sandbox, "DESERT.ILE"));
         LiveDataRoot.CleanStale(sandbox);
         using var live = LiveDataRoot.Create(sandbox, "DESERT.ILE");

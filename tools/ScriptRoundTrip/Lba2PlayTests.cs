@@ -13,7 +13,7 @@ internal static class Lba2PlayTests
     public static int Run(string[] args)
     {
         var engine = Lba2Engine.Find();
-        if (engine is null) { Console.WriteLine("no lba2cc.exe found"); return 1; }
+        if (engine is null) { Console.WriteLine($"no {Lba2Engine.ExeName} found"); return 1; }
         var user = Path.Combine(Path.GetTempPath(), "lba2play_test_" + Guid.NewGuid().ToString("N")[..8]);
         var failures = 0;
         try
@@ -73,8 +73,6 @@ internal static class Lba2PlayTests
         return failures;
     }
 
-    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-    private static extern bool CreateHardLinkW(string newFile, string existingFile, IntPtr reserved);
 
     private static int ObjectsIn(string engine, string gameDir, string user, int scene)
     {
@@ -92,15 +90,16 @@ internal static class Lba2PlayTests
     // (record, patch table, the scene buffer size in entry 0) shows up in the running game.
     private static int EditThenPlay(string engine, string user)
     {
-        var dir = @"E:\dump\_lba2e2e";
+        var dir = Portable.Sandbox("_lba2e2e");
         try
         {
             Directory.CreateDirectory(dir);
+            Portable.LinkSubfolders(Lba2Dir, dir);
             foreach (var file in Directory.GetFiles(Lba2Dir))
             {
                 var target = Path.Combine(dir, Path.GetFileName(file));
                 if (string.Equals(Path.GetFileName(file), "SCENE.HQR", StringComparison.OrdinalIgnoreCase)) File.Copy(file, target, true);
-                else if (!File.Exists(target)) CreateHardLinkW(target, file, IntPtr.Zero);
+                else if (!File.Exists(target)) Portable.HardLink(target, file);
             }
             var before = ObjectsIn(engine, dir, user, 5);
             var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, dir);

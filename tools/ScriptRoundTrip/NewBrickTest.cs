@@ -13,8 +13,6 @@ internal static class NewBrickTest
     private static readonly string Lba2Dir = Environment.GetEnvironmentVariable("LBA2_DIR") ?? @"E:\GOG Games\Little Big Adventure 2 - Level viewer";
     private static int failures;
 
-    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-    private static extern bool CreateHardLinkW(string newFile, string existingFile, IntPtr reserved);
 
     private static void Check(string what, bool ok, string detail = "")
     {
@@ -49,18 +47,19 @@ internal static class NewBrickTest
     {
         failures = 0;
         var engine = Lba2Engine.Find();
-        if (engine is null) { Console.WriteLine("no lba2cc.exe found"); return 1; }
-        var sandbox = @"E:\dump\_lba2brick_e2e";
+        if (engine is null) { Console.WriteLine($"no {Lba2Engine.ExeName} found"); return 1; }
+        var sandbox = Portable.Sandbox("_lba2brick_e2e");
         var user = Path.Combine(Path.GetTempPath(), "brick_e2e_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(sandbox); Directory.CreateDirectory(user);
         try
         {
+            Portable.LinkSubfolders(Lba2Dir, sandbox);
             foreach (var file in Directory.GetFiles(Lba2Dir))
             {
                 var target = Path.Combine(sandbox, Path.GetFileName(file));
                 if (File.Exists(target)) File.Delete(target);
                 if (Path.GetFileName(file).Equals("LBA_BKG.HQR", StringComparison.OrdinalIgnoreCase)) File.Copy(file, target, true);
-                else CreateHardLinkW(target, file, IntPtr.Zero);
+                else Portable.HardLink(target, file);
             }
             var backend = new Lba2GridBackend(sandbox);
             const int scene = 0;

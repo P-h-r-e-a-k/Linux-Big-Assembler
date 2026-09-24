@@ -104,7 +104,7 @@
 
             <Border x:Name="PreviewBorder" Grid.Row="0" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1">
                 <Grid>
-                    <Image x:Name="BodyPreviewImage" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="None" Cursor="SizeWE"
+                    <Image x:Name="BodyPreviewImage" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="None" Cursor="SizeWestEast"
                            PointerPressed="BodyPreviewImage_MouseLeftButtonDown" PointerMoved="BodyPreviewImage_MouseMove"
                            PointerReleased="BodyPreviewImage_MouseLeftButtonUp"/>
                     <TextBlock x:Name="BodyPreviewFallbackLabel" Text="preview unavailable" Foreground="#8FB0D6" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"

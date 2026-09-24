@@ -55,7 +55,7 @@ internal sealed class ListPickWindow : Window
 
         void Fill()
         {
-            var text = filter.Text.Trim();
+            var text = (filter.Text ?? "").Trim();
             list.Items.Clear();
             foreach (var item in items.Where(i => text.Length == 0 || i.Label.Contains(text, StringComparison.OrdinalIgnoreCase)))
                 list.Items.Add(new Entry(item.Id, item.Label));
@@ -65,6 +65,7 @@ internal sealed class ListPickWindow : Window
         filter.TextChanged += (_, _) => { selected = null; Fill(); };
         void Accept() { if (list.SelectedItem is Entry e) { Chosen = e.Id; this.DialogResult = true; } }
         ok.Click += (_, _) => Accept();
+        cancel.Click += (_, _) => this.DialogResult = false;     // (WPF closed a dialog by its IsCancel button by itself; Avalonia only clicks it)
         list.DoubleTapped += (_, _) => Accept();
         filter.KeyDown += (_, e) =>
         {

@@ -212,7 +212,13 @@ int lba2_renderer_set_data_root(const char *path)
     char root[ADELINE_MAX_PATH];
     strncpy(root, path, ADELINE_MAX_PATH - 2);
     root[ADELINE_MAX_PATH - 2] = '\0';
+    // The trailing separator must be the platform's own: a backslash on Linux is part of the name, and InitDirectories
+    // then refused the "directory" ("Invalid user directory '/path\\'").
+#ifdef _WIN32
     if (root[0] && root[strlen(root) - 1] != '\\' && root[strlen(root) - 1] != '/') strcat(root, "\\");
+#else
+    if (root[0] && root[strlen(root) - 1] != '/') strcat(root, "/");
+#endif
     // InitDirectories() asserts it's never been called before (DIRECTORIES.CPP's own one-shot-boot
     // contract) -- but this function is called every time a live preview starts (BeginLive), i.e.
     // every time Build mode's terrain live-preview or a debug body preview kicks in, well after boot's

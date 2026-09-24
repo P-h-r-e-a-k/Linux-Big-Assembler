@@ -523,6 +523,14 @@ internal sealed class EmbeddedGameHost : NativeControlHost
             }
             var d = Display;
             if (d == IntPtr.Zero) return;
+            // SDL puts its window back where it thinks it belongs once it is shown (the top-left corner of our host, having been
+            // asked for an off-screen spot), so the centred place Fit() gave it doesn't survive the adoption: it is kept there.
+            if (gameRect.W > 0 && X11.XGetGeometry(d, game, out _, out var gx, out var gy, out var gw, out var gh, out _, out _) != 0
+                && (gx != gameRect.X || gy != gameRect.Y || gw != (uint)gameRect.W || gh != (uint)gameRect.H))
+            {
+                X11.XMoveResizeWindow(d, game, gameRect.X, gameRect.Y, (uint)gameRect.W, (uint)gameRect.H);
+                X11.XFlush(d);
+            }
             if (X11.XQueryPointer(d, host, out _, out _, out _, out _, out var x, out var y, out var mask) == 0 || (mask & X11.Button1Mask) == 0) return;
             X11.XGetInputFocus(d, out var focused, out _);
             var overGame = x >= gameRect.X && x < gameRect.X + gameRect.W && y >= gameRect.Y && y < gameRect.Y + gameRect.H;

@@ -24,6 +24,7 @@ internal sealed class ObjectBrowserWindow : Window
     private readonly ComboBox sourceBox = new() { Width = 200, Margin = new Thickness(0, 0, 10, 0) };
     private readonly ListBox list = new() { Width = 130, FontFamily = UiFonts.Mono, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
     private readonly Image view = new() { Stretch = Stretch.Uniform };
+    private Border? host;
     private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
     private readonly TextBlock status = new() { Foreground = UiBrushes.Text, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly CheckBox wire = new() { Content = "Wireframe" };
@@ -74,7 +75,7 @@ internal sealed class ObjectBrowserWindow : Window
             var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 6, 0) };
             b.Click += handler; top.Children.Add(b);
         }
-        wire.Foreground = Foreground; wire.VerticalAlignment = VerticalAlignment.Center; wire.IsCheckedChanged += (_, _) => Draw(); wire.Unchecked += (_, _) => Draw();
+        wire.Foreground = Foreground; wire.VerticalAlignment = VerticalAlignment.Center; wire.IsCheckedChanged += (_, _) => Draw();     // (both ways: WPF needed a Checked and an Unchecked handler)
         top.Children.Add(wire);
         root.Children.Add(top);
         var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = status };
@@ -91,7 +92,7 @@ internal sealed class ObjectBrowserWindow : Window
         DockPanel.SetDock(right, Dock.Right);
         root.Children.Add(right);
 
-        var host = new Border { Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)), Child = view };
+        host = new Border { Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)), Child = view };
         host.PointerPressed += (_, e) => { if (!e.IsLeft) return; drag = e.GetPosition(host); host.CaptureMouse(); };
         host.PointerMoved += (_, e) => { if (drag is { } d && host.IsMouseCaptured) { var p = e.GetPosition(host); yaw += (float)(p.X - d.X) * 0.012f; drag = p; Draw(); } };
         host.PointerReleased += (_, e) => { if (!e.IsLeft) return; drag = null; host.ReleaseMouseCapture(); };
@@ -145,7 +146,9 @@ internal sealed class ObjectBrowserWindow : Window
     private void Draw()
     {
         if (body is null) { view.Source = null; return; }
-        var w = (int)Math.Max(200, view.ActualWidth); var h = (int)Math.Max(200, view.ActualHeight);
+        // The picture is drawn at the size of the area it fills (the Border around the Image): an Image without a picture
+        // yet is 0 x 0 in Avalonia, so sizing by the Image drew the first body at the 200-pixel minimum, blurred when stretched.
+        var w = (int)Math.Max(200, host?.ActualWidth ?? 0); var h = (int)Math.Max(200, host?.ActualHeight ?? 0);
         try
         {
             var image = Renderer.Render(body, palette, w, h, yaw, wire.IsChecked == true, background: Renderer.ViewBackground, gridLine: Renderer.ViewGrid);

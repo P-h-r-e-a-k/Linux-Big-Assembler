@@ -231,7 +231,7 @@ public partial class MainWindow
         ZoneApplyButton.IsEnabled = edit;
         ZoneRevertButton.IsEnabled = edit;
         if (!edit && ZoneDetails.Visibility == Visibility.Visible) ZoneStatus.Text = "Switch to Build mode (Ctrl+2) to change this zone.";
-        else if (edit && ZoneStatus.Text.StartsWith("Switch to Build mode", StringComparison.Ordinal)) ZoneStatus.Text = "";
+        else if (edit && (ZoneStatus.Text ?? "").StartsWith("Switch to Build mode", StringComparison.Ordinal)) ZoneStatus.Text = "";
     }
 
     // ---- the SCRIPT tab: the actors in view -----------------------------------------------------------------------------------------------------

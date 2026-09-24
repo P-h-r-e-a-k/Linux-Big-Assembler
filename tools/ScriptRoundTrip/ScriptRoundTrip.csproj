@@ -17,6 +17,13 @@
   <ItemGroup>
     <!-- Lba1GridRenderer draws with Avalonia's Point/Bitmap (WPF's before the port): the core package only, no desktop platform. -->
     <PackageReference Include="Avalonia" Version="11.3.22" />
+    <!-- (Compat/BitmapCompat.cs scales pictures with Skia, which the app gets through Avalonia.Desktop; the version Avalonia 11.3 uses) -->
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The scene/body/animation name lists, embedded as in the app (HqdDescriptions falls back to these when there is no
+         LBAPackageManager install, which is always the case on Linux). -->
+    <EmbeddedResource Include="..\..\Assets\FileDesc\*.HQD" LogicalName="FileDesc.%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\LbaScript\**\*.cs" Link="LbaScript\%(RecursiveDir)%(Filename)%(Extension)" />
