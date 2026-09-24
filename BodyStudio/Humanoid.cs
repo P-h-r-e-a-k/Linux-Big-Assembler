@@ -1,0 +1,183 @@
+using System.IO;
+using System.Linq;
+using System.Numerics;
+
+namespace LbaBodyStudio;
+
+// A new rigid-skinned mesh, generated from image cross-sections. The known Twinsen
+// hierarchy is checked before using its animation semantics; other rigs use template fitting.
+public static class Humanoid
+{
+    public static Body Build(Body donor,ReferenceImage image,Settings settings)
+    {
+        int[] parents=[-1,0,1,2,3,4,3,6,2,8,9,2,11,12,3,14,15,3,17];
+        if(donor.Bones.Count!=19||!donor.Bones.Select(b=>b.Parent).SequenceEqual(parents))
+            throw new InvalidDataException("New humanoid requires the standard 19-bone Twinsen rig (body index 0). Choose index 0 or select Fit template for other rigs.");
+        float h=donor.World().Max(v=>v.Y),w=h*image.Crop.Width/image.Crop.Height;
+
+        // Preserve the original rest skeleton, not only its hierarchy.
+        var donorWorld=donor.World();
+        Vector3[] origins=donor.Bones.Select(b=>b.Parent<0?Vector3.Zero:donorWorld[b.Pivot]).ToArray();
+        var vertices=Enumerable.Range(0,19).Select(_=>new List<Vector3>()).ToArray();
+        var faces=new List<(int Bone,int[] Points,int Tone)>();
+        // Parent-owned anchors are the exact pivot points referenced by each child.
+        var pivots=new int[19];
+        vertices[0].Add(Vector3.Zero);
+        for(int i=1;i<19;i++){pivots[i]=vertices[parents[i]].Count;vertices[parents[i]].Add(origins[i]);}
+        (float left,float right) Span(float y,string part,int side,(float left,float right)? previous)
+        {
+            int row=Math.Clamp((int)((1-y)*255),0,255);var runs=image.Runs[row];
+            float left,right;
+            if(part=="head")
+            {
+                var span=image.Rows[row];left=span.Left-.5f;right=span.Right-.5f;
+                if(right-left<.05f){left=-.13f;right=.13f;}
+                left=Math.Max(left,-.20f);right=Math.Min(right,.20f);
+            }
+            else if(part=="torso")
+            {
+                var central=runs.Where(r=>r.Left<.55f&&r.Right>.45f).OrderByDescending(r=>r.Right-r.Left).FirstOrDefault();
+                left=central==default?-.23f:central.Left-.5f;right=central==default?.23f:central.Right-.5f;
+                left=Math.Max(left,-.32f);right=Math.Min(right,.32f);
+            }
+            else
+            {
+                if(part is "leg" or "foot")
+                {
+                    float desired=.5f+side*.22f;
+                    var covering=runs.Where(r=>r.Left<=desired&&r.Right>=desired).FirstOrDefault();
+                    if(covering!=default)
+                    {
+                        left=covering.Left-.5f;right=covering.Right-.5f;
+                        if(side>0)left=Math.Max(left,.025f);else right=Math.Min(right,-.025f);
+                        return(left,right);
+                    }
+                }
+                var candidates=runs.Where(r=>side>0?(r.Left+r.Right)/2>.54f:(r.Left+r.Right)/2<.46f).ToArray();
+                if(candidates.Length>0)
+                {
+                    var run=part=="arm"?(side>0?candidates.MaxBy(r=>r.Right):candidates.MinBy(r=>r.Left)):(side>0?candidates.MinBy(r=>r.Left):candidates.MaxBy(r=>r.Right));
+                    left=run.Left-.5f;right=run.Right-.5f;
+                    if(part=="arm"&&right-left>.23f){float centre=side*.35f;left=centre-.075f;right=centre+.075f;}
+                    // The "covering" lookup above only succeeds when some run's silhouette spans straight across
+                    // the leg/foot's expected x position; when the two legs' own silhouettes touch with no
+                    // background gap between them at a given row (a real photo can do this even where a hand-drawn
+                    // test silhouette never would -- confirmed on a real-photo generation, where the only run this
+                    // fallback found for the LEFT leg at one row was actually the merged crotch area, reaching all
+                    // the way across to the RIGHT of centre), the "covering" check itself can never trigger (no
+                    // single run spans both legs' desired x positions at once), so every candidate here reaches
+                    // this branch with no protection at all against reading a leg's span as crossing into the
+                    // other leg's own half -- unlike "covering", which already guards exactly this with the same
+                    // clamp below. Applying that same guard here closes the gap.
+                    if(part is "leg" or "foot"){if(side>0)left=Math.Max(left,.025f);else right=Math.Min(right,-.025f);}
+                    // Even after the guards above, a real photo can still hand this branch a run that's a
+                    // plausible-looking but wrong partial read at just one row -- e.g. a small stray dark speck
+                    // picked up as if it were a limb's entire cross-section (confirmed on a real-photo generation:
+                    // an isolated run a few pixels wide, unrelated to the actual leg, read as the whole leg at one
+                    // row, swinging that ring's centre far out and its radius far down before the very next row
+                    // read normally again and it swung right back, leaving a wedge-shaped spike in the mesh
+                    // between the two). Rather than try to out-guess every way a single row can misread, clamp
+                    // this row's centre and radius to move only a bounded amount from the previous row's own
+                    // values -- gradual tapering (the normal case, including a genuinely narrower real elbow,
+                    // wrist, knee or ankle) passes through unaffected since it never needs a whole row's worth of
+                    // change in one step, but a one-row excursion that reverts on the very next row is exactly
+                    // what this catches. Only reachable from this fallback branch, never from "covering" (which
+                    // returns directly above): the widestance regression test's deliberately large, asymmetric
+                    // row-to-row leg swings always resolve through "covering" on its clean hand-drawn silhouette,
+                    // so they never reach here and this cannot fight that.
+                    if(previous is{}p)
+                    {
+                        float prevCentre=(p.left+p.right)/2,prevRadius=(p.right-p.left)/2;
+                        float newCentre=Math.Clamp((left+right)/2,prevCentre-.08f,prevCentre+.08f);
+                        float newRadius=Math.Clamp((right-left)/2,prevRadius-.02f,prevRadius+.02f);
+                        left=newCentre-newRadius;right=newCentre+newRadius;
+                    }
+                }
+                else {float centre=side*(part=="arm"?.38f:.22f),radius=part=="arm"?.075f:.115f;left=centre-radius;right=centre+radius;}
+            }
+            return(left,right);
+        }
+        // overrideFirst, when given, replaces the image-derived span for row 0 only (later rows still read the
+        // image normally): used to anchor a leg's own top ring to the torso's own hip ring (see HipAttach) so the
+        // two tubes always meet, rather than each independently re-scanning the image and risking a mismatch --
+        // a real bug this fixes: a wide stance (or anything else that makes one leg's own silhouette at the hip
+        // row read differently from the torso's) used to leave a visible hole between that leg and the torso.
+        (float left,float right) Loft(int bone,float[] rows,string part,int side=0,int segments=6,(float left,float right)? overrideFirst=null)
+        {
+            var list=vertices[bone];int begin=list.Count;(float left,float right) last=default;
+            for(int r=0;r<rows.Length;r++)
+            {
+                float y=rows[r];var span=r==0&&overrideFirst is{}o?o:Span(y,part,side,r>0?last:null);
+                last=span;float centre=(span.left+span.right)/2,radius=(span.right-span.left)/2;
+                if(part=="head")radius*=settings.HeadScale/.7f;
+                float depth=part switch{"head"=>radius*w*.90f,"torso"=>Math.Min(radius*w*.6f,h*.072f),"foot"=>h*.072f,_=>radius*w*.92f};
+                if(part=="head"&&r==0){radius*=.35f;depth*=.35f;}
+                float centreZ=part=="foot"?-h*.023f:0;
+                if(settings.HeadDetails&&part=="head")
+                {
+                    centre=0;
+                    float shape=y>.995f?.25f:y>.97f?.88f:y>.91f?1:y>.86f?.83f:.53f;
+                    radius=h*.055f/w*shape*(settings.HeadScale/.7f);depth=radius*w*.9f;
+                }
+                for(int j=0;j<segments;j++)
+                {
+                    float angle=j*2*MathF.PI/segments;
+                    list.Add(new((centre+radius*MathF.Cos(angle))*w,y*h,centreZ+depth*MathF.Sin(angle)));
+                }
+            }
+            int tone=settings.HeadDetails&&part=="head"?0:-1;
+            for(int r=0;r<rows.Length-1;r++)for(int j=0;j<segments;j++)faces.Add((bone,[begin+r*segments+j,begin+r*segments+(j+1)%segments,begin+(r+1)*segments+(j+1)%segments,begin+(r+1)*segments+j],tone));
+            // Convex planar caps tiled with quads, reducing classic engine primitive usage.
+            for(int j=1;j<segments-2;j+=2)
+            {
+                faces.Add((bone,[begin,begin+j+2,begin+j+1,begin+j],tone));
+                int b=begin+(rows.Length-1)*segments;faces.Add((bone,[b,b+j,b+j+1,b+j+2],tone));
+            }
+            return last;
+        }
+        // A sub-span of the hip's own span for one leg to start from: the hip's own half on that side, less a
+        // small central gap for the crotch -- always inside the hip span by construction, so the leg's top ring
+        // can never land outside where the torso's own bottom ring actually reaches.
+        (float left,float right) HipAttach((float left,float right) hip,int side)
+        {
+            float mid=(hip.left+hip.right)/2,gap=(hip.right-hip.left)*.08f;
+            return side>0?(mid+gap/2,hip.right):(hip.left,mid-gap/2);
+        }
+        if(settings.HeadDetails)
+        {
+            // Reserve vertex capacity for actual facial geometry instead of subdividing clothing.
+            var hip1=Loft(2,[.56f,.47f],"torso");Loft(3,[.845f,.815f,.76f,.56f],"torso");
+            Loft(4,[.81f,.65f],"arm",1);Loft(5,[.65f,.46f,.435f],"arm",1);
+            Loft(6,[.81f,.65f],"arm",-1);Loft(7,[.65f,.46f,.435f],"arm",-1);
+            Loft(8,[.51f,.29f],"leg",1,overrideFirst:HipAttach(hip1,1));Loft(9,[.29f,.07f],"leg",1);Loft(10,[.07f,.003f],"foot",1);
+            Loft(11,[.51f,.29f],"leg",-1,overrideFirst:HipAttach(hip1,-1));Loft(12,[.29f,.07f],"leg",-1);Loft(13,[.07f,.003f],"foot",-1);
+            Loft(14,[1f,.98f,.966f,.927f,.875f,.845f],"head",0,12);
+            HeadDecoration.Add(vertices[14],(ids,tone)=>faces.Add((14,ids,tone)),h,settings);
+        }
+        else
+        {
+        var hip=Loft(2,[.56f,.51f,.47f],"torso");
+        Loft(3,[.845f,.815f,.76f,.66f,.56f],"torso");
+        Loft(4,[.81f,.74f,.65f],"arm",1);Loft(5,[.65f,.55f,.46f,.435f],"arm",1);
+        Loft(6,[.81f,.74f,.65f],"arm",-1);Loft(7,[.65f,.55f,.46f,.435f],"arm",-1);
+        Loft(8,[.51f,.39f,.29f],"leg",1,overrideFirst:HipAttach(hip,1));Loft(9,[.29f,.20f,.07f],"leg",1);Loft(10,[.07f,.025f,.003f],"foot",1);
+        Loft(11,[.51f,.39f,.29f],"leg",-1,overrideFirst:HipAttach(hip,-1));Loft(12,[.29f,.20f,.07f],"leg",-1);Loft(13,[.07f,.025f,.003f],"foot",-1);
+        Loft(14,[1f,.985f,.969f,.958f,.945f,.929f,.917f,.905f,.89f,.872f,.845f],"head",0,8);
+        }
+        // Empty accessory bones still have a point so all engine animation groups are valid.
+        for(int i=0;i<19;i++)if(vertices[i].Count==0)vertices[i].Add(origins[i]);
+        var body=new Body(){Game=donor.Game,Header=(byte[])donor.Header.Clone()};int[] starts=new int[19];
+        for(int i=0;i<19;i++)
+        {
+            starts[i]=body.Vertices.Count;body.Vertices.AddRange(vertices[i]);int pivot=i==0?0:starts[parents[i]]+pivots[i];byte[] record=new byte[donor.Game==1?38:8];
+            if(donor.Game==1){BitConverter.GetBytes((ushort)(starts[i]*6)).CopyTo(record,0);BitConverter.GetBytes((ushort)vertices[i].Count).CopyTo(record,2);BitConverter.GetBytes((ushort)(pivot*6)).CopyTo(record,4);BitConverter.GetBytes((short)(parents[i]<0?-1:parents[i]*38)).CopyTo(record,6);}
+            body.Bones.Add(new(starts[i],vertices[i].Count,pivot,parents[i],record));
+        }
+        foreach(var f in faces)body.Faces.Add(new(f.Points.Select(p=>p+starts[f.Bone]).ToArray(),0,f.Tone));
+        if(settings.HeadDetails&&body.Vertices.Count>body.Limit)
+            throw new InvalidDataException($"The bandana label needs too many points for LBA{body.Game} ({body.Vertices.Count}/{body.Limit}). Shorten the text or choose letters with simpler shapes.");
+        body.SetWorld(body.Vertices.ToArray());body.Validate();return body;
+    }
+}
+
+

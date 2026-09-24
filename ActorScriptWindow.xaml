@@ -1,0 +1,222 @@
+<Window x:Class="LBAAssembler.ActorScriptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Actor Script" Height="760" Width="1180" MinHeight="420" MinWidth="820"
+        Background="#FFFFFF" Foreground="#10243E" FontFamily="Segoe UI"
+        WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <Style x:Key="Eyebrow" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#4E6B8A"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="10"/>
+        </Style>
+        <Style x:Key="FieldBox" TargetType="Control">
+            <Setter Property="Foreground" Value="#10243E"/>
+            <Setter Property="Background" Value="#E8F0FA"/>
+            <Setter Property="BorderBrush" Value="#A9C3E0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="7"/>
+        </Style>
+        <!-- Flat segmented-control look for the Life / Track switch. -->
+        <Style x:Key="ViewTab" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#234A72"/>
+            <Setter Property="Background" Value="#E8F0FA"/>
+            <Setter Property="BorderBrush" Value="#A9C3E0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,-1,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" Padding="12,4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#C3DBF5"/>
+                                <Setter Property="Foreground" Value="#10243E"/>
+                                <Setter Property="Panel.ZIndex" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#8FB0D6"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#7C93AC"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ToolButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Foreground" Value="#10243E"/>
+            <Setter Property="Background" Value="#D6E6F7"/>
+            <Setter Property="BorderBrush" Value="#A9C3E0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" Padding="12,5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#4E6B8A"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#8FB0D6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="22">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="320" MinWidth="160"/>
+            <ColumnDefinition Width="8"/>
+            <ColumnDefinition Width="*" MinWidth="300"/>
+            <ColumnDefinition Width="16"/>
+            <ColumnDefinition Width="260"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="12"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="16"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="6"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="8"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="5">
+            <TextBlock Text="Actor script" Style="{StaticResource Eyebrow}"/>
+            <TextBlock x:Name="TitleLabel" Text="Actor 0" FontSize="19" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5">
+            <Border Background="#E8F0FA" BorderBrush="#A9C3E0" BorderThickness="1" Padding="12,10">
+                <TextBlock x:Name="StatsLabel" Text="" FontFamily="Consolas" FontSize="11" Foreground="#234A72" TextWrapping="Wrap"/>
+            </Border>
+            <!-- Shown only while a script breakpoint has paused a live LBA1 Play session (any actor;
+                 several script windows can all show this at once and all act on it). -->
+            <Border x:Name="DebugBar" Background="#FDECC8" BorderBrush="#D9A93B" BorderThickness="1" Padding="12,8" Margin="0,8,0,0" Visibility="Collapsed">
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button x:Name="StepButton" Content="Step" Style="{StaticResource ToolButton}" Click="Step_Click"/>
+                        <Button x:Name="ContinueButton" Content="Continue" Style="{StaticResource ToolButton}" Click="Continue_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="DebugBarText" FontFamily="Consolas" FontSize="12" Foreground="#5A4310" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
+        </StackPanel>
+
+        <DockPanel Grid.Row="4" Grid.Column="2">
+            <TextBlock Text="Script" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                <RadioButton x:Name="ViewLifeButton" Content="Life (C)" GroupName="ScriptView" Tag="life"
+                             Style="{StaticResource ViewTab}" Checked="View_Checked"/>
+                <RadioButton x:Name="ViewTrackButton" Content="Track (C)" GroupName="ScriptView" Tag="track"
+                             Style="{StaticResource ViewTab}" Checked="View_Checked"/>
+            </StackPanel>
+            <TextBlock DockPanel.Dock="Right" Text="Ctrl+Space for suggestions"
+                       Foreground="#8FB0D6" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock x:Name="HintLabel" Text="" TextTrimming="CharacterEllipsis"
+                       Foreground="#4E6B8A" FontSize="11" VerticalAlignment="Center" Margin="12,0,12,0"/>
+        </DockPanel>
+
+        <TextBlock Grid.Row="4" Grid.Column="4" Text="Keywords" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+
+        <!-- Read-only disassembly of the same actor's scripts (life, then track), always visible to the left of the C editor. -->
+        <DockPanel Grid.Row="4" Grid.Column="0">
+            <TextBlock Text="Disassembly" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+            <TextBlock Text="F9 breakpoint" DockPanel.Dock="Right" Foreground="#8FB0D6" FontSize="10" VerticalAlignment="Center"/>
+        </DockPanel>
+        <TextBox x:Name="DisassemblyTextBox" Grid.Row="6" Grid.Column="0" Grid.RowSpan="3"
+                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                 FontFamily="Consolas" FontSize="12" Foreground="#4E6B8A" Background="#FFFFFF"
+                 BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                 PreviewKeyDown="DisassemblyTextBox_PreviewKeyDown"/>
+        <GridSplitter Grid.Row="4" Grid.Column="1" Grid.RowSpan="5" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                      Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"/>
+
+        <Grid Grid.Row="6" Grid.Column="2">
+            <TextBox x:Name="ScriptTextBox"
+                     AcceptsReturn="True" AcceptsTab="False" TextWrapping="NoWrap"
+                     FontFamily="Consolas" FontSize="13" Foreground="#10243E" Background="#FFFFFF"
+                     BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     TextChanged="ScriptTextBox_TextChanged"
+                     PreviewKeyDown="ScriptTextBox_PreviewKeyDown"
+                     LostKeyboardFocus="ScriptTextBox_LostKeyboardFocus"/>
+
+            <Popup x:Name="SuggestionPopup" PlacementTarget="{Binding ElementName=ScriptTextBox}"
+                   Placement="RelativePoint" StaysOpen="False" AllowsTransparency="True" Focusable="False">
+                <Border Background="#D6E6F7" BorderBrush="#8FB0D6" BorderThickness="1" MaxHeight="280" MinWidth="360" MaxWidth="520">
+                    <ListBox x:Name="SuggestionList" Background="Transparent" BorderThickness="0"
+                             Foreground="#10243E" FontFamily="Consolas" FontSize="12"
+                             PreviewMouseLeftButtonUp="SuggestionList_PreviewMouseLeftButtonUp">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="8,5">
+                                    <TextBlock Text="{Binding Signature}" FontWeight="Bold" Foreground="#1B6EC2"/>
+                                    <TextBlock Text="{Binding Description}" Foreground="#4E6B8A" FontSize="10" TextWrapping="Wrap" FontFamily="Segoe UI" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </Popup>
+        </Grid>
+
+        <!-- Compile status of the text in the editor, plus the actions that act on the scene's scripts. -->
+        <Grid Grid.Row="8" Grid.Column="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText" Grid.Column="0" FontFamily="Consolas" FontSize="11" Foreground="#4E6B8A"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Cursor="Hand"
+                       MouseLeftButtonDown="StatusText_MouseLeftButtonDown"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="RevertButton" Content="Revert script" Style="{StaticResource ToolButton}" Click="Revert_Click"/>
+                <Button x:Name="SaveButton" Content="Save to SCENE.HQR…" Style="{StaticResource ToolButton}" Click="Save_Click"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Full reference list of every valid script keyword (life actions,
+             life conditions, comparisons, track actions), separate from the
+             in-editor autocomplete popup above: browsable/searchable on its
+             own rather than only appearing while actively typing a matching
+             prefix. Double-click or Enter inserts at the caret. -->
+        <Grid Grid.Row="6" Grid.Column="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBox x:Name="KeywordFilterBox" Grid.Row="0" Style="{StaticResource FieldBox}"
+                     TextChanged="KeywordFilterBox_TextChanged" KeyDown="KeywordFilterBox_KeyDown"/>
+            <TextBlock x:Name="KeywordFilterPlaceholder" Grid.Row="0" Text="Filter keywords…" Foreground="#8FB0D6"
+                       FontFamily="Consolas" FontSize="12" Margin="11,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+            <ListBox x:Name="KeywordList" Grid.Row="2" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1"
+                     Foreground="#10243E" FontFamily="Consolas" FontSize="12"
+                     MouseDoubleClick="KeywordList_MouseDoubleClick" KeyDown="KeywordList_KeyDown">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="6,4" ToolTip="{Binding Description}">
+                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="#1B6EC2"/>
+                            <TextBlock Text="{Binding Kind}" Foreground="#7C93AC" FontSize="9" FontFamily="Segoe UI"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+    </Grid>
+</Window>
