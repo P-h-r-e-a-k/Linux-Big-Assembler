@@ -1,0 +1,147 @@
+# Builds the single-file Linux executable the way README's "Release build" section does -- SDL3, then the vendored
+# native renderer and engine, then dotnet publish -- and attaches it to a GitHub release. Run it by pushing a tag
+# (v1.2.3), or from the Actions tab with "Run workflow" and the tag to publish (created from the chosen branch).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish, e.g. v1.0.0 (created if it does not exist)'
+        required: true
+        type: string
+
+permissions:
+  contents: write      # (to create the release and its tag)
+
+env:
+  SDL_TAG: release-3.2.24      # the SDL3 the port is built and tested against (README)
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag being published
+        id: release
+        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build build-essential libx11-dev libxext-dev
+
+      # SDL3 is the engine's platform library and Ubuntu 24.04 has no package for it, so it is built from source
+      # (into a prefix of its own, kept between runs -- it only changes when SDL_TAG does).
+      - name: Cached SDL3
+        id: sdl-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/sdl3
+          key: sdl3-${{ env.SDL_TAG }}-ubuntu-24.04
+
+      - name: Build SDL3
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$SDL_TAG" https://github.com/libsdl-org/SDL.git "$RUNNER_TEMP/SDL3"
+          cmake -S "$RUNNER_TEMP/SDL3" -B "$RUNNER_TEMP/SDL3/build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/sdl3" \
+            -DSDL_STATIC=ON -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
+          ninja -C "$RUNNER_TEMP/SDL3/build"
+          ninja -C "$RUNNER_TEMP/SDL3/build" install
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The renderer library and the playable engine; dotnet publish embeds both in the executable.
+      - name: Build the native renderer and engine
+        working-directory: native/lba2-classic-community
+        run: |
+          cmake --preset linux -DCMAKE_PREFIX_PATH="$HOME/sdl3" -DLBA2_BUILD_TESTS=OFF
+          ninja -C out/build/linux lba2_renderer lba2cc
+
+      - name: Publish the single-file executable
+        run: dotnet publish -p:PublishProfile=SingleFileLinux
+
+      - name: Check what was built
+        run: |
+          file release/LBAAssembler | tee /dev/stderr | grep -q 'ELF 64-bit.*x86-64'
+          # a self-contained build with the runtime and both native binaries inside is tens of MB; a much smaller
+          # file means something was left out rather than a genuinely leaner build
+          size=$(stat -c%s release/LBAAssembler)
+          echo "$size bytes"
+          [ "$size" -gt 20000000 ]
+
+      - name: Package
+        id: package
+        run: |
+          version="${{ steps.release.outputs.tag }}"
+          version="${version#v}"
+          name="LBAAssembler-$version-linux-x64"
+          mkdir -p dist
+          cp release/LBAAssembler dist/
+          tar -czf "dist/$name.tar.gz" -C release LBAAssembler
+          (cd dist && sha256sum "$name.tar.gz" LBAAssembler > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+          echo "archive=$name.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes
+        run: |
+          archive="${{ steps.package.outputs.archive }}"
+          {
+            echo "The Linux Big Assembler (LBA1 / LBA2 level editor), built from \`$GITHUB_SHA\` by GitHub Actions."
+            echo
+            echo '## Download'
+            echo
+            echo "| File | What it is |"
+            echo "| --- | --- |"
+            echo "| \`$archive\` | The executable in an archive, which keeps the executable bit. Recommended. |"
+            echo "| \`LBAAssembler\` | The same executable on its own. Run \`chmod +x LBAAssembler\` after downloading. |"
+            echo
+            echo '```'
+            echo "tar -xzf $archive"
+            echo './LBAAssembler'
+            echo '```'
+            echo
+            echo '## What you need'
+            echo
+            echo '- 64-bit Linux (x86-64) with a graphical desktop.'
+            echo '- `libSDL3.so.0` installed, or a copy next to the executable. Everything else is inside the file:'
+            echo '  the .NET runtime, Avalonia, the native renderer and the playable engine, so no .NET install is needed.'
+            echo "- \`fluidsynth\` with a General MIDI soundfont, for LBA1's music."
+            echo '- **Your own copy of the games. No game data is included here.** On first run, point the editor at your'
+            echo '  LBA1 and/or LBA2 folder under File > Settings. Either game on its own is fine.'
+            echo
+            echo '## Notes'
+            echo
+            echo '- Everything the editor keeps lives next to the executable, so the folder is portable: `settings.json`,'
+            echo '  the unpacked `native/` renderer, `Body Exports/` and `editor.log`. If that folder is not writable they'
+            echo '  go to `~/.config/LBAAssembler` and `~/.local/share/LBAAssembler` instead.'
+            echo '- This build writes a debug trace to `editor.log` beside itself. That is deliberate while the port is'
+            echo '  under test, not a fault.'
+            echo '- No Windows build here: the same publish profile produces `LBAAssembler.exe` on a Windows machine once'
+            echo '  the native renderer is built under MSYS2 UCRT64.'
+            echo
+            echo '## Checksums (SHA-256)'
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+          } > dist/NOTES.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.release.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/LBAAssembler "dist/${{ steps.package.outputs.archive }}" dist/SHA256SUMS.txt --clobber
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes-file dist/NOTES.md \
+              dist/LBAAssembler "dist/${{ steps.package.outputs.archive }}" dist/SHA256SUMS.txt
+          fi
+          gh release view "$tag" --json url --jq .url
