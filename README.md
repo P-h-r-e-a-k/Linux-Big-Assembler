@@ -53,6 +53,9 @@ back to `~/.config/LBAAssembler` / `~/.local/share/LBAAssembler` (`%AppData%` / 
 
 ## Release build (single executable)
 
+Built releases are on the [Releases page](https://github.com/P-h-r-e-a-k/Linux-Big-Assembler/releases): download
+`LBAAssembler-<version>-linux-x64.tar.gz`, unpack it and run `./LBAAssembler`. To build one yourself:
+
 ```text
 cd native/lba2-classic-community && ninja -C out/build/linux lba2_renderer lba2cc && cd ../..
 dotnet publish -p:PublishProfile=SingleFileLinux
@@ -60,8 +63,13 @@ dotnet publish -p:PublishProfile=SingleFileLinux
 
 This writes `release/LBAAssembler`: self-contained (no .NET install needed), with the native renderer, the engine, the
 dummy body and the scene/body/animation name lists embedded. `libSDL3.so.0` is not embedded: install it (or put a copy
-next to the executable). Debug logging is off in that build unless `LBA2_EDITOR_DEBUG_LOG` names a file. The Windows
+next to the executable). Debug logging is on in this build too (see `DebugLog.cs`, which is to be turned off or made a
+setting before a formal release); `LBA2_EDITOR_DEBUG_LOG` moves the log elsewhere. The Windows
 single-file profile (`Properties/PublishProfiles`) still works on Windows with the `windows_ucrt64_static` native tree.
+
+`.github/workflows/release.yml` does all of the above on a GitHub runner (SDL3 included) and attaches the executable,
+the archive and their checksums to a release. It runs on a `v*` tag, or from the Actions tab with **Run workflow** and
+the tag to publish, which it creates from the chosen branch.
 
 The current first slice provides an editable exterior-map workspace with terrain painting, level selection, zoom, reset, and JSON draft export.
 
