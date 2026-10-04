@@ -293,12 +293,41 @@ typedef	struct	{
 #define FLAG_PLANETE_ESMER      254
 #define	FLAG_DONT_USE		255 	// Pour l'inventaire
 
+// The storm over Citadel Island (rain, thunder, the CITADEL island file and its sky) lasts until chapter 2, when the aliens land after
+// the lighthouse. A race-track mod's file can ask for the weather after it without moving the story on (RACEMOD.CPP: weather=fine).
+S32 RaceMod_FineWeather(void);
+// A race-track mod's raised road and the island file with Celebration Island's statue (RACEMOD.CPP, RACEMOD.H).
+S32 RaceMod_StatueShown(S32 risen);
+S32 RaceMod_Rescue(void);
+S32 RaceMod_CarHit(void);
+const char *RaceMod_IslandFile(S32 island);
+void RaceMod_Island(S32 island);
+double RaceMod_SpeedFactor(void);
+S32 RaceMod_Takeover(void);
+S32 RaceMod_NoHarm(void);
+S32 RaceMod_BlocksInventory(void);
+// An opponent's car, which the race-track mode places wherever it is on the lap -- in the next cube too (EXTFUNC.CPP: not kept inside
+// the player's cube).
+S32 RaceMod_FreeOfCube(S32 numobj);
+// The race's mushrooms, penguins and oil slicks: no car is stopped by them, or stands on them (OBJECT.CPP CheckObjCol).
+S32 RaceMod_NoCollide(S32 numobj);
+// The protection spell a race's power-up casts (EXTRA.CPP): it takes no magic while it lasts, and blinks as it runs out.
+S32 RaceMod_ProtectionFree(void);
+S32 RaceMod_ProtectionEnding(void);
+double RaceMod_SkidSteer(void);
+double RaceMod_SkidCoast(void);
+S32 RaceMod_Dial(S32 num);
+S32 RaceMod_Loop(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz);
+void RaceMod_FloorFor(S32 y);
+void RaceMod_FloorForNothing(void);
+void RaceMod_Rail(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *nz);
+void RaceMod_Floor(S32 ox, S32 oy, S32 oz, S32 nx, S32 *ny, S32 nz);
 #ifdef	LBA_EDITOR
-#define	TEMPETE_ACTIVE	(ListVarGame[FLAG_CHAPTER].Value<2 OR FlagRain)
-#define	TEMPETE_FINIE	(ListVarGame[FLAG_CHAPTER].Value>=2 AND !FlagRain)
+#define	TEMPETE_ACTIVE	(!RaceMod_FineWeather() AND (ListVarGame[FLAG_CHAPTER].Value<2 OR FlagRain))
+#define	TEMPETE_FINIE	(RaceMod_FineWeather() OR (ListVarGame[FLAG_CHAPTER].Value>=2 AND !FlagRain))
 #else
-#define	TEMPETE_ACTIVE	(ListVarGame[FLAG_CHAPTER]<2 OR FlagRain)
-#define	TEMPETE_FINIE	(ListVarGame[FLAG_CHAPTER]>=2 AND !FlagRain)
+#define	TEMPETE_ACTIVE	(!RaceMod_FineWeather() AND (ListVarGame[FLAG_CHAPTER]<2 OR FlagRain))
+#define	TEMPETE_FINIE	(RaceMod_FineWeather() OR (ListVarGame[FLAG_CHAPTER]>=2 AND !FlagRain))
 #endif
 
 #define	INV_MAX_VALUE	100	// Capacité des objets inventaires VALUE (conque)

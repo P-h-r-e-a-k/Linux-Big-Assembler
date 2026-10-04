@@ -1269,7 +1269,7 @@ void DoLife(U8 numobj) {
                 // au cas ou l'on soit appelé pendant un eclair
                 Palette(PtrPal);
 
-                Dial(*(S16 *)PtrPrg, TRUE);
+                Dial(RaceMod_Dial(*(S16 *)PtrPrg), TRUE);   // (a race-track mod's story can say another line: RACEMOD.CPP)
             }
             PtrPrg += 2;
             break;
@@ -1286,7 +1286,7 @@ void DoLife(U8 numobj) {
                 // au cas ou l'on soit appelé pendant un eclair
                 Palette(PtrPal);
 
-                Dial(*(S16 *)PtrPrg, TRUE);
+                Dial(RaceMod_Dial(*(S16 *)PtrPrg), TRUE);   // (a race-track mod's story can say another line: RACEMOD.CPP)
             }
             PtrPrg += 2;
             break;
@@ -1302,7 +1302,7 @@ void DoLife(U8 numobj) {
             Palette(PtrPal);
 
             LIFETRACE_ACT("MESSAGE dial=%d", (int)*(S16 *)PtrPrg);
-            Dial(*(S16 *)PtrPrg, TRUE);
+            Dial(RaceMod_Dial(*(S16 *)PtrPrg), TRUE);   // (a race-track mod's story can say another line: RACEMOD.CPP)
             PtrPrg += 2;
             break;
 
@@ -1316,7 +1316,7 @@ void DoLife(U8 numobj) {
             // au cas ou l'on soit appelé pendant un eclair
             Palette(PtrPal);
 
-            Dial(*(S16 *)PtrPrg, TRUE);
+            Dial(RaceMod_Dial(*(S16 *)PtrPrg), TRUE);   // (a race-track mod's story can say another line: RACEMOD.CPP)
             PtrPrg += 2;
             break;
 

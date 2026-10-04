@@ -2,7 +2,7 @@
         xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Actor Script" Height="760" Width="1180" MinHeight="420" MinWidth="820"
-        Background="#FFFFFF" Foreground="#10243E" FontFamily="{StaticResource EditorFont}"
+        Background="{DynamicResource ThemeFieldBrush}" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="{StaticResource EditorFont}"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="22">
         <Grid.ColumnDefinitions>
@@ -30,18 +30,18 @@
         </StackPanel>
 
         <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5">
-            <Border Background="#E8F0FA" BorderBrush="#A9C3E0" BorderThickness="1" Padding="12,10">
-                <TextBlock x:Name="StatsLabel" Text="" FontFamily="{StaticResource EditorMonoFont}" FontSize="11" Foreground="#234A72" TextWrapping="Wrap"/>
+            <Border Background="{DynamicResource ThemeWindowBrush}" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1" Padding="12,10">
+                <TextBlock x:Name="StatsLabel" Text="" FontFamily="{StaticResource EditorMonoFont}" FontSize="11" Foreground="{DynamicResource ThemeTextMuted2Brush}" TextWrapping="Wrap"/>
             </Border>
             <!-- Shown only while a script breakpoint has paused a live LBA1 Play session (any actor;
                  several script windows can all show this at once and all act on it). -->
-            <Border x:Name="DebugBar" Background="#FDECC8" BorderBrush="#D9A93B" BorderThickness="1" Padding="12,8" Margin="0,8,0,0" IsVisible="False">
+            <Border x:Name="DebugBar" Background="{DynamicResource ThemeFlagBgBrush}" BorderBrush="{DynamicResource ThemeFlagBorderBrush}" BorderThickness="1" Padding="12,8" Margin="0,8,0,0" IsVisible="False">
                 <DockPanel>
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                         <Button x:Name="StepButton" Content="Step" Classes="ToolButton" Click="Step_Click"/>
                         <Button x:Name="ContinueButton" Content="Continue" Classes="ToolButton" Click="Continue_Click"/>
                     </StackPanel>
-                    <TextBlock x:Name="DebugBarText" FontFamily="{StaticResource EditorMonoFont}" FontSize="12" Foreground="#5A4310" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="DebugBarText" FontFamily="{StaticResource EditorMonoFont}" FontSize="12" Foreground="{DynamicResource ThemeFlagTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
             </Border>
         </StackPanel>
@@ -55,9 +55,9 @@
                              Classes="ViewTab" IsCheckedChanged="View_Checked"/>
             </StackPanel>
             <TextBlock DockPanel.Dock="Right" Text="Ctrl+Space for suggestions"
-                       Foreground="#8FB0D6" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                       Foreground="{DynamicResource ThemeBorderStrongBrush}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
             <TextBlock x:Name="HintLabel" Text="" TextTrimming="CharacterEllipsis"
-                       Foreground="#4E6B8A" FontSize="11" VerticalAlignment="Center" Margin="12,0,12,0"/>
+                       Foreground="{DynamicResource ThemeTextMutedBrush}" FontSize="11" VerticalAlignment="Center" Margin="12,0,12,0"/>
         </DockPanel>
 
         <TextBlock Grid.Row="4" Grid.Column="4" Text="Keywords" Classes="Eyebrow" VerticalAlignment="Center"/>
@@ -65,12 +65,12 @@
         <!-- Read-only disassembly of the same actor's scripts (life, then track), always visible to the left of the C editor. -->
         <DockPanel Grid.Row="4" Grid.Column="0">
             <TextBlock Text="Disassembly" Classes="Eyebrow" VerticalAlignment="Center"/>
-            <TextBlock Text="F9 breakpoint" DockPanel.Dock="Right" Foreground="#8FB0D6" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+            <TextBlock Text="F9 breakpoint" DockPanel.Dock="Right" Foreground="{DynamicResource ThemeBorderStrongBrush}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right"/>
         </DockPanel>
         <TextBox x:Name="DisassemblyTextBox" Grid.Row="6" Grid.Column="0" Grid.RowSpan="3"
                  IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                 FontFamily="{StaticResource EditorMonoFont}" FontSize="12" Foreground="#4E6B8A" Background="#FFFFFF"
-                 BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
+                 FontFamily="{StaticResource EditorMonoFont}" FontSize="12" Foreground="{DynamicResource ThemeTextMutedBrush}" Background="{DynamicResource ThemeFieldBrush}"
+                 BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1" Padding="10"
                  ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"
                  />
         <GridSplitter Grid.Row="4" Grid.Column="1" Grid.RowSpan="5" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
@@ -79,8 +79,8 @@
         <Grid Grid.Row="6" Grid.Column="2">
             <TextBox x:Name="ScriptTextBox"
                      AcceptsReturn="True" AcceptsTab="False" TextWrapping="NoWrap"
-                     FontFamily="{StaticResource EditorMonoFont}" FontSize="13" Foreground="#10243E" Background="#FFFFFF"
-                     BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
+                     FontFamily="{StaticResource EditorMonoFont}" FontSize="13" Foreground="{DynamicResource ThemeTextBrush}" Background="{DynamicResource ThemeFieldBrush}"
+                     BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1" Padding="10"
                      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"
                      TextChanged="ScriptTextBox_TextChanged"
                      
@@ -88,15 +88,15 @@
 
             <Popup x:Name="SuggestionPopup" PlacementTarget="{Binding ElementName=ScriptTextBox}"
                    Placement="AnchorAndGravity" PlacementAnchor="TopLeft" PlacementGravity="BottomRight" IsLightDismissEnabled="False">
-                <Border Background="#D6E6F7" BorderBrush="#8FB0D6" BorderThickness="1" MaxHeight="280" MinWidth="360" MaxWidth="520">
+                <Border Background="{DynamicResource ThemeRaisedBrush}" BorderBrush="{DynamicResource ThemeBorderStrongBrush}" BorderThickness="1" MaxHeight="280" MinWidth="360" MaxWidth="520">
                     <ListBox x:Name="SuggestionList" Background="Transparent" BorderThickness="0"
-                             Foreground="#10243E" FontFamily="{StaticResource EditorMonoFont}" FontSize="12"
+                             Foreground="{DynamicResource ThemeTextBrush}" FontFamily="{StaticResource EditorMonoFont}" FontSize="12"
                              PointerReleased="SuggestionList_PreviewMouseLeftButtonUp">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="8,5">
-                                    <TextBlock Text="{Binding Signature}" FontWeight="Bold" Foreground="#1B6EC2"/>
-                                    <TextBlock Text="{Binding Description}" Foreground="#4E6B8A" FontSize="10" TextWrapping="Wrap" FontFamily="{StaticResource EditorFont}" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{Binding Signature}" FontWeight="Bold" Foreground="{DynamicResource ThemeAccentBrush}"/>
+                                    <TextBlock Text="{Binding Description}" Foreground="{DynamicResource ThemeTextMutedBrush}" FontSize="10" TextWrapping="Wrap" FontFamily="{StaticResource EditorFont}" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -111,7 +111,7 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="StatusText" Grid.Column="0" FontFamily="{StaticResource EditorMonoFont}" FontSize="11" Foreground="#4E6B8A"
+            <TextBlock x:Name="StatusText" Grid.Column="0" FontFamily="{StaticResource EditorMonoFont}" FontSize="11" Foreground="{DynamicResource ThemeTextMutedBrush}"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Cursor="Hand"
                        PointerPressed="StatusText_MouseLeftButtonDown"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -133,16 +133,16 @@
             </Grid.RowDefinitions>
             <TextBox x:Name="KeywordFilterBox" Grid.Row="0" Classes="FieldBox"
                      TextChanged="KeywordFilterBox_TextChanged" KeyDown="KeywordFilterBox_KeyDown"/>
-            <TextBlock x:Name="KeywordFilterPlaceholder" Grid.Row="0" Text="Filter keywords…" Foreground="#8FB0D6"
+            <TextBlock x:Name="KeywordFilterPlaceholder" Grid.Row="0" Text="Filter keywords…" Foreground="{DynamicResource ThemeBorderStrongBrush}"
                        FontFamily="{StaticResource EditorMonoFont}" FontSize="12" Margin="11,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
-            <ListBox x:Name="KeywordList" Grid.Row="2" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1"
-                     Foreground="#10243E" FontFamily="{StaticResource EditorMonoFont}" FontSize="12"
+            <ListBox x:Name="KeywordList" Grid.Row="2" Background="{DynamicResource ThemeFieldBrush}" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1"
+                     Foreground="{DynamicResource ThemeTextBrush}" FontFamily="{StaticResource EditorMonoFont}" FontSize="12"
                      DoubleTapped="KeywordList_MouseDoubleClick" KeyDown="KeywordList_KeyDown">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Margin="6,4" ToolTip.Tip="{Binding Description}">
-                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="#1B6EC2"/>
-                            <TextBlock Text="{Binding Kind}" Foreground="#7C93AC" FontSize="9" FontFamily="{StaticResource EditorFont}"/>
+                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{DynamicResource ThemeAccentBrush}"/>
+                            <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource ThemeDisabledBrush}" FontSize="9" FontFamily="{StaticResource EditorFont}"/>
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>

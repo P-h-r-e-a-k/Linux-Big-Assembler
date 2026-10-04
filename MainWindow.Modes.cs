@@ -28,6 +28,7 @@ public partial class MainWindow
     private bool modeSyncing;
     private IslandEditorView? terrainEditor;
     private bool terrainShown;                 // the top-down terrain map is on screen instead of the 3D view
+    private bool buildDecorView;           // ... of those, only the tools that place, move and turn objects
     private bool buildTerrainView = true;      // Build on an island: the terrain tools (true) or the actors-and-zones tools
     private bool sceneViewStale;               // the island was saved from the terrain editor; the 3D view still shows the old file
     private bool restoringIsland;
@@ -51,16 +52,17 @@ public partial class MainWindow
     private void BuildView_Changed(object? sender, RoutedEventArgs e)
     {
         if (!modeReady) return;
-        buildTerrainView = BuildTerrainRadio.IsChecked == true;
+        buildDecorView = BuildDecorRadio.IsChecked == true;
+        buildTerrainView = BuildTerrainRadio.IsChecked == true || buildDecorView;      // (buildings and decor use the terrain editor's own pointer tools)
         ApplyMode();
     }
 
     private void SetMode(EditMode next)
     {
-        if (lba2JoinedView && next != EditMode.Explore)
+        if (lba2JoinedView && next == EditMode.Script)
         {
-            next = EditMode.Explore;      // (a joined LBA2 map is drawn by the editor, not the engine: nothing in it can be edited)
-            FileLabel.Text = "A joined map is view only. Double-click an actor to open its scene on its own, or pick a single scene, to edit.";
+            next = EditMode.Explore;      // (a joined LBA2 map is drawn by the editor, not the engine: nothing in it can be edited -- but Build's Nuke works on it)
+            FileLabel.Text = "A joined map's scripts are edited a scene at a time. Double-click an actor to open its scene on its own, or pick a single scene.";
         }
         var changed = next != editMode;
         editMode = next;
@@ -73,10 +75,12 @@ public partial class MainWindow
         }
         finally { modeSyncing = false; }
         ApplyMode(selectTab: changed);
-        if (changed) FileLabel.Text = next switch
+        if (changed) FileLabel.Text = next == EditMode.Build && lba2JoinedView
+            ? "Build: a joined map isn't edited here (double-click an actor to open its scene on its own); Nuke this scene... blows up every scene of it."
+            : next switch
         {
             EditMode.Explore => "Explore: move around the scene. Nothing is changed in this mode.",
-            EditMode.Build => terrainToolsActive ? "Build: pick a terrain tool in the Build tab and paint on the view; the view shows your edits live. Right drag orbits while a tool is chosen, middle drag pans." : "Build: right-click the view to add an actor, double-click an actor to edit it, change zones under Details.",
+            EditMode.Build => terrainToolsActive && buildDecorView ? "Build: click a building or object to select it, drag to move it, drag with the Rotate tool (or press Q and E) to turn it. Add object places a copy of the selected one. The view shows your edits live." : terrainToolsActive ? "Build: pick a terrain tool in the Build tab and paint on the view; the view shows your edits live. Right drag orbits while a tool is chosen, middle drag pans." : "Build: right-click the view to add an actor, double-click an actor to edit it, change zones under Details.",
             _ => "Script: click an actor (or pick one in the Script tab) to open its script.",
         };
         Keyboard.Focus(this);
@@ -90,10 +94,15 @@ public partial class MainWindow
     {
         if (!modeReady) return;
         // The game folder in the title: the editor saves into it, so any test or user can see which one is in use.
-        Title = $"LBA Assembler  -  {(currentGame == GameKind.Lba1 ? EditorSettings.Current.Lba1Directory : gameRoot)}";
+        // While test edits are active that folder is the scratch mirror (EditorSettings.TestModeActive), not the
+        // real one -- called out here too, not just in the status line, since the title stays on screen no matter
+        // which tab or dialog has focus.
+        var testPrefix = TestEditsActive ? "[Testing -- not saved to the real game folder]  " : "";
+        Title = $"LBA Assembler  -  {testPrefix}{(currentGame == GameKind.Lba1 ? EditorSettings.Current.Lba1Directory : gameRoot)}";
         BuildViewBar.Visibility = TerrainEditable ? Visibility.Visible : Visibility.Collapsed;
         var wantTerrain = editMode == EditMode.Build && buildTerrainView && TerrainEditable && ShowTerrainEditor();
         terrainToolsActive = wantTerrain;
+        if (wantTerrain && terrainEditor is not null) terrainEditor.DecorOnly = buildDecorView;
         SetTerrainShown(wantTerrain && terrainMapWanted);
         UpdateLive();
         if (!wantTerrain) { paintingTerrain = false; hoverCell = null; DrawTerrainOverlay(); }
@@ -101,10 +110,18 @@ public partial class MainWindow
         BuildScenePanel.Visibility = wantTerrain ? Visibility.Collapsed : Visibility.Visible;
         if (wantTerrain) OnTerrainStateChanged();
         BuildSceneHelp.Text = BuildHelpText();
+        // The Build tab's own Editors buttons are a second entry point to the same windows the Tools
+        // menu's ToolsMenu_SubmenuOpened already gates -- matching that here closes the gap the Tools
+        // menu can't reach on its own (see its own comment).
+        var eitherConfigured = Lba1Configured || Lba2Configured;
+        BuildGridButton.IsEnabled = eitherConfigured;
+        BuildAssetButton.IsEnabled = eitherConfigured;
+        BuildObjectButton.IsEnabled = eitherConfigured;
+        BuildExportButton.IsEnabled = eitherConfigured;
 
-        SetPanelVisible(ZoneDetailsTab, editMode != EditMode.Script);
-        SetPanelVisible(BuildTab, editMode == EditMode.Build);
-        SetPanelVisible(ScriptTab, editMode == EditMode.Script);
+        SetPanelEnabled(ZoneDetailsTab, editMode != EditMode.Script);
+        SetPanelEnabled(BuildTab, editMode == EditMode.Build);
+        SetPanelEnabled(ScriptTab, editMode == EditMode.Script);
         SetPanelVisible(PlayTab, true);
         var home = editMode switch { EditMode.Build => BuildTab, EditMode.Script => ScriptTab, _ => ZonesTab };
         var currentlyShown = new[] { ZonesTab, ZoneDetailsTab, BuildTab, ScriptTab, PlayTab }.FirstOrDefault(t => t.IsSelected);
@@ -118,10 +135,12 @@ public partial class MainWindow
 
     private string BuildHelpText()
     {
+        if (currentGame == GameKind.Lba2 && lba2JoinedView)
+            return "A joined map is not edited here: double-click an actor to open its scene on its own and edit it there. Nuke this scene... below blows up every scene of the map, in a chain reaction from the one in the middle of the view.";
         if (currentGame == GameKind.Lba1)
-            return "Right-click an actor for its attributes; double-click it to edit. Change zones under Details. The scene editor opens the scene as data (add, move, delete, duplicate, undo, save). Scripts are edited in Script mode.";
+            return "Right-click an actor for its attributes; double-click it to edit. Change zones under Details. The scene editor opens the scene as data (add, move, delete, duplicate, undo, save). Buildings and other blocks are placed and moved in the interior map (grid editor). Scripts are edited in Script mode.";
         if (interiorSceneActive)
-            return "Right-click the view to add an actor, double-click an actor to edit it, change zones under Details. The interior's map (its bricks and blocks) is edited in the grid editor. Scripts are edited in Script mode.";
+            return "Right-click the view to add an actor, double-click an actor to edit it, change zones under Details. The interior's map (its bricks and blocks: place, move and copy buildings and furniture) is edited in the grid editor. Scripts are edited in Script mode.";
         return "Right-click the view and choose Add Actor Here to place an actor; double-click an actor to change it; change zones under Details. Scripts are edited in Script mode. Pick 'Terrain' above to sculpt the island itself.";
     }
 
@@ -166,6 +185,7 @@ public partial class MainWindow
     // The island's name in the header shows whether there are unsaved terrain edits.
     private void OnTerrainStateChanged()
     {
+        NoteTerrainHistory();
         if (terrainEditor?.CurrentName is not { } name || !terrainToolsActive) return;
         DocumentTitle.Text = Path.GetFileNameWithoutExtension(name) + (terrainEditor.Dirty ? "   ● unsaved" : "");
     }
@@ -193,7 +213,8 @@ public partial class MainWindow
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
-            DebugLog.Log($"MainWindow: reloading {activeFile} after a terrain save failed: {error.Message}");
+            SetStatus($"Saved, but couldn't reload the view: {error.Message}", StatusKind.Warning);
+            DebugLog.Log($"MainWindow: reloading {activeFile} after a terrain save failed: {error}");
         }
         if (nativeViewActive) RenderNativeCamera();
         else RenderSoftwareTerrain();
@@ -213,7 +234,7 @@ public partial class MainWindow
         if (currentGame != GameKind.Lba2) SwitchGame(GameKind.Lba2);
         if (currentGame != GameKind.Lba2) return;
         if (interiorSceneActive && File.Exists(Path.Combine(gameRoot, activeFile))) LoadIsland(Path.Combine(gameRoot, activeFile));
-        buildTerrainView = true;
+        buildTerrainView = true; buildDecorView = false;
         modeSyncing = true;
         try { BuildTerrainRadio.IsChecked = true; }
         finally { modeSyncing = false; }
@@ -225,7 +246,7 @@ public partial class MainWindow
 
     private void UpdateZoneEditability()
     {
-        var edit = editMode == EditMode.Build;
+        var edit = editMode == EditMode.Build && !lba2JoinedView;      // (a joined LBA2 map's zones are changed in their own scene)
         foreach (var box in new[] { MinXBox, MinYBox, MinZBox, MaxXBox, MaxYBox, MaxZBox }) box.IsEnabled = edit;
         foreach (var (_, box) in zoneFieldBoxes) box.IsEnabled = edit;
         ZoneApplyButton.IsEnabled = edit;
@@ -272,6 +293,51 @@ public partial class MainWindow
         RefreshActorOverlayForSelection();
     }
 
+    // ---- the ZONES tab: the actors in view -- same list/label logic as the Script tab's own actor list
+    // above, opening the attributes window instead of the script window (see the Interface Audit's
+    // "Actors and zones get unequal editing UX" finding: zones already had a docked "in view" list here,
+    // actors only ever opened as one floating window per actor with no way to find one again once several
+    // are open). Reuses both existing per-game window openers (OpenLba1ActorWindow/OpenActorAttributesWindow)
+    // rather than adding a third way to open one. ---------------------------------------------------------
+
+    private bool actorsInViewListSyncing;
+
+    private void ActorsInViewRefresh_Click(object sender, RoutedEventArgs e) => RefreshActorsInViewList();
+
+    private void RefreshActorsInViewList()
+    {
+        var indexes = (interiorSceneActive
+                ? interiorActors.Select(a => a.Index)
+                : lastNativeActorScreens?.Select(a => a.Index) ?? Enumerable.Empty<int>())
+            .Distinct().OrderBy(i => i).ToList();
+        actorsInViewListSyncing = true;
+        try
+        {
+            ActorsInViewList.Items.Clear();
+            foreach (var index in indexes)
+            {
+                var text = currentGame == GameKind.Lba1 && index >= 1000 ? $"Scene {index / 1000}, actor #{index % 1000}" : $"Actor #{index}";
+                ActorsInViewList.Items.Add(new ListBoxItem { Content = text, Tag = index, IsSelected = selectedActorIndex == index });
+            }
+            ActorsInViewHeader.Text = $"Actors in view ({indexes.Count})";
+        }
+        finally { actorsInViewListSyncing = false; }
+    }
+
+    private void ActorsInViewList_DoubleClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (ActorsInViewList.SelectedItem is not ListBoxItem { Tag: int index }) return;
+        if (currentGame == GameKind.Lba1) OpenLba1ActorWindow(index);
+        else OpenActorAttributesWindow(index);
+    }
+
+    private void ActorsInViewList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (actorsInViewListSyncing || ActorsInViewList.SelectedItem is not ListBoxItem { Tag: int index }) return;
+        selectedActorIndex = index;
+        RefreshActorOverlayForSelection();
+    }
+
     // ---- Build tab buttons -----------------------------------------------------------------------------------------------------------------------
 
     private void BuildSceneEditor_Click(object? sender, RoutedEventArgs e)
@@ -298,6 +364,9 @@ public partial class MainWindow
             };
             if (wanted is { } mode) { SetMode(mode); e.Handled = true; return; }
         }
+        // Ctrl+Z / Ctrl+Y step the most recently changed history (see StepHistory), not always the terrain editor's own.
+        if (Keyboard.Modifiers == KeyModifiers.Control && e.Key is Key.Z or Key.Y && Keyboard.FocusedElement is not TextBox)
+        { StepHistory(undo: e.Key == Key.Z); e.Handled = true; return; }
         if (terrainToolsActive && terrainEditor is not null && terrainEditor.HandleKey(e)) e.Handled = true;
     }
 
@@ -343,10 +412,18 @@ public partial class MainWindow
     // The Play button names the scene it will start.
     private void UpdatePlayButton()
     {
-        UpdateLocation();
         if (placing) return;
         if (currentGame != GameKind.Lba2 || !Lba2Configured) { PlayButton.Content = "▶  Play scene"; PlayButton.ToolTip = "Play the selected scene in the LBA1 play mode"; return; }
         var scene = Lba2SceneToPlay();
+        // (a folder with race tracks built starts the one of the island that is open, on its grid: RaceTrackToPlay)
+        if (EditorSettings.Current.RaceCar.StartAtLine && RaceTrackToPlay() is { } race && Terrain.RaceTrackService.Raced(race) is { StartScene: >= 0 } raced)
+        {
+            var island = Terrain.RaceTrackIsland.ByName(race.Island);
+            PlayButton.Content = $"▶  Race: {island.Name}{(race.Twin is not null && island.RacesTwin ? ", town circuit" : "")}";
+            PlayButton.ToolTip = $"{island.Shown}: starts on its grid, in scene {raced.StartScene}.\nOf the race tracks built into the game folder, the one of the island that is open" +
+                                 (race.Twin is not null ? " (CITADEL.ILE: the storm track, CITABAU.ILE: the town circuit)" : "") + ". Plays what is saved on disk.";
+            return;
+        }
         PlayButton.Content = $"▶  Play scene {scene}";
         PlayButton.ToolTip = (allSceneEntries.FirstOrDefault(s => s.Option.Index == scene)?.Option.Display ?? $"Scene {scene}") + "\nThe scene that is open (for an island: the cube the camera is over). Plays what is saved on disk.";
     }

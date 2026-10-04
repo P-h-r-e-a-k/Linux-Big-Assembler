@@ -654,8 +654,12 @@ S32 Draw_Triangle(Struc_Point *Ptr_Points) {
     // esi = Fill_LeftPoint = PtA
     // edi = leftPoint = PtB
     // ebp = rightPoint = PtC
-    // ASM sets fldcw [Status_Int] here — truncation rounding mode
+    // ASM sets fldcw [Status_Int] here — truncation rounding mode. The rounding mode is the thread's, so it is put back on the way
+    // out (the ASM's fldcw [Status_Float]) -- left truncating, it leaked into whatever the thread ran next: the level editor, which
+    // runs this renderer on its worker threads, then rounded 1.0 to 0 in its own maths (Math.Round of sin(pi/2) came out 0) and built
+    // a race track's start line with no direction.
     RoundType = ROUND_TYPE_INT;
+    const int saved_round = fegetround();
     fesetround(FE_TOWARDZERO);
 
     Struc_Point *PtA = Fill_LeftPoint;
@@ -678,6 +682,7 @@ S32 Draw_Triangle(Struc_Point *Ptr_Points) {
     if (raw_Denom == 0) {
         LIB386_TRACE_CPP("Draw_Triangle", "9", "denom==0, early return");
         RoundType = ROUND_TYPE_FLOAT;
+        fesetround(saved_round);
         return Fill_LeftSlope;
     }
 
@@ -692,6 +697,7 @@ S32 Draw_Triangle(Struc_Point *Ptr_Points) {
     S32 result = Jmp_XSlopeZBufFPU[Fill_Type](Fill_Type, PtA, PtB, PtC);
     // ASM restores fldcw [Status_Float] — round-to-nearest mode
     RoundType = ROUND_TYPE_FLOAT;
+    fesetround(saved_round);
     LIB386_TRACE_CPP("Draw_Triangle", "9", "return=%d LeftSlope=%d", result, Fill_LeftSlope);
     return result;
 }

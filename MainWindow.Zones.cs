@@ -67,7 +67,7 @@ public partial class MainWindow
         zoneOriginal = zone is null ? null : LookupZone(zone);
         LoadZoneForm();
         SyncZoneListSelection();
-        if (showTab && zone is not null && ZoneDetailsTab.IsVisible) ActivatePanel(ZoneDetailsTab);
+        if (showTab && zone is not null && ZoneDetailsTab.IsEnabled) ActivatePanel(ZoneDetailsTab);
         RefreshActorOverlayForSelection();
         if (center && zone is not null && interiorSceneActive) CenterOnZone(zone);
     }
@@ -83,6 +83,10 @@ public partial class MainWindow
     private void RefreshZoneListIfVisible()
     {
         if (ZoneDetailsTab.IsSelected) RefreshZoneList();
+        // The Zones tab's own "Actors in view" list (MainWindow.Modes.cs) needs refreshing at the same
+        // points as the zone list above -- both go stale for the same reason (the view changed) -- so
+        // this piggybacks on every one of this method's own call sites instead of repeating them.
+        if (ZonesTab.IsSelected) RefreshActorsInViewList();
     }
 
     private void ZoneListRefresh_Click(object? sender, RoutedEventArgs e) => RefreshZoneList();
@@ -168,13 +172,15 @@ public partial class MainWindow
                 var row = new Grid { Margin = new Thickness(0, 0, 0, 5) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(126) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                var label = new TextBlock { Text = field.Label, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), FontSize = 11, ToolTip = field.Hint };
+                var label = new TextBlock { Text = field.Label, VerticalAlignment = VerticalAlignment.Center, FontSize = 11, ToolTip = field.Hint };
+                label.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
                 var box = new TextBox
                 {
                     Text = field.Get(zone).ToString(), Padding = new Thickness(4, 3, 4, 3), ToolTip = field.Hint,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)),
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(0xA9, 0xC3, 0xE0)),
                 };
+                box.SetResourceReference(TextBox.ForegroundProperty, "ThemeTextBrush");
+                box.SetResourceReference(TextBox.BackgroundProperty, "ThemeWindowBrush");
+                box.SetResourceReference(TextBox.BorderBrushProperty, "ThemeBorderBrush");
                 Avalonia.Automation.AutomationProperties.SetName(box, field.Label);
                 box.TextChanged += ZoneBounds_TextChanged;
                 Grid.SetColumn(box, 1);
@@ -227,7 +233,7 @@ public partial class MainWindow
 
     private void ZoneApply_Click(object? sender, RoutedEventArgs e)
     {
-        if (zoneOriginal is null || editMode != EditMode.Build) return;
+        if (zoneOriginal is null || editMode != EditMode.Build || lba2JoinedView) return;
         var edited = zoneOriginal.Clone();
 
         // A bound is only rewritten when it was changed, so a zone stored "backwards" keeps its order.

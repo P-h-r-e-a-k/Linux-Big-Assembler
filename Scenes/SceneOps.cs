@@ -157,7 +157,7 @@ internal static class SceneOps
                             if (ins.FuncArg >= 0 && cond?.OperandName == "obj")
                                 Operand(ins, ArgRole.Obj, ins.FuncArg, v => ins.FuncArg = v);
                             // "which actor did I hit / am I carried by": the value compared with is an actor number
-                            if (def.Form == LifeForm.Cond && cond?.Name is "COL" or "COL_OBJ" or "HIT_BY" or "CARRY_BY" && ins.Value >= 0 && ins.Value < MaxActorNumber)
+                            if (def.Form == LifeForm.Cond && cond?.Name is "COL" or "COL_OBJ" or "HIT_BY" or "CARRY_BY" or "HIT_OBJ_BY" or "CARRY_OBJ_BY" && ins.Value >= 0 && ins.Value < MaxActorNumber)
                                 Operand(ins, ArgRole.Obj, ins.Value, v => ins.Value = v);
                         }
                     }

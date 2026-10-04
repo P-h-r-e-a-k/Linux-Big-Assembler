@@ -10,6 +10,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using LBAAssembler.Lba1;
 using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
 namespace LBAAssembler;
 
@@ -50,7 +51,7 @@ public partial class MainWindow
     {
         var game = playingGame;
         StopPlay();
-        StartPlay(game);
+        StartPlay(game, askRaceCar: false);
     }
 
     private void PlayEveryItem_Click(object? sender, RoutedEventArgs e)
@@ -64,8 +65,9 @@ public partial class MainWindow
     private void PlayClearCommands_Click(object? sender, RoutedEventArgs e) => PlayCommandsBox.Clear();
 
     // Play pressed: the scene that is open is shown with Twinsen on it to be put where the game should start (unless that is switched
-    // off), then the game starts.
-    private void StartPlay(GameKind game)
+    // off), then the game starts. On an LBA2 folder with a race track built the race car's setup comes first (unless that is switched off,
+    // and not when the game is only restarted).
+    private void StartPlay(GameKind game, bool askRaceCar = true, bool raceStart = true)
     {
         if (playing) StopPlay();
         if (placing) EndPlacement();
@@ -75,8 +77,65 @@ public partial class MainWindow
             SwitchGame(game);
             if (currentGame != game) return;
         }
+        // (of a folder with several race tracks, the one of the island the editor has open)
+        raceToPlay = game == GameKind.Lba2 ? RaceTrackToPlay() : null;
+        if (game == GameKind.Lba2 && askRaceCar && !RaceTrackUpToDate()) return;
+        if (game == GameKind.Lba2 && askRaceCar && !AskRaceCar()) return;
+        // the story from a new game (every track raced where and when the game is), or a race track on its start/finish straight, Twinsen
+        // beside his car (the build puts him there in that scene)
+        if (game == GameKind.Lba2 && raceStart && raceToPlay is not null && EditorSettings.Current.RaceCar.NewGame) { newGame = true; LaunchPlay(game, null, null); return; }
+        if (game == GameKind.Lba2 && raceStart && RaceStartScene() is { } start) { LaunchPlay(game, null, start); return; }
         if (PlacementCheck.IsChecked == true && (game == GameKind.Lba2 ? BeginLba2Placement() : BeginLba1Placement())) return;
         LaunchPlay(game, null, null);
+    }
+
+    // The race track Play races, when the LBA2 folder has one or more: the one of the island the editor has open -- the island file on
+    // screen (Citadel Island's CITADEL.ILE its storm track, CITABAU.ILE its town circuit), else the island of the scene that is open --
+    // else the first built (RaceTrackService.RaceFor). Set when Play is pressed.
+    private Terrain.RaceTrackService.TrackInfo? raceToPlay;
+    // the play is the story's new game (RaceCarSetup.NewGame), once
+    private bool newGame;
+
+    private Terrain.RaceTrackService.TrackInfo? RaceTrackToPlay()
+    {
+        if (!Lba2Configured || !Terrain.RaceTrackService.HasBackups(gameRoot)) return null;
+        var shown = currentGame == GameKind.Lba2 && !interiorSceneActive && currentIsland is not null ? activeFile : null;
+        var sceneIsland = allSceneEntries.FirstOrDefault(s => s.Option.Index == Lba2SceneToPlay())?.IslandFile;
+        return Terrain.RaceTrackService.RaceFor(gameRoot, shown, sceneIsland is null ? null : sceneIsland + ".ILE");
+    }
+
+    // The scene a race-track play starts in, when the LBA2 folder has a race track and the car setup says to start on its straight.
+    private int? RaceStartScene()
+    {
+        if (!EditorSettings.Current.RaceCar.StartAtLine || raceToPlay is null) return null;
+        // (Citadel Island has a track in each weather: the one raced, as the island file open says)
+        return Terrain.RaceTrackService.Raced(raceToPlay) is { StartScene: >= 0 } info ? info.StartScene : null;
+    }
+
+    // Set when a race-track play starts with the zones and routes the editor draws over the game hidden; the first change of those
+    // switches shows them as they are set.
+    private bool raceOverlayHidden;
+
+    // A race track built before the grid, the qualifying lap and the count-down (RaceTrackService.IsOutdated) plays the old way: say so,
+    // once a session for a folder, and offer the race track dialog to build it again. False when the play should not go ahead.
+    private readonly HashSet<string> outdatedTrackWarned = new(StringComparer.OrdinalIgnoreCase);
+    private bool RaceTrackUpToDate()
+    {
+        if (!Terrain.RaceTrackService.IsOutdated(gameRoot, raceToPlay) || !outdatedTrackWarned.Add(gameRoot)) return true;
+        var answer = MessageBox.Show(this,
+            "The race track in this game folder was built by an older version of LBA Assembler, before the grid, the qualifying lap and the " +
+            "count-down start. It plays the old way until it is built again (Tools > LBA2: race track > Build the track).\n\n" +
+            "Open the race track dialog now? No plays the track as it is.",
+            "Race track", MessageBoxButton.YesNoCancel, MessageBoxImage.Information);
+        if (answer == MessageBoxResult.Yes) { Lba2RaceTrack_Click(this, new RoutedEventArgs()); return false; }
+        return answer == MessageBoxResult.No;
+    }
+
+    // The race car's setup before a race-track play: false when it is cancelled.
+    private bool AskRaceCar()
+    {
+        if (!Terrain.RaceTrackService.HasBackups(gameRoot) || !EditorSettings.Current.RaceCar.AskBeforePlay) return true;
+        return new RaceCarWindow(forPlay: true, gameRoot, raceToPlay).WithOwner(this).ShowDialog() == true;
     }
 
     // `spawn` is where the hero starts (in the scene's own coordinates), `scene` overrides the scene that is open.
@@ -84,7 +143,7 @@ public partial class MainWindow
     {
         try
         {
-            if (game == GameKind.Lba1) StartLba1Play(spawn);
+            if (game == GameKind.Lba1) StartLba1Play(spawn, scene);
             else await StartLba2Play(spawn, scene);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
@@ -147,13 +206,14 @@ public partial class MainWindow
     private void SyncPlayOverlay()
     {
         if (!playing) return;
+        raceOverlayHidden = false;
         if (playingGame == GameKind.Lba1) { lba1Play?.RefreshZones(); return; }
         if (Lba2Play.UserDirectory(out _) is { } user) Lba2Play.WriteOverlay(user, ZoneMask(), pathsVisible);
     }
 
     // ---- LBA1 ------------------------------------------------------------------------------------------------------------------------------
 
-    private void StartLba1Play((int X, int Y, int Z)? spawn)
+    private void StartLba1Play((int X, int Y, int Z)? spawn, int? sceneOverride = null)
     {
         var directory = EditorSettings.Current.Lba1Directory;
         if (!Lba1Game.IsInstalled(directory))
@@ -161,7 +221,7 @@ public partial class MainWindow
             MessageBox.Show(this, "The LBA1 game folder isn't set. Choose it under File > Settings.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var start = lba1CurrentTiles is { Count: > 0 } tiles ? tiles[0].Scene : 0;
+        var start = sceneOverride ?? (lba1CurrentTiles is { Count: > 0 } tiles ? tiles[0].Scene : 0);
         var game = new Lba1Game(directory);          // read again, so a scene the editor has just saved is what plays
         lba1Play = new Lba1PlayView(game, new Lba1ActorImages(game), directory) { ZoneFilter = ZoneShown, Audio = EditorSettings.Current.Lba1Audio };      // draws the zone types ticked in the Zones tab
         playingGame = GameKind.Lba1;
@@ -196,12 +256,22 @@ public partial class MainWindow
         options.ZoneMask = ZoneMask();
         options.Paths = pathsVisible;
         options.ListenPort = Lba2BreakpointsPort;
+        options.FallbackMusic = ResolveLba2MusicFallback(scene);
+        // (a race started on its line races that track alone; the game played as a game -- a new game, or the scene as it is -- every track,
+        // where and when the game is, with the story)
+        options.NewGame = newGame;
+        newGame = false;
+        var story = options.NewGame || !EditorSettings.Current.RaceCar.StartAtLine;
+        options.RaceCarFile = Terrain.RaceTrackService.CarFileWriter(gameRoot, raceToPlay, story);
+        raceOverlayHidden = options.RaceCarFile is not null && (EditorSettings.Current.RaceCar.StartAtLine || options.NewGame);
+        if (raceOverlayHidden) { options.ZoneMask = 0; options.Paths = false; }
 
-        var label = allSceneEntries.FirstOrDefault(s => s.Option.Index == scene)?.Option.Display ?? $"scene {scene}";
+        var label = options.NewGame ? "a new game" : allSceneEntries.FirstOrDefault(s => s.Option.Index == scene)?.Option.Display ?? $"scene {scene}";
         var host = new EmbeddedGameHost();
         gameHost = host;
         playingGame = GameKind.Lba2;
         host.GameExited += OnGameExited;
+        host.WantsResize += (w, h) => _ = OnGameWantsResize(host, w, h);
         ShowPlayOverlay(host, $"Starting {label} ...");
         await DispatcherCompat.Yield(DispatcherPriority.Render);
         if (!ReferenceEquals(gameHost, host)) return;
@@ -229,6 +299,72 @@ public partial class MainWindow
         _ = StartLba2Control(scene);
     }
 
+    // EmbeddedGameHost's own WantsResize: the host area changed enough (debounced) to be worth a live engine
+    // resolution switch. `resolution WxH` is a normal console verb (CONSOLE_CMD.CPP's cmd_resolution) that
+    // re-runs Init3DView on success (Res_SwitchEx, RES_SWITCH.CPP) and, since the native fix that added
+    // Console_ApplyPendingResSwitch, is safe to call from here even mid-frame (it defers itself by up to one
+    // frame rather than tearing down the renderer texture while a present still has it locked -- see that
+    // function's own comment for the crash this replaced). Two things can make it a no-op rather than a
+    // failure: no control connection yet (lba2Control null -- the socket connects a moment after the window
+    // is already up, see StartLba2Control), or the engine refusing because it's mid-cinematic/dialogue/
+    // inventory/holomap (Res_SwitchAllowedReason) -- both are left alone rather than retried, since the next
+    // resize (or CheckSizeNow, once the socket does connect) will try again.
+    private async Task OnGameWantsResize(EmbeddedGameHost host, int w, int h)
+    {
+        if (!ReferenceEquals(gameHost, host) || lba2Control is not { } client) return;
+        try
+        {
+            // res_do_switch's own success line is "Resolution: WxH" (CONSOLE_CMD.CPP); anything else means
+            // Res_SwitchAllowedReason rejected it or Res_Switch itself failed -- either way, nothing to confirm.
+            var response = await client.SendAsync($"resolution {w}x{h}");
+            if (!ReferenceEquals(gameHost, host) || lba2Control != client) return;
+            if (!response.Contains($"Resolution: {w}x{h}", StringComparison.Ordinal)) return;
+            // A real switch always arms a "keep this resolution? reverts in 15s" modal (Res_BeginRevertCountdown).
+            // `key enter` reaches modal loops (it drives the same input layer MyGetInput reads, unlike `input`),
+            // with a small delay so the press lands after the dialog's own entry-latch clears rather than
+            // being drained by it -- the dialog opens on the next tick, not synchronously within this response.
+            await client.SendAsync("key enter 90 3");
+            if (ReferenceEquals(gameHost, host) && lba2Control == client) host.ConfirmResize(w, h);
+        }
+        catch (IOException) { }
+    }
+
+    // A scene's own Music/CubeJingle byte can be 255 (SceneModel.Music == -1, the sign-extended read of that
+    // same byte -- see SceneSerializer.ParseLba2): the native engine's own OBJECT.CPP skips PlayMusic entirely
+    // for that value, by design, so a scene reached the normal way (walking in from a neighbouring cube) just
+    // keeps whatever that cube's own music already was. "Play scene" starts every scene in total isolation --
+    // a cold process with nothing playing yet -- so a 255 scene played this way sits in dead silence instead
+    // of the ambient theme a real playthrough would have carried into it (confirmed live: roughly two thirds
+    // of scenes 0-40 are 255). Read a byte, that's most plausibly what a tester calls "the wrong music" (no
+    // music at all where the scene should have some) rather than a mis-picked track.
+    //
+    // There's no room graph here to find which cube a player would actually have arrived from, so this uses
+    // the nearest available stand-in: the scene's own island's first exterior scene (the same "the game's own
+    // entry point" scene BuildSceneEntries/Lba2SceneToPlay already treat as that island's default), which is
+    // where most players are actually carrying that island's theme from when they wander into a 255 room.
+    // Null (no change from today) when the scene already has its own real jingle, its island can't be
+    // resolved, or that fallback scene is itself 255.
+    private int? ResolveLba2MusicFallback(int scene)
+    {
+        if (ReadLba2SceneMusic(scene) is not -1) return null;
+        var target = allSceneEntries.FirstOrDefault(s => s.Option.Index == scene);
+        if (target?.IslandFile is not { } island) return null;
+        var fallback = allSceneEntries.FirstOrDefault(s => !s.IsInterior && s.Option.Index != scene && string.Equals(s.IslandFile, island, StringComparison.OrdinalIgnoreCase));
+        if (fallback is null) return null;
+        var fallbackMusic = ReadLba2SceneMusic(fallback.Option.Index);
+        return fallbackMusic == -1 ? null : fallbackMusic;
+    }
+
+    private int ReadLba2SceneMusic(int scene)
+    {
+        var scenePath = Path.Combine(gameRoot, "SCENE.HQR");
+        if (!File.Exists(scenePath)) return -1;
+        var archive = HqrArchive.Open(scenePath);
+        var hqrIndex = scene + 1;
+        if (!archive.IsValid(hqrIndex)) return -1;
+        return SceneSerializer.Parse(SceneGame.Lba2, archive.Read(hqrIndex)).Music;
+    }
+
     // ---- LBA2 script breakpoints (the --listen control socket) ------------------------------------------------------------------------
 
     // Connects once the game's window is already up and running; fire-and-forget from StartLba2Play
@@ -242,6 +378,10 @@ public partial class MainWindow
         if (!playing || playingGame != GameKind.Lba2 || lba2ControlScene != scene) { client?.Dispose(); return; }
         if (client is null) { DebugLog.Log("MainWindow: LBA2 control socket didn't come up; script breakpoints are unavailable this session."); return; }
         lba2Control = client;
+        // The socket only just came up, so this is the earliest a live resize could have taken effect -- check
+        // now for drift between FitSize()'s original sample and the host's real area today (the launch this
+        // connects for takes "a few seconds", during which the host area can genuinely have changed).
+        gameHost?.CheckSizeNow();
         // A breakpoint hit during ordinary, unprompted play (not the result of Continue/Step,
         // which read their own outcome from the command's response instead -- see ResumeLba2).
         client.BreakpointHit += (actor, kind, offset) => Dispatcher.UIThread.Invoke(() =>

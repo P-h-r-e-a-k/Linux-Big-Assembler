@@ -63,6 +63,17 @@
   <!-- Dummy body shown in the Actor Attributes preview panel for a freshly added actor (see ActorAttributesWindow's showingDummyBody). -->
   <ItemGroup>
     <EmbeddedResource Include="Assets\DummyBody.lm2" LogicalName="DummyBody.lm2" />
+    <!-- the race track plans (centre line in island cells, pit lane ends): Tools > LBA2: race track -->
+    <EmbeddedResource Include="docs/racetrack/track_plan.json" LogicalName="RaceTrackPlan.Desert.json" />
+    <EmbeddedResource Include="docs/racetrack/citadel_track_plan.json" LogicalName="RaceTrackPlan.Citadel.json" />
+    <EmbeddedResource Include="docs/racetrack/citadel_storm_track_plan.json" LogicalName="RaceTrackPlan.CitadelStorm.json" />
+    <EmbeddedResource Include="docs/racetrack/mosquibe_track_plan.json" LogicalName="RaceTrackPlan.Mosquibe.json" />
+    <EmbeddedResource Include="docs/racetrack/celebration_track_plan.json" LogicalName="RaceTrackPlan.Celebration.json" />
+    <EmbeddedResource Include="docs/racetrack/celebrat_track_plan.json" LogicalName="RaceTrackPlan.CelebrationLava.json" />
+    <EmbeddedResource Include="docs/racetrack/elevator_track_plan.json" LogicalName="RaceTrackPlan.Elevator.json" />
+    <EmbeddedResource Include="docs/racetrack/sendell_track_plan.json" LogicalName="RaceTrackPlan.Sendell.json" />
+    <EmbeddedResource Include="docs/racetrack/moon_track_plan.json" LogicalName="RaceTrackPlan.Moon.json" />
+    <EmbeddedResource Include="docs/racetrack/emerald_track_plan.json" LogicalName="RaceTrackPlan.Emerald.json" />
   </ItemGroup>
 
   <!-- The human-readable scene/body/animation name lists (LBAPackageManager's .HQD text files) ship inside the executable. -->

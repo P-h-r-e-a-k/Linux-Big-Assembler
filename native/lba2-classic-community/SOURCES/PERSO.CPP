@@ -20,6 +20,7 @@ extern S32 GfxDitherShading;
 #include "RES_SWITCH.H"
 #include "SCRIPT_BREAKPOINT.H"
 #include "CONSOLE/CONSOLE.H"
+#include "CONSOLE/CONSOLE_CMD.H" // Console_ApplyPendingResSwitch: registered as the pre-frame callback below
 #include "EXIT_SCREEN.H"
 #include "PERFTRACE.H"
 #include "TOUCH_INPUT.H"
@@ -622,6 +623,11 @@ restartloop:
             Input |= Control_InputCurrentMask();
             Control_InputFrameTick();
         }
+        // a race-track mod's test pilot, when a harness turned it on (RACEMOD.CPP RaceMod_AutoInput)
+        // ... or a power-up's jet-pack, which has the controls while it lasts
+        { extern U32 RaceMod_AutoInput(void); if (RaceMod_Takeover()) Input &= ~(U32)(I_UP | I_DOWN | I_LEFT | I_RIGHT); Input |= RaceMod_AutoInput(); }
+        // ... and Shift drops what Twinsen holds instead of opening the inventory (RACEMOD.CPP)
+        if (RaceMod_BlocksInventory()) Input &= ~(U32)I_INVENTORY;
 
         ManageTime();
 
@@ -1810,13 +1816,13 @@ restartloop:
             // cannot show whether two entries are two passes over one tick or two ticks.
             if (DbgObjTraceObj >= 0 && i == DbgObjTraceObj)
                 Log_Info("[obj] t=%u obj=%d pos=%d,%d,%d rot=%d,%d,%d step=%d,%d,%d "
-                         "anim=%d frame=%d track=%d label=%d comport=%d move=%d flags=%u",
+                         "anim=%d genanim=%d flaganim=%d frame=%d track=%d label=%d comport=%d move=%d flags=%u",
                          (unsigned)TimerRefHR,
                          (int)i, (int)ptrobj->Obj.X, (int)ptrobj->Obj.Y, (int)ptrobj->Obj.Z,
                          (int)ptrobj->Obj.Alpha, (int)ptrobj->Obj.Beta, (int)ptrobj->Obj.Gamma,
                          (int)ptrobj->Obj.LastAnimStepX, (int)ptrobj->Obj.LastAnimStepY,
                          (int)ptrobj->Obj.LastAnimStepZ,
-                         (int)ptrobj->Obj.Anim.Num, (int)ptrobj->Obj.NextFrame,
+                         (int)ptrobj->Obj.Anim.Num, (int)ptrobj->GenAnim, (int)ptrobj->FlagAnim, (int)ptrobj->Obj.NextFrame,
                          (int)ptrobj->OffsetTrack, (int)ptrobj->LabelTrack,
                          (int)ptrobj->MemoComportement, (int)ptrobj->Move,
                          (unsigned)ptrobj->WorkFlags);
@@ -2507,6 +2513,11 @@ int main(int argc, char *argv[]) {
     /* Console hooks: keyboard toggle/input interception + final-frame overlay compositing. */
     SetEventFilter(Console_FeedEvent);
     SetPrePresentCallback(ControlPrePresent);
+    /* Applies a resolution switch res_do_switch had to defer because it was asked
+       for while PresentFrame() still had the renderer texture locked -- see
+       CONSOLE_CMD.CPP's own comment. Runs before ControlPrePresent even has a
+       chance to lock anything this frame. */
+    SetPreFrameCallback(Console_ApplyPendingResSwitch);
 
     /* Touch virtual gamepad (Android / mobile). Init before Perftrace so
        timing callbacks nest correctly. No-op on non-Android builds.

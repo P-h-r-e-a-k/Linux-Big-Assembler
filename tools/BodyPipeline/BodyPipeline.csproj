@@ -3,11 +3,16 @@
   <!--
     Console harness for the body <-> flat image pipeline: statistics over the game's own bodies, flat reference sheets of them,
     game-style conversion of artwork, and the round trip body -> sheet -> generated body. Compiles Body Studio's sources directly.
-    Pictures go through SkiaSharp (FlatBitmap); Avalonia is here only because Body Studio's own windows (compiled with the rest
-    of BodyStudio/) are Avalonia windows now, and the formsmoke command opens one.
+    Pictures go through SkiaSharp (FlatBitmap); Avalonia is here only because Body Studio's own sources (compiled with the rest
+    of BodyStudio/) (its windows and the Renderer.cs ModelView preview control) are Avalonia now, where upstream's are WPF.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!--
+      Upstream builds this harness as net10.0-windows with UseWindowsForms/UseWPF, because Body Studio's
+      windows and its Renderer.cs ModelView preview control are WPF there. In this port they are Avalonia,
+      so the harness stays on plain net10.0 and picks the UI up from the Avalonia packages below instead.
+    -->
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -23,6 +28,8 @@
     <PackageReference Include="Avalonia" Version="11.3.22" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <!-- Upstream re-adds <Using Include="System.IO" /> here because UseWPF drops it from the implicit
+         usings; without UseWPF this project's implicit usings still have it, so nothing to re-add. -->
   </ItemGroup>
 
   <ItemGroup>
@@ -30,9 +37,14 @@
     <!-- the WPF-style shims (dialogs, message box, bitmaps) Body Studio's windows are written against -->
     <Compile Include="..\..\Compat\*.cs" Link="Compat\%(Filename)%(Extension)" />
     <Compile Remove="..\..\Compat\PortStubs.cs;..\..\Compat\ShapesCompat.cs;..\..\Compat\SoundPlayer.cs" />
+    <!-- Upstream drops BodyStudioWindow/AnimationStudioWindow/NumberBox from the harness, because there
+         those are WPF windows whose control names clash with Windows Forms'. Here there is no WinForms for
+         them to clash with, and compiling them keeps the harness a build check on Body Studio's own windows,
+         so they stay in — the Avalonia packages above are needed for Renderer.cs's ModelView regardless. -->
     <Compile Include="..\..\EditorSettings.cs" Link="EditorSettings.cs" />
     <Compile Include="..\..\AudioLevels.cs" Link="AudioLevels.cs" />
-    <Compile Include="..\..\Scenes\**\*.cs" Link="Scenes\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\RaceCarSetup.cs" Link="RaceCarSetup.cs" />
+    <Compile Include="..\..\Scenes\**\*.cs" Exclude="..\..\Scenes\SceneNuke.cs" Link="Scenes\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Lba1\Lba1GridEdit.cs" Link="Lba1\Lba1GridEdit.cs" />
     <Compile Include="..\..\Lba1\Lba1GridCodec.cs" Link="Lba1\Lba1GridCodec.cs" />
     <Compile Include="..\..\Lba1\Lba1GridValidator.cs" Link="Lba1\Lba1GridValidator.cs" />

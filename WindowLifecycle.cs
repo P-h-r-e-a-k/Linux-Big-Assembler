@@ -108,7 +108,10 @@ internal static class WindowPlacement
 
     // Whether a rectangle this size at this position has at least MinVisible units showing on some monitor
     // that is actually connected right now (not just within the combined virtual desktop's own bounding
-    // box, which stays "big enough" even once a monitor that used to sit inside it is unplugged).
+    // box, which stays "big enough" even once a monitor that used to sit inside it is unplugged). Upstream
+    // enumerates monitors through Win32 EnumDisplayMonitors/GetMonitorInfo to keep the WPF app off a
+    // WinForms reference; Avalonia's own Screens collection is the cross-platform equivalent and asks the
+    // backend (X11/Wayland/Win32/macOS) for exactly the same list of currently-connected monitors.
     private static bool IsVisible(Window window, double x, double y, double width, double height)
     {
         var rect = new PixelRect((int)x, (int)y, (int)Math.Max(1, width), (int)Math.Max(1, height));

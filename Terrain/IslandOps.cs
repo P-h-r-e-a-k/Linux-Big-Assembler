@@ -316,8 +316,18 @@ internal static class IslandOps
 
     // Decors keep their height above the ground when the ground under them moves: call with the altitude of each decor taken
     // before the edit (BeforeEdit) and after it (AfterEdit).
+    //
+    // Only the ones that stand on that ground. A decor's own origin is not where it rests -- for many it is a corner of the object and
+    // its Y is 0, the real body being at YMin..YMax -- so the ground that carries it is read under its whole footprint, and one whose
+    // underside is well clear of it is hanging in the air by design and is left where it is. Mosquibees Island has a plank walkway on
+    // posts across a gully: its origin stands over the gully floor, and following that floor when a race track's embankment filled it
+    // carried the whole walkway 4000 units up into the sky.
     public sealed class DecorFollow
     {
+        // How far above the ground under it a decor may be and still count as standing on it (a little over a brick: a body's own
+        // box is a touch bigger than its mesh, and a rock on a slope sits a little proud of the vertex under its middle).
+        private const int StandsOn = 600;
+
         private readonly IslandFile island;
         private readonly List<(IslandCube Cube, IslandDecor Decor, double[] Before)> tracked = new();
 
@@ -326,7 +336,25 @@ internal static class IslandOps
             this.island = island;
             foreach (var (cx, cz, cube) in CubeCells(island))
                 foreach (var decor in cube.Decors)
-                    if (Altitude(island, cx * IslandFile.CubeSize + decor.X, cz * IslandFile.CubeSize + decor.Z) is { } y) tracked.Add((cube, decor, new[] { y }));
+                {
+                    if (Altitude(island, cx * IslandFile.CubeSize + decor.X, cz * IslandFile.CubeSize + decor.Z) is not { } y) continue;
+                    if (!StandsOnGround(island, cx, cz, decor)) continue;
+                    tracked.Add((cube, decor, new[] { y }));
+                }
+        }
+
+        // Whether a decor rests on the ground at all: its underside (YMin, which is where its body really is -- its own Y is an offset
+        // and is often 0) is at or under the highest ground anywhere beneath its footprint. One that hangs clear of the ground was
+        // placed in the air on purpose and must not be carried about by the ground under its origin.
+        private static bool StandsOnGround(IslandFile island, int cx, int cz, IslandDecor decor)
+        {
+            double ox = cx * (double)IslandFile.CubeSize, oz = cz * (double)IslandFile.CubeSize;
+            var under = double.MinValue;
+            for (var z = decor.ZMin; z <= decor.ZMax; z += 256)
+            for (var x = decor.XMin; x <= decor.XMax; x += 256)
+                if (Altitude(island, ox + x, oz + z) is { } g && g > under) under = g;
+            if (under == double.MinValue) return true;           // nothing known under it: follow, as it always did
+            return decor.YMin <= under + StandsOn;
         }
 
         // Moves the tracked decors by the change in ground height under them; returns how many moved.

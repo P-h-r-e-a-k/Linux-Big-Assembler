@@ -104,6 +104,7 @@ public static class ControlCompat
             box.SelectionStart = keepStart; box.SelectionEnd = keepEnd;
         }
         public void ScrollToHome() => box.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault()?.ScrollToHome();
+        public void ScrollToEnd() => box.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault()?.ScrollToEnd();
         public void AppendText(string text) { box.Text = (box.Text ?? "") + text; box.CaretIndex = box.Text!.Length; }
         // Where the caret is, relative to the text box, for placing a popup under it (WPF's GetRectFromCharacterIndex).
         public Rect GetRectFromCharacterIndex(int index)

@@ -54,13 +54,16 @@ internal sealed class SceneStore
     public SceneGame Game { get; }
     public string Directory { get; }
 
-    public SceneStore(SceneGame game, string directory)
+    // (`sceneFile`: another file's scenes to read, such as the original kept beside SCENE.HQR by a race track build)
+    public SceneStore(SceneGame game, string directory, string sceneFile = "SCENE.HQR")
     {
         Game = game;
         Directory = directory;
+        this.sceneFile = sceneFile;
     }
 
-    public string ScenePath => Path.Combine(Directory, "SCENE.HQR");
+    private readonly string sceneFile;
+    public string ScenePath => Path.Combine(Directory, sceneFile);
     public string GridPath => Path.Combine(Directory, "LBA_GRI.HQR");
     public string LibraryPath => Path.Combine(Directory, "LBA_BLL.HQR");
     public string BrickPath => Path.Combine(Directory, "LBA_BRK.HQR");

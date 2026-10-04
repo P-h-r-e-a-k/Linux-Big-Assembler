@@ -24,6 +24,9 @@ public partial class App : Application
     // in the same log rather than only in a crash on the terminal.
     public override void OnFrameworkInitializationCompleted()
     {
+        // Applied before the first window is ever constructed, so every {DynamicResource ThemeXxx} in it resolves
+        // to the chosen theme rather than to nothing for one frame.
+        ThemeManager.Apply(ThemeManager.Parse(EditorSettings.Current.Theme));
         // Point the native engine's own log at the same file (it stays silent without this).
         Environment.SetEnvironmentVariable("LBA2_EDITOR_DEBUG_LOG", DebugLog.LogFile);
         DebugLog.Log($"App: startup (version {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version})");
@@ -39,7 +42,7 @@ public partial class App : Application
         {
             DebugLog.Log($"App: UnobservedTaskException: {args.Exception}");
         };
-
+        // (--export never reaches here: Program.Main runs it before the toolkit starts, so it needs no display)
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;

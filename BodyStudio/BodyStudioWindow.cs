@@ -3,11 +3,11 @@ using System.Linq;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Styling;
 using LBAAssembler;
 // the app's WPF-style blocking dialog shims (Compat/FileDialogs.cs), not Avalonia's obsolete ones of the same names
 using OpenFileDialog=LBAAssembler.OpenFileDialog;
@@ -17,7 +17,12 @@ using SaveFileDialog=LBAAssembler.SaveFileDialog;
 namespace LbaBodyStudio;
 
 // Body Studio's window (an Avalonia Window built in code, formerly a WinForms Form): a settings column on the left, the 3D preview
-// and the reference picture in tabs on the right, a status line along the bottom.
+// and the reference picture in tabs on the right, a status line along the bottom. See the Interface Audit's "Two windows are
+// genuinely WinForms in a WPF app" finding for why it stopped being a Form: different font rendering, DPI handling and focus
+// visuals from the rest of the app, plus a launcher lifecycle (one static instance, see LBAAssembler.BodyStudioLauncher) unlike
+// every other window's per-instance WindowLifecycle position memory. Every field, button and behaviour (including the dirty/undo/
+// close-warning safety net) is the Form's; only the control types and the theme mechanism (Themes/*.axaml through
+// SetResourceReference, instead of hand-copied colours) changed.
 public sealed class BodyStudioWindow : Window
 {
     readonly TextBox imagePath=new(),game1=new(),game2=new(),output=new();
@@ -25,9 +30,9 @@ public sealed class BodyStudioWindow : Window
     readonly CheckBox headDetails=Check("Add bandana, teeth and rear ties");
     readonly ComboBox target=Combo("Both","LBA1","LBA2"),layout=Combo("Front + back","Single front"),mask=Combo("Dark subject","Light subject","Transparent background","Background colour");
     readonly ComboBox method=Combo("New humanoid","Fit template");
-    readonly NumericUpDown body1=Number(0,10000,0),body2=Number(0,10000,0),threshold=Number(1,254,45),fit=Number(0,100,80),height=Number(25,300,100),width=Number(25,300,100),depth=Number(25,300,100),head=Number(25,150,70),budget=Number(0,540,460);
+    readonly NumberBox body1=Number(0,10000,0),body2=Number(0,10000,0),threshold=Number(1,254,45),fit=Number(0,100,80),height=Number(25,300,100),width=Number(25,300,100),depth=Number(25,300,100),head=Number(25,150,70),budget=Number(0,540,460);
     readonly CheckBox autoCrop=Check("Auto crop subject",true),flip=Check("Mirror image projection"),negative=Check("Front faces negative Z") /* actual default comes from Settings.NegativeZFront via Apply() below */,archive=Check("Include a separate BODY.HQR copy",true);
-    readonly NumericUpDown flatColours=Number(2,40,14);
+    readonly NumberBox flatColours=Number(2,40,14);
     readonly CheckBox pairImage=Check("The picture holds a front view (left) and a back view (right)"),symmetric=Check("Make the figure symmetric (copy the left half)"),lit=Check("Game lighting: shade the body like the game's own characters",true);
     readonly Dictionary<int,BodyStyleStats> styleStats=[];
     readonly ModelView preview=new();
@@ -35,32 +40,54 @@ public sealed class BodyStudioWindow : Window
     // and a light backdrop shows through the transparent parts and the antialiased edges, washing out what should read as black.
     readonly Image reference=new(){Stretch=Stretch.Uniform};
     Avalonia.Media.Imaging.Bitmap? referenceBitmap;
-    readonly TextBlock status=new(){Text="Choose an image, generate, then inspect the preview before exporting.",TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center,Foreground=Brush(Renderer.Text)};
+    readonly TextBlock status=new(){Text="Choose an image, generate, then inspect the preview before exporting.",TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
     readonly Button generate=new(){Content="Generate preview"},export=new(){Content="Export selected games",IsEnabled=false};
     readonly ComboBox previewGame=Combo("LBA1","LBA2");
     readonly List<Generated> generated=[];
     Settings? generatedSettings;
+
+    // No dirty flag, no undo, and no close-time warning existed here at all (unlike every other editor in
+    // the app, which all guard Closing on a dirty flag) -- the one editor where a long tuning session could
+    // vanish on a single misclick. Settings is already a plain POCO round-tripped whole via ReadSettings()/
+    // Apply() for Save/Load, so that same pair doubles as the undo snapshot mechanism: no cloning method
+    // needed, just capture what ReadSettings() returns before each change lands. `applying` guards Apply()
+    // itself from re-triggering the same change-tracking loop it's driving (loading a project, or an undo/
+    // redo restore, would otherwise push its own restore back onto the stack as if the user had typed it).
+    bool dirty,applying;
+    Settings lastKnownGood=new();
+    // List, not Stack<T>: undo/redo both need to push/pop the newest end (List.Add / RemoveAt(Count-1) are
+    // just as O(1) for that), but capping also needs to drop the OLDEST entry once full, which Stack<T> has
+    // no way to do at all -- its Pop() only ever removes the newest, so capping through it would silently
+    // discard the entry just pushed instead of the one furthest back.
+    readonly List<Settings> undoStack=[],redoStack=[];
+    const int UndoCap=50;
+    static void Push(List<Settings> stack,Settings s){stack.Add(s);if(stack.Count>UndoCap)stack.RemoveAt(0);}
+    static Settings Pop(List<Settings> stack){var s=stack[^1];stack.RemoveAt(stack.Count-1);return s;}
+
     public BodyStudioWindow()
     {
-        Title="LBA Assembler — Body Studio";Width=1400;Height=930;MinWidth=1050;MinHeight=720;FontSize=13;WindowStartupLocation=WindowStartupLocation.CenterScreen;Background=Brushes.White;
+        Title="LBA Assembler — Body Studio";Width=1400;Height=930;MinWidth=1050;MinHeight=720;FontSize=13;WindowStartupLocation=WindowStartupLocation.CenterScreen;
+        this.SetResourceReference(Control.BackgroundProperty,"ThemeFieldBrush");
         var root=new DockPanel();Content=root;
-        var statusBar=new Border(){Height=52,Padding=new Thickness(16,8,16,8),Background=Brush(Renderer.PanelBackground),Child=status};DockPanel.SetDock(statusBar,Dock.Bottom);root.Children.Add(statusBar);
+        var statusBar=new Border(){Height=52,Padding=new Thickness(16,8,16,8),Child=status};statusBar.SetResourceReference(Border.BackgroundProperty,"ThemeWindowBrush");DockPanel.SetDock(statusBar,Dock.Bottom);root.Children.Add(statusBar);
         // the settings column (fixed 390 wide, at least 360) | splitter | the preview
-        var main=new Grid(){Background=Brush(Renderer.Border)};root.Children.Add(main);
+        var main=new Grid();main.SetResourceReference(Panel.BackgroundProperty,"ThemeBorderBrush");root.Children.Add(main);
         main.ColumnDefinitions.Add(new ColumnDefinition(390,GridUnitType.Pixel){MinWidth=360});main.ColumnDefinitions.Add(new ColumnDefinition(4,GridUnitType.Pixel));main.ColumnDefinitions.Add(new ColumnDefinition(1,GridUnitType.Star));
-        var splitter=new GridSplitter(){Background=Brush(Renderer.Border)};Grid.SetColumn(splitter,1);main.Children.Add(splitter);
-        var left=new DockPanel(){Background=Brush(Renderer.PanelBackground)};Grid.SetColumn(left,0);main.Children.Add(left);
+        var splitter=new GridSplitter();splitter.SetResourceReference(Control.BackgroundProperty,"ThemeBorderBrush");Grid.SetColumn(splitter,1);main.Children.Add(splitter);
+        var left=new DockPanel();left.SetResourceReference(Panel.BackgroundProperty,"ThemeWindowBrush");Grid.SetColumn(left,0);main.Children.Add(left);
         var fields=new StackPanel(){Margin=new Thickness(18)};
         void Add(Control c){c.Margin=new Thickness(0,0,0,10);fields.Children.Add(c);}
-        void Label(string text){Add(new TextBlock(){Text=text,FontWeight=FontWeight.Bold});}
-        void Field(string text,Control c){Add(new TextBlock(){Text=text,Margin=new Thickness(0,2,0,3)});Add(c);}
-        // Description text (wrapped to the column) reads softer than headings and field names.
-        void Note(string text){Add(new TextBlock(){Text=text,TextWrapping=TextWrapping.Wrap,MaxWidth=325,HorizontalAlignment=HorizontalAlignment.Left,Foreground=Brush(Renderer.TextMuted)});}
+        // Description text (wrapped to the column) reads softer than headings and field names: that is the only
+        // difference between the two, so the wrap width doubles as which theme brush the text takes.
+        TextBlock Themed(string text,double maxWidth=0){var t=new TextBlock(){Text=text,TextWrapping=TextWrapping.Wrap};if(maxWidth>0){t.MaxWidth=maxWidth;t.HorizontalAlignment=HorizontalAlignment.Left;}t.SetResourceReference(TextBlock.ForegroundProperty,maxWidth>0?"ThemeTextMutedBrush":"ThemeTextBrush");return t;}
+        void Label(string text){var t=Themed(text);t.FontWeight=FontWeight.Bold;Add(t);}
+        void Note(string text)=>Add(Themed(text,325));
+        void Field(string text,Control c){var t=Themed(text);t.Margin=new Thickness(0,2,0,3);Add(t);Add(c);}
         Control Browse(TextBox text,bool file)
         {
             var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition(1,GridUnitType.Star));row.ColumnDefinitions.Add(new ColumnDefinition(42,GridUnitType.Pixel));row.Children.Add(text);
             var button=new Button(){Content="…",HorizontalAlignment=HorizontalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Center,Margin=new Thickness(4,0,0,0)};Grid.SetColumn(button,1);row.Children.Add(button);
-            button.Click+=(_,_)=>{if(file){var d=new OpenFileDialog(){Filter="Images|*.png;*.jpg;*.jpeg;*.bmp;*.gif"};if(d.ShowDialog(this)==true){text.Text=d.FileName;LoadImage();}}else{var d=new OpenFolderDialog(){InitialDirectory=text.Text};if(d.ShowDialog(this)==true)text.Text=d.FolderName;}};
+            button.Click+=(_,_)=>{if(file){var d=new OpenFileDialog(){Filter="Images|*.png;*.jpg;*.jpeg;*.bmp;*.gif"};if(d.ShowDialog(this)==true){text.Text=d.FileName;LoadImage();}}else{var d=new OpenFolderDialog(){InitialDirectory=Directory.Exists(text.Text)?text.Text:null};if(d.ShowDialog(this)==true)text.Text=d.FolderName;}};
             return row;
         }
         Label("LBA BODY STUDIO");Note("Fit a native character template to a reference image. Both games export independently with their own rig and palette.");
@@ -90,52 +117,99 @@ public sealed class BodyStudioWindow : Window
         var modelTab=new TabItem(){Header="3D body",Content=preview};var imageTab=new TabItem(){Header="Reference image",Content=new Border(){Background=Brush(Renderer.KeyBackground),Child=reference}};tabs.Items.Add(modelTab);tabs.Items.Add(imageTab);right.Children.Add(tabs);
         wire.IsCheckedChanged+=(_,_)=>{preview.Wire=wire.IsChecked==true;preview.Invalidate();};bones.IsCheckedChanged+=(_,_)=>{preview.Bones=bones.IsChecked==true;preview.Invalidate();};front.Click+=(_,_)=>{preview.Yaw=negative.IsChecked==true?0:MathF.PI;preview.Invalidate();};back.Click+=(_,_)=>{preview.Yaw=negative.IsChecked==true?MathF.PI:0;preview.Invalidate();};previewGame.SelectionChanged+=(_,_)=>ShowGenerated();
         generate.Click+=async(_,_)=>await Generate();export.Click+=async(_,_)=>await Export();
-        save.Click+=(_,_)=>{var d=new SaveFileDialog(){Filter="Body Studio project|*.json",FileName="body-project.json"};if(d.ShowDialog(this)==true)Try(()=>File.WriteAllText(d.FileName,JsonSerializer.Serialize(ReadSettings(),new JsonSerializerOptions{WriteIndented=true})));};
-        load.Click+=(_,_)=>{var d=new OpenFileDialog(){Filter="Body Studio project|*.json"};if(d.ShowDialog(this)==true)Try(()=>{Apply(JsonSerializer.Deserialize<Settings>(File.ReadAllText(d.FileName))??throw new InvalidDataException("Empty project."));LoadImage();});};
+        save.Click+=(_,_)=>SaveProject();
+        load.Click+=(_,_)=>
+        {
+            var d=new OpenFileDialog(){Filter="Body Studio project|*.json"};
+            if(d.ShowDialog(this)==true)Try(()=>
+            {
+                var loaded=JsonSerializer.Deserialize<Settings>(File.ReadAllText(d.FileName))??throw new InvalidDataException("Empty project.");
+                applying=true;try{Apply(loaded);}finally{applying=false;}
+                LoadImage();lastKnownGood=loaded;dirty=false;
+            });
+        };
         Apply(new Settings(){OutputFolder=Path.Combine(AppContext.BaseDirectory,"Body Exports"),Lba1Folder=LBAAssembler.EditorSettings.Current.Lba1Directory,Lba2Folder=LBAAssembler.EditorSettings.Current.GameDirectory});
-        // Any setting change invalidates the export snapshot until regenerated.
+        dirty=false;
+        // Any setting change invalidates the export snapshot until regenerated, marks the project dirty, and
+        // (unless it's Apply() itself driving the controls, e.g. Load/Undo/Redo) pushes what things looked
+        // like a moment ago onto the undo stack.
+        void Changed()
+        {
+            InvalidateGeneration();
+            if(applying)return;
+            dirty=true;
+            Push(undoStack,lastKnownGood);redoStack.Clear();
+            lastKnownGood=ReadSettings();
+        }
         foreach(Control c in Descendants(fields))
         {
-            if(c is TextBox t)t.TextChanged+=(_,_)=>InvalidateGeneration();
-            if(c is NumericUpDown n)n.ValueChanged+=(_,_)=>InvalidateGeneration();
-            if(c is ComboBox cb)cb.SelectionChanged+=(_,_)=>InvalidateGeneration();
-            if(c is CheckBox ch)ch.IsCheckedChanged+=(_,_)=>InvalidateGeneration();
+            if(c is TextBox t)t.TextChanged+=(_,_)=>Changed();
+            if(c is NumberBox n)n.ValueChanged+=Changed;
+            if(c is ComboBox cb)cb.SelectionChanged+=(_,_)=>Changed();
+            if(c is CheckBox ch)ch.IsCheckedChanged+=(_,_)=>Changed();
         }
+        // WPF's PreviewKeyDown: a tunnelling handler, so the shortcut is seen before a focused text box eats the key.
+        AddHandler(KeyDownEvent,(object? _,KeyEventArgs e)=>
+        {
+            if(Keyboard.Modifiers==KeyModifiers.Control&&e.Key==Key.Z&&undoStack.Count>0){Push(redoStack,ReadSettings());ApplyRestoring(Pop(undoStack));e.Handled=true;}
+            else if(Keyboard.Modifiers==KeyModifiers.Control&&e.Key==Key.Y&&redoStack.Count>0){Push(undoStack,ReadSettings());ApplyRestoring(Pop(redoStack));e.Handled=true;}
+        },RoutingStrategies.Tunnel);
+        Closing+=(_,e)=>{if(dirty&&!ConfirmDiscard())e.Cancel=true;};
         ApplyTheme();
         Closed+=(_,_)=>{referenceBitmap?.Dispose();referenceBitmap=null;};
     }
-    // Matches the rest of the app's own light theme (Theme.axaml) instead of plain control defaults. Runs once, over every
-    // control the window ends up with, rather than colouring each one where it's built.
+    // Undo/redo restores through the same Apply() Save/Load already uses, but -- unlike a normal edit --
+    // shouldn't itself push a fresh undo entry or leave the project marked dirty relative to this restored
+    // point (Ctrl+Z then Ctrl+Z again should keep walking further back, not get stuck re-recording the same
+    // step forward).
+    void ApplyRestoring(Settings s){applying=true;try{Apply(s);}finally{applying=false;}lastKnownGood=s;dirty=true;}
+    void SaveProject()
+    {
+        var d=new SaveFileDialog(){Filter="Body Studio project|*.json",FileName="body-project.json"};
+        if(d.ShowDialog(this)!=true)return;
+        Try(()=>{File.WriteAllText(d.FileName,JsonSerializer.Serialize(ReadSettings(),new JsonSerializerOptions{WriteIndented=true}));dirty=false;});
+    }
+    // Mirrors GridEditorWindow.cs / AssetEditorWindow.cs's own Closing-guard shape (Yes/No/Cancel, Yes saves first).
+    bool ConfirmDiscard()
+    {
+        var answer=MessageBox.Show(this,"This project has unsaved changes. Save before closing?","Body Studio",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
+        if(answer==MessageBoxResult.Cancel)return false;
+        if(answer==MessageBoxResult.Yes)SaveProject();
+        return !dirty||answer==MessageBoxResult.No;
+    }
+    // Run once, right after the whole tree is built (called from the constructor) -- every assignment below is
+    // SetResourceReference (Compat/ResourceCompat.cs: a DynamicResource binding), not a resolved Brush, so it keeps
+    // tracking the active theme forever after with no need to ever re-run this on a later theme switch.
     void ApplyTheme()
     {
         foreach(var c in Descendants(this))
         {
             switch(c)
             {
-                case TextBox tb: tb.Background=Brush(Renderer.FieldBackground);tb.Foreground=Brush(Renderer.Text);tb.BorderBrush=Brush(Renderer.Border);tb.BorderThickness=new Thickness(1);break;
-                case NumericUpDown nu: nu.Background=Brush(Renderer.FieldBackground);nu.Foreground=Brush(Renderer.Text);nu.BorderBrush=Brush(Renderer.Border);nu.BorderThickness=new Thickness(1);break;
-                case ComboBox combo: combo.Background=Brush(Renderer.FieldBackground);combo.Foreground=Brush(Renderer.Text);combo.BorderBrush=Brush(Renderer.Border);break;
-                case Button b when b!=generate&&b!=export:
-                    b.Background=Brush(Renderer.ButtonBackground);b.Foreground=Brush(Renderer.Text);b.BorderBrush=Brush(Renderer.ButtonBorder);b.BorderThickness=new Thickness(1);
+                case TextBox tb:
+                    tb.SetResourceReference(TextBox.BackgroundProperty,"ThemeFieldBrush");
+                    tb.SetResourceReference(TextBox.ForegroundProperty,"ThemeTextBrush");
+                    tb.SetResourceReference(TextBox.BorderBrushProperty,"ThemeBorderBrush");
+                    tb.BorderThickness=new Thickness(1);
                     break;
-                case CheckBox chk: chk.Foreground=Brush(Renderer.Text);break;
-                // Description text (the only text blocks with a wrap width) reads softer than headings and field names.
-                case TextBlock lbl when lbl!=status: lbl.Foreground=lbl.MaxWidth<double.PositiveInfinity?Brush(Renderer.TextMuted):Brush(Renderer.Text);break;
+                case NumberBox nb: nb.ApplyTheme("ThemeFieldBrush","ThemeTextBrush","ThemeBorderBrush");break;
+                case ComboBox: break; // themed globally via Theme.axaml
+                case Button b when b!=generate&&b!=export:
+                    b.SetResourceReference(Control.BackgroundProperty,"ThemeRaisedBrush");
+                    b.SetResourceReference(Control.ForegroundProperty,"ThemeTextBrush");
+                    b.SetResourceReference(Control.BorderBrushProperty,"ThemeButtonBorderBrush");
+                    b.BorderThickness=new Thickness(1);
+                    break;
+                case CheckBox chk: chk.SetResourceReference(Control.ForegroundProperty,"ThemeTextBrush");break;
             }
         }
         foreach(var b in new[]{generate,export})
         {
-            b.Classes.Add("accent");b.Background=Brush(Renderer.Accent);b.Foreground=Brushes.White;b.FontWeight=FontWeight.Bold;b.BorderBrush=Brush(Renderer.Accent);
+            b.SetResourceReference(Control.BackgroundProperty,"ThemeAccentBrush");
+            b.SetResourceReference(Control.ForegroundProperty,"ThemeAccentTextBrush");
+            b.FontWeight=FontWeight.Bold;
         }
-        // the buttons' hover colours (WinForms' FlatAppearance.MouseOverBackColor): the theme's template paints the presenter's background
-        Styles.Add(HoverStyle(x=>x.OfType<Button>().Not(y=>y.Class("accent")),Renderer.ButtonHover));
-        Styles.Add(HoverStyle(x=>x.OfType<Button>().Class("accent"),Argb.Lighten(Renderer.Accent,0.25f)));
-    }
-    internal static Style HoverStyle(Func<Selector?,Selector> button,uint colour)
-    {
-        var style=new Style(x=>button(x).Class(":pointerover").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"));
-        style.Setters.Add(new Setter(ContentPresenter.BackgroundProperty,Brush(colour)));
-        return style;
+        status.SetResourceReference(TextBlock.ForegroundProperty,"ThemeTextBrush");
     }
     // Every control under `c` (the panels' children, a decorator's child, a content control's content, a tab control's items).
     internal static IEnumerable<Control> Descendants(Control c)
@@ -153,16 +227,17 @@ public sealed class BodyStudioWindow : Window
     internal static IBrush Brush(uint argb)=>new SolidColorBrush(Color.FromUInt32(argb));
     void InvalidateGeneration(){generatedSettings=null;export.IsEnabled=false;}
     static ComboBox Combo(params string[] items){var c=new ComboBox(){HorizontalAlignment=HorizontalAlignment.Stretch};foreach(var item in items)c.Items.Add(item);c.SelectedIndex=0;return c;}
-    static NumericUpDown Number(int min,int max,int value)=>new(){Minimum=min,Maximum=max,Value=value,Increment=1,FormatString="0"};
+    static NumberBox Number(int min,int max,int value)=>new(min,max,value);
     static CheckBox Check(string text,bool isChecked=false)=>new(){Content=text,IsChecked=isChecked};
     static string Text(ComboBox c)=>c.SelectedItem as string??"";
-    static int Value(NumericUpDown n)=>(int)(n.Value??0);
-    Settings ReadSettings()=>new(){ImagePath=imagePath.Text??"",Lba1Folder=game1.Text??"",Lba2Folder=game2.Text??"",Lba1Body=Value(body1),Lba2Body=Value(body2),Target=Text(target),Layout=Text(layout),Method=Text(method),Mask=Text(mask),Threshold=Value(threshold),AutoCrop=autoCrop.IsChecked==true,FlipFront=flip.IsChecked==true,NegativeZFront=negative.IsChecked==true,Fit=Value(fit)/100f,Height=Value(height)/100f,Width=Value(width)/100f,Depth=Value(depth)/100f,HeadScale=Value(head)/100f,DetailBudget=Value(budget),HeadDetails=headDetails.IsChecked==true,BandanaText=bandanaText.Text??"",ArchiveCopy=archive.IsChecked==true,OutputFolder=output.Text??"",Lit=lit.IsChecked==true};
+    Settings ReadSettings()=>new(){ImagePath=imagePath.Text??"",Lba1Folder=game1.Text??"",Lba2Folder=game2.Text??"",Lba1Body=body1.Value,Lba2Body=body2.Value,Target=Text(target),Layout=Text(layout),Method=Text(method),Mask=Text(mask),Threshold=threshold.Value,AutoCrop=autoCrop.IsChecked==true,FlipFront=flip.IsChecked==true,NegativeZFront=negative.IsChecked==true,Fit=fit.Value/100f,Height=height.Value/100f,Width=width.Value/100f,Depth=depth.Value/100f,HeadScale=head.Value/100f,DetailBudget=budget.Value,HeadDetails=headDetails.IsChecked==true,BandanaText=bandanaText.Text??"",ArchiveCopy=archive.IsChecked==true,OutputFolder=output.Text??"",Lit=lit.IsChecked==true};
     void Apply(Settings s)
     {
         imagePath.Text=s.ImagePath;game1.Text=s.Lba1Folder;game2.Text=s.Lba2Folder;output.Text=s.OutputFolder;
         headDetails.IsChecked=s.HeadDetails;bandanaText.Text=s.BandanaText;bandanaText.IsEnabled=s.HeadDetails;
-        body1.Value=Math.Clamp(s.Lba1Body,0,10000);body2.Value=Math.Clamp(s.Lba2Body,0,10000);threshold.Value=Math.Clamp(s.Threshold,1,254);fit.Value=Math.Clamp((decimal)s.Fit*100,0,100);height.Value=Math.Clamp((decimal)s.Height*100,25,300);width.Value=Math.Clamp((decimal)s.Width*100,25,300);depth.Value=Math.Clamp((decimal)s.Depth*100,25,300);head.Value=Math.Clamp((decimal)s.HeadScale*100,25,150);budget.Value=Math.Clamp(s.DetailBudget,0,540);
+        body1.Value=Math.Clamp(s.Lba1Body,0,10000);body2.Value=Math.Clamp(s.Lba2Body,0,10000);threshold.Value=Math.Clamp(s.Threshold,1,254);
+        fit.Value=(int)Math.Clamp(s.Fit*100,0,100);height.Value=(int)Math.Clamp(s.Height*100,25,300);width.Value=(int)Math.Clamp(s.Width*100,25,300);
+        depth.Value=(int)Math.Clamp(s.Depth*100,25,300);head.Value=(int)Math.Clamp(s.HeadScale*100,25,150);budget.Value=Math.Clamp(s.DetailBudget,0,540);
         lit.IsChecked=s.Lit;target.SelectedItem=s.Target;layout.SelectedItem=s.Layout;method.SelectedItem=s.Method;mask.SelectedItem=s.Mask;autoCrop.IsChecked=s.AutoCrop;flip.IsChecked=s.FlipFront;negative.IsChecked=s.NegativeZFront;archive.IsChecked=s.ArchiveCopy;
     }
     void LoadImage()=>Try(()=>{var image=FlatBitmap.Load(imagePath.Text??"");var bitmap=BitmapFactory.FromBgra(image.Width,image.Height,image.Bgra);reference.Source=bitmap;referenceBitmap?.Dispose();referenceBitmap=bitmap;});
@@ -209,7 +284,7 @@ public sealed class BodyStudioWindow : Window
     {
         var s=ReadSettings();int game=previewGame.SelectedIndex+1;string folder=game==1?s.Lba1Folder:s.Lba2Folder;
         if(!File.Exists(s.ImagePath)){Error(new InvalidDataException("Choose a reference image first."));return;}
-        var options=new StyleOptions(){Colours=Value(flatColours),Symmetrise=symmetric.IsChecked==true,BackFromFront=true};
+        var options=new StyleOptions(){Colours=flatColours.Value,Symmetrise=symmetric.IsChecked==true,BackFromFront=true};
         bool pair=pairImage.IsChecked==true;IsEnabled=false;status.Text="Reading the game's bodies and flattening the picture…";
         try
         {

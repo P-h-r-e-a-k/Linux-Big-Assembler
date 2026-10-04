@@ -15,7 +15,25 @@ extern	void	TestCameraPosObjets( void ) ;// ..\EXTFUNC.CPP
 /*══════════════════════════════════════════════════════════════════════════*/
 // retourne le Y d'apres une position x(0 à 32767), z(0 à 32767) sur la map
 
+// A floor that isn't the ground's (a race-track mod's raised road, RACEMOD.CPP): given the ground's height at (x, z), the
+// height to stand at there; and given whether the ground's triangle there blocks, whether the place does. NULL: the ground.
+S32	(*AltitudeHook)( S32 x, S32 z, S32 y ) = NULL ;
+S32	(*TerrainColHook)( S32 x, S32 z, S32 col ) = NULL ;
+// ... and for the camera: given the ground's height at (x, z), the height of what would hide the hero from an eye there (the
+// stretch of raised road he is on).
+S32	(*SightFloorHook)( S32 x, S32 z, S32 y ) = NULL ;
+
+S32	CalculAltitudeTerrain( S32 x, S32 z, S32 cj ) ;
+
 S32	CalculAltitudeObjet( S32 x, S32 z, S32 cj )
+{
+	S32	y = CalculAltitudeTerrain( x, z, cj ) ;
+
+	return AltitudeHook ? AltitudeHook( x, z, y ) : y ;
+}
+
+// the ground itself
+S32	CalculAltitudeTerrain( S32 x, S32 z, S32 cj )
 {
 	T_HALF_POLY *mappoly ;
 	S32	y0,y1,y2,y3 ;
@@ -202,7 +220,11 @@ S32	GiveTerrainCol( S32 x, S32 z )
 						// perso pour glisser sur les
 						// diagonales
 
-	return( MapPolyGround[IndexMapPolyTested+GiveTriangle(x,z)].Col ) ;
+	{
+		S32	col = MapPolyGround[IndexMapPolyTested+GiveTriangle(x,z)].Col ;
+
+		return TerrainColHook ? TerrainColHook( x, z, col ) : col ;
+	}
 }
 
 /*══════════════════════════════════════════════════════════════════════════*/
@@ -213,7 +235,8 @@ U8	GiveTerrainCodeJeu( S32 x, S32 y, S32 z )
 	U8	codejeu ;
 	T_HALF_POLY *mappoly ;
 
-	if( CalculAltitudeObjet(x,z,0)<(y-1) )	return 0 ;
+	// (the ground's own height: what stands on a floor above it isn't in its water or its lava)
+	if( CalculAltitudeTerrain(x,z,0)<(y-1) )	return 0 ;
 
 	// check ground poly codejeu/sample
 
@@ -302,6 +325,7 @@ S32	SearchCameraPos( S32 x, S32 y, S32 z, S32 objbeta, S32 mode )
 		}
 
 		gy = CalculAltitudeObjet( CamPosX, CamPosZ, 0 ) ;
+		if( SightFloorHook )	gy = SightFloorHook( CamPosX, CamPosZ, gy ) ;
 		if( gy > CamPosY )
 		{
 			CamPosY = gy + 200 ;

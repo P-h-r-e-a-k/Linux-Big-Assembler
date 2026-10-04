@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.IO;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -20,7 +21,6 @@ public partial class MainWindow : Window
 {
     private string gameRoot = EditorSettings.Current.GameDirectory;
     private readonly CommunityRendererBackend nativeRenderer;
-    private readonly TerrainType[] fallbackTiles = new TerrainType[16 * 16];
     private IslandDocument? currentIsland;
     private string activeFile = "DESERT.ILE";
     private double cameraYaw = 45;
@@ -55,18 +55,38 @@ public partial class MainWindow : Window
     private double interiorZoom = 1;
     private Point interiorCenter;
     private List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> interiorActors = new();
-    private const double InteriorMaxZoom = 4;
+    // InteriorFitCap only bounds the automatic Reset/Fit calculation (InteriorFitZoom), so a tiny scene doesn't
+    // fit-to-screen at an absurd zoom -- unrelated to how far a user can zoom in by hand. InteriorMaxZoom is
+    // that hand ceiling: 100 (10000%) for the text box or holding a +/- button, but the scroll wheel stays
+    // capped at the tighter InteriorWheelMaxZoom (5000%, matching the outdoor view's own wheel-vs-override
+    // split below) so a couple of notches can't run away to the far end of the override range by accident.
+    private const double InteriorFitCap = 4;
+    private const double InteriorMaxZoom = 100;
+    private const double InteriorWheelMaxZoom = 50;
     private CancellationTokenSource? nativeRenderCancellation;
     private readonly object nativeRenderGate = new();
     private bool nativeRenderInFlight;
     private bool nativeRenderDirty;
     private bool desiredSkyEnabled = true;
+    // Coalesces RenderSoftwareTerrain during a zoom/orbit drag: it's a full synchronous CPU rasterisation of
+    // the island on the UI thread (SoftwareTerrainRenderer.Render), and wheel/mouse-move events fire dozens
+    // of times a second -- calling it inline on every one was the software-view counterpart of the stutter
+    // bug RunNativeRenderLoop's own comment already documents and fixes for the native view. One render
+    // ~30ms after the gesture settles is imperceptibly different and costs a fraction as much.
+    private readonly DispatcherTimer softwareRenderTimer = new() { Interval = TimeSpan.FromMilliseconds(30) };
+    private void ScheduleSoftwareTerrainRender()
+    {
+        softwareRenderTimer.Stop();
+        softwareRenderTimer.Start();
+    }
     private int minimapRequest;
     private byte[] palette = Array.Empty<byte>();
     private byte[] shadeTable = Array.Empty<byte>();
     private int shadeLevel;
     private int lastExteriorPaletteIndex = 27; // RESS_XPL0 (Citadel), COMMON.H -- same fallback LoadIslandPalette itself uses
     private IReadOnlyList<FilterableComboBox.Option> islandOptions = Array.Empty<FilterableComboBox.Option>();
+    // SCENE.HQR's entries when the scene list was made (a race track build can add scenes: RaceTrackChanged)
+    private int sceneSlotsListed;
     private IReadOnlyList<FilterableComboBox.Option> sceneOptions = Array.Empty<FilterableComboBox.Option>();
     private FilterableComboBox? islandFilter;
     private FilterableComboBox? sceneFilter;
@@ -96,12 +116,15 @@ public partial class MainWindow : Window
         // WPF's Preview* handlers and second mouse-button handlers, wired here (Avalonia's XAML takes one handler per event and tunnels through AddHandler).
         ViewportHost.PointerPressed += TerrainViewport_MouseRightButtonDown;
         InteriorViewImage.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Absolute);     // WPF's default origin; Avalonia's is the centre
+        BuildDockLayout();
         WindowPlacement.Attach(this, "MainWindow");
+        softwareRenderTimer.Tick += (_, _) => { softwareRenderTimer.Stop(); RenderSoftwareTerrain(); };
         Scenes.SceneHistory.PersistPath = Path.Combine(AppContext.BaseDirectory, "undo_history.dat");
         Scenes.SceneHistory.ConfirmClearWhenFull = (used, limit) => MessageBox.Show(this,
             $"The undo cache is full ({used / (1024.0 * 1024.0):0.0} MB of a {limit / (1024.0 * 1024.0):0.0} MB limit).\n\nClear it to make room for this change? Choosing No just drops the oldest steps instead.",
             "Undo cache full", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
         Scenes.SceneHistory.Load();
+        Scenes.SceneHistory.Changed += (_, _) => lastSceneEditAt = Environment.TickCount64;
         modeReady = true;                 // the mode buttons raise Checked while the XAML loads; only real clicks count
         Focusable = true;
         JoinAreasCheck.IsChecked = lba1JoinAreas;
@@ -109,7 +132,6 @@ public partial class MainWindow : Window
         KeyDown += MainWindow_KeyDown;
         AddHandler(KeyDownEvent, MainWindow_PreviewKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, (_, e) => { if (playing) lba1Play?.ForwardKey(e, false); }, RoutingStrategies.Tunnel);
-        SeedFallbackMap();
         BuildZoneList();
 
         islandFilter = new FilterableComboBox(IslandCombo, () => islandOptions);
@@ -231,6 +253,7 @@ public partial class MainWindow : Window
         if (!File.Exists(scenePath)) return new List<SceneEntry>();
 
         var hqrCount = HqrArchive.CountEntries(scenePath);
+        sceneSlotsListed = hqrCount;
         var descriptions = HqdDescriptions.Load("SCENE2.HQD", hqrCount);
         var archive = HqrArchive.Open(scenePath);
 
@@ -254,8 +277,10 @@ public partial class MainWindow : Window
     // -- the exact same field RENDERER_ACTORS.CPP's PeekSceneCube already
     // reads (as p[0]) to match a scene against a target island index when
     // scanning cubes. RENDERER_API.CPP's own kIslandNames[] gives the order
-    // that ID indexes into (0=citadel, 1=sendell [MOON.ILE's internal/lore
-    // name], 2=desert, 3=emeraude, 4=otringal, 5=celebrat, 6=platform,
+    // that ID indexes into (0=citadel, 1=sendell -- "Puits de Sendell", an
+    // outside island that was cut: no SENDELL.ILE ships and no scene has
+    // island 1 -- 2=desert, 3=emeraude [the Emerald Moon; MOON.ILE is an
+    // older copy of it, February 1997, that no executable names], 4=otringal, 5=celebrat, 6=platform,
     // 7=mosquibe, 8=knartas, 9=ilotcx, 10=ascence, 11=souscelb) -- mirrored
     // here rather than exported from native, since it's plain static data
     // and every byte needed to compute it (SCENE.HQR itself) is already
@@ -269,7 +294,7 @@ public partial class MainWindow : Window
     // empty rather than guess.
     private static readonly string[] IslandNameByRawSceneId =
     {
-        "CITADEL", "MOON", "DESERT", "EMERAUDE", "OTRINGAL",
+        "CITADEL", "SENDELL", "DESERT", "EMERAUDE", "OTRINGAL",
         "CELEBRAT", "PLATFORM", "MOSQUIBE", "KNARTAS", "ILOTCX",
         "ASCENCE", "SOUSCELB",
     };
@@ -389,6 +414,7 @@ public partial class MainWindow : Window
         catch (Exception error)
         {
             nativeViewActive = false;
+            DebugLog.Log($"MainWindow: opening {path} failed: {error}");
             MessageBox.Show(this, error.Message, "Unable to open island", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -409,6 +435,9 @@ public partial class MainWindow : Window
         else if (name == "KNARTAS") paletteIndex = 35;
         else if (name == "ILOTCX") paletteIndex = 36;
         else if (name == "ASCENCE") paletteIndex = 37;
+        // island 1 (Sendell's Well, cut from the retail game: a SENDELL.ILE made for it), and the old copy of the Emerald Moon
+        else if (name == "SENDELL") paletteIndex = 28;
+        else if (name == "MOON") paletteIndex = 30;
         lastExteriorPaletteIndex = paletteIndex;
         return LoadPaletteEntry(paletteIndex);
     }
@@ -451,16 +480,6 @@ public partial class MainWindow : Window
         palette = paletteOffset >= 0 && paletteOffset <= xpl.Length - 768 ? xpl[paletteOffset..(paletteOffset + 768)] : Array.Empty<byte>();
         shadeTable = fogOffset >= 0 && fogOffset <= xpl.Length - 4096 ? xpl[fogOffset..(fogOffset + 4096)] : Array.Empty<byte>();
         return palette;
-    }
-
-    private void SeedFallbackMap()
-    {
-        for (var index = 0; index < fallbackTiles.Length; index++)
-        {
-            var row = index / 16;
-            var column = index % 16;
-            fallbackTiles[index] = row < 2 || row > 13 || column < 2 || column > 13 ? TerrainType.Water : TerrainType.Grass;
-        }
     }
 
     private void RenderSoftwareTerrain()
@@ -608,7 +627,7 @@ public partial class MainWindow : Window
         var vw = ViewportHost.ActualWidth;
         var vh = ViewportHost.ActualHeight;
         if (vw < 1 || vh < 1 || interiorContent.Width < 1 || interiorContent.Height < 1) return 1;
-        return Math.Min(Math.Min(vw / interiorContent.Width, vh / interiorContent.Height), InteriorMaxZoom);
+        return Math.Min(Math.Min(vw / interiorContent.Width, vh / interiorContent.Height), InteriorFitCap);
     }
 
     // Applies interiorZoom/interiorCenter (clamped) to the canvas image, the
@@ -933,7 +952,7 @@ public partial class MainWindow : Window
         var focus = Lba1FocusScene();          // (what is on screen, before the list changes under it)
         lba1JoinAreas = JoinAreasCheck.IsChecked == true;
         EditorSettings.Current.Lba1JoinConnectedAreas = lba1JoinAreas;
-        try { EditorSettings.Current.Save(); } catch (Exception error) { DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
+        try { EditorSettings.Current.Save(); } catch (Exception error) { SetStatus($"Couldn't save that setting: {error.Message}", StatusKind.Warning); DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
         if (currentGame == GameKind.Lba1 && IslandCombo.SelectedItem is FilterableComboBox.Option island) RefreshLba1SceneOptions(island.Index, focus);
         else if (currentGame == GameKind.Lba2) RefreshLba2AfterJoinToggle();
     }
@@ -1273,7 +1292,9 @@ public partial class MainWindow : Window
                 Width = 10, Height = 10, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center,
                 Fill = new SolidColorBrush(ZoneStyle.ColorOf(type)),
             });
-            row.Children.Add(new TextBlock { Text = ZoneStyle.NameOf(type), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) });
+            var typeLabel = new TextBlock { Text = ZoneStyle.NameOf(type) };
+            typeLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+            row.Children.Add(typeLabel);
             var check = new CheckBox { Content = row, Tag = type, IsChecked = zoneTypeVisible[type], Margin = new Thickness(0, 0, 0, 8) };
             check.Click += ZoneType_Click;
             ZoneTypeList.Children.Add(check);
@@ -1298,8 +1319,30 @@ public partial class MainWindow : Window
     {
         highlightSelection = HighlightCheck.IsChecked == true;
         EditorSettings.Current.HighlightSelection = highlightSelection;
-        try { EditorSettings.Current.Save(); } catch (Exception error) { DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
+        try { EditorSettings.Current.Save(); } catch (Exception error) { SetStatus($"Couldn't save that setting: {error.Message}", StatusKind.Warning); DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
         RefreshActorOverlayForSelection();
+    }
+
+    // The dummy/placeholder marker drawn for an actor with no real body (see AddDummyMarker's callers below).
+    private bool hideDummyActors;
+
+    private void HideDummyActors_Click(object sender, RoutedEventArgs e)
+    {
+        hideDummyActors = HideDummyActorsCheck.IsChecked == true;
+        RefreshActorOverlayForSelection();
+    }
+
+    // Every actor, real body and dummy marker alike. On the LBA2 native view a real body is drawn into the
+    // framebuffer pixels by the native renderer itself (AffichageActorsZBuf, gated there by the
+    // RendererDrawActors flag -- see RenderNativeCamera/RunNativeRenderLoop's own drawActors argument), not
+    // by this C# overlay, so hiding it needs an actual re-render, the same way SkyCheckBox_Changed does for
+    // the sky.
+    private bool hideAllActors;
+
+    private void HideAllActors_Click(object sender, RoutedEventArgs e)
+    {
+        hideAllActors = HideAllActorsCheck.IsChecked == true;
+        if (nativeViewActive) RenderNativeCamera(); else RefreshActorOverlayForSelection();
     }
 
     private void AddSelectionRing(double centerX, double centerY, double width, double height)
@@ -1333,57 +1376,39 @@ public partial class MainWindow : Window
         SyncPlayOverlay();
     }
 
-    // ---- side panels ---------------------------------------------------------------------------------------------------------------
+    // ---- dockable side panels (DockGroup -- see MainWindow.Docking.cs) ----------------------------------------------------------------
 
-    // The WPF editor docked these with AvalonDock; here (see MainWindow.axaml) the Location, Mode and Minimap panels are fixed
-    // and the Zones / Details / Build / Play / Script panels are the tabs of one TabControl (SideTabs). Hiding a tab hides its
-    // header; the tab control is then moved to another visible tab, so the hidden one never stays "selected" invisibly.
-    private void SetPanelVisible(Control panel, bool visible)
-    {
-        panel.IsVisible = visible;
-        if (!visible && panel is TabItem { IsSelected: true })
-        {
-            var next = SideTabs.Items.OfType<TabItem>().FirstOrDefault(t => t.IsVisible);
-            if (next is not null) next.IsSelected = true;
-        }
-    }
+    private static void SetPanelVisible(DockItem panel, bool visible) => panel.SetVisible(visible);
+    private static void SetPanelEnabled(DockItem panel, bool enabled) => panel.SetEnabled(enabled);
 
-    // Brings a panel back if the user (or a mode switch) had it hidden, then makes it the shown tab in its pane.
-    private static void ActivatePanel(Control panel)
-    {
-        if (!panel.IsVisible) panel.IsVisible = true;
-        if (panel is TabItem tab) tab.IsSelected = true;
-    }
-
-    private void SideTabs_SelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (!ReferenceEquals(e.Source, SideTabs)) return;
-        ZoneDetailsTab_IsSelectedChanged(sender, e);
-    }
+    // Brings a panel back if the user (or a mode switch) had it hidden or floated, then makes it the shown tab in its pane.
+    private static void ActivatePanel(DockItem panel) => panel.Activate();
 
     private void ShowPanel_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { Tag: string tag }) return;
-        Control? panel = tag switch
+        var panel = tag switch
         {
             "Location" => LocationAnchorable, "Mode" => ModeAnchorable, "Zones" => ZonesTab, "Details" => ZoneDetailsTab,
             "Build" => BuildTab, "Play" => PlayTab, "Script" => ScriptTab, "Minimap" => MinimapAnchorable, _ => null
         };
-        if (panel is not null) ActivatePanel(panel);
+        if (panel is null) return;
+        // Details/Build/Script stay in the tab strip but disabled outside their mode (ApplyMode) -- switch
+        // into a mode that enables the requested one first, so picking it from this menu always works
+        // rather than silently doing nothing to a disabled tab.
+        if (panel == ZoneDetailsTab && editMode == EditMode.Script) SetMode(EditMode.Explore);
+        else if (panel == BuildTab && editMode != EditMode.Build) SetMode(EditMode.Build);
+        else if (panel == ScriptTab && editMode != EditMode.Script) SetMode(EditMode.Script);
+        ActivatePanel(panel);
     }
 
     // Undoes closed/floated-out-of-reach panels by making every one of them visible again (docked
-    // back wherever AvalonDock last had it). Doesn't restore a manually dragged arrangement -- this
-    // package has no layout (de)serializer to snapshot/replay one.
+    // back wherever they started). Doesn't restore a manually resized split -- there's no layout
+    // (de)serializer here, same as when this ran on AvalonDock.
     private void ResetPanelLayout_Click(object? sender, RoutedEventArgs e)
     {
-        foreach (var panel in new Control[] { LocationAnchorable, ModeAnchorable, ZonesTab, ZoneDetailsTab, BuildTab, PlayTab, ScriptTab, MinimapAnchorable })
-            panel.IsVisible = true;
-    }
-
-    private void ZoneDetailsTab_IsSelectedChanged(object? sender, System.EventArgs e)
-    {
-        if (ZoneDetailsTab.IsSelected) RefreshZoneList();
+        foreach (var panel in new[] { LocationAnchorable, ModeAnchorable, ZonesTab, ZoneDetailsTab, BuildTab, PlayTab, ScriptTab, MinimapAnchorable })
+            panel.SetVisible(true);
     }
 
     // Draws `zones` (corners run through `map` into overlay coordinates; the view is
@@ -1448,23 +1473,61 @@ public partial class MainWindow : Window
 
     private void EditMenu_SubmenuOpened(object? sender, RoutedEventArgs e)
     {
-        // With the terrain editor on screen Edit > Undo / Redo are its own history.
-        var undo = terrainToolsActive && terrainEditor is not null ? terrainEditor.UndoLabel : Scenes.SceneHistory.UndoDescription;
-        var redo = terrainToolsActive && terrainEditor is not null ? terrainEditor.RedoLabel : Scenes.SceneHistory.RedoDescription;
+        // Edit > Undo / Redo step whichever of the two histories (the terrain editor's, the saved scene changes) was changed last.
+        var undo = UndoIsTerrain(true) ? terrainEditor!.UndoLabel : Scenes.SceneHistory.UndoDescription;
+        var redo = UndoIsTerrain(false) ? terrainEditor!.RedoLabel : Scenes.SceneHistory.RedoDescription;
         UndoMenuItem.Header = undo is null ? "_Undo" : $"_Undo {undo}";
         UndoMenuItem.IsEnabled = undo is not null;
         RedoMenuItem.Header = redo is null ? "_Redo" : $"_Redo {redo}";
         RedoMenuItem.IsEnabled = redo is not null;
     }
 
-    private void Undo_Click(object? sender, RoutedEventArgs e) { if (terrainToolsActive && terrainEditor is not null) terrainEditor.Undo(); else RunHistoryStep(undo: true); }
+    private void Undo_Click(object? sender, RoutedEventArgs e) => StepHistory(undo: true);
 
-    private void Redo_Click(object? sender, RoutedEventArgs e) { if (terrainToolsActive && terrainEditor is not null) terrainEditor.Redo(); else RunHistoryStep(undo: false); }
+    private void Redo_Click(object? sender, RoutedEventArgs e) => StepHistory(undo: false);
+
+    // Two histories exist side by side: the terrain editor's own (unsaved island edits) and the log of saved scene changes (an actor dragged, a
+    // zone edited). Undo / Redo (menu, buttons, Ctrl+Z / Ctrl+Y) step whichever was changed last; with the terrain tools not showing, only the
+    // scene log applies. (Undo used to go to the terrain history whenever the Terrain view was open, so an actor dragged there could not be undone.)
+    private long lastSceneEditAt, lastTerrainEditAt;
+    private string? lastTerrainUndoLabel, lastTerrainRedoLabel;
+
+    private void NoteTerrainHistory()
+    {
+        if (terrainEditor is null) return;
+        if (terrainEditor.UndoLabel == lastTerrainUndoLabel && terrainEditor.RedoLabel == lastTerrainRedoLabel) return;
+        lastTerrainUndoLabel = terrainEditor.UndoLabel; lastTerrainRedoLabel = terrainEditor.RedoLabel;
+        lastTerrainEditAt = Environment.TickCount64;
+    }
+
+    private bool UndoIsTerrain(bool undo)
+    {
+        if (!terrainToolsActive || terrainEditor is null) return false;
+        var terrain = undo ? terrainEditor.UndoLabel : terrainEditor.RedoLabel;
+        if (terrain is null) return false;
+        var scene = undo ? Scenes.SceneHistory.UndoDescription : Scenes.SceneHistory.RedoDescription;
+        return scene is null || lastTerrainEditAt >= lastSceneEditAt;
+    }
+
+    private void StepHistory(bool undo)
+    {
+        if (UndoIsTerrain(undo)) { if (undo) terrainEditor!.Undo(); else terrainEditor!.Redo(); }
+        else RunHistoryStep(undo);
+    }
 
     private void RunHistoryStep(bool undo)
     {
         var next = undo ? Scenes.SceneHistory.NextUndo : Scenes.SceneHistory.NextRedo;
         if (next is null) return;
+        // A step writes the files of the folder it was recorded in. The log outlives the session, so that can be another folder than the one open now --
+        // above all the real game folder while "Test edits" works on a scratch copy: undoing it would then change the real files behind the test's back.
+        static string Norm(string path) => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var openFolder = next.Game == Scenes.SceneGame.Lba1 ? EditorSettings.Current.Lba1Directory : gameRoot;
+        if (!string.Equals(Norm(next.Directory), Norm(openFolder), StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this, $"\"{next.Description}\" was recorded in another game folder:\n\n{next.Directory}\n\nOpen that folder (File > Settings, or leave test edits) to {(undo ? "undo" : "redo")} it there.", undo ? "Undo" : "Redo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
         var scenes = next.After.Select(s => s.Scene).ToList();
 
         // Same guards as saving a zone: an unsaved script edit or an open LBA2 actor window would be overwritten.
@@ -1474,10 +1537,19 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "That scene has unsaved script edits. Save or discard them first, so they aren't overwritten.", undo ? "Undo" : "Redo", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        // A step that rewrites the open island (a nuke) would leave unsaved terrain edits on a file that changed under them: ask first.
+        var islandStep = next.Game == Scenes.SceneGame.Lba2 && next.Entries.Any(e => e.RelativePath.EndsWith(".ILE", StringComparison.OrdinalIgnoreCase));
+        if (islandStep && !ConfirmTerrainDiscard()) return;
         if (next.Game == Scenes.SceneGame.Lba2 && !interiorSceneActive && openAttributesWindows.Count > 0)
         {
-            MessageBox.Show(this, "Close the actor windows first: this reloads the island, which drops unsaved actor edits.", undo ? "Undo" : "Redo", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
+            // Undoing reloads the island, which would drop what an open actor window has not applied: close them (one with unsaved edits asks
+            // first, and can refuse) instead of refusing outright -- a double-click on an actor before dragging it leaves one open.
+            foreach (var window in openAttributesWindows.Values.ToList()) window.Close();
+            if (openAttributesWindows.Count > 0)
+            {
+                MessageBox.Show(this, "Close the actor windows first: this reloads the island, which drops unsaved actor edits.", undo ? "Undo" : "Redo", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
         }
 
         try
@@ -1500,9 +1572,12 @@ public partial class MainWindow : Window
         else
         {
             foreach (var scene in scenes) scriptSession.ForgetScene(scene);
+            ResetLba2Areas();          // (the joined interior maps are drawn from their own copy of the scenes and grids)
             if (currentGame == GameKind.Lba2)
             {
-                if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
+                if (lba2JoinedView) RedrawLba2JoinedMap();          // (ShowInteriorScene would swap the map for its first scene alone)
+                else if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
+                else if (islandStep) ReloadIslandFromDisk();
                 else
                 {
                     InvalidateNativeIsland();
@@ -1511,7 +1586,7 @@ public partial class MainWindow : Window
             }
         }
         RefreshZoneListIfVisible();
-        FileLabel.Text = $"{(undo ? "Undid" : "Redid")}: {next.Description}";
+        SetStatus($"{(undo ? "Undid" : "Redid")}: {next.Description}", StatusKind.Success);
     }
 
     // Tools > LBA1: Make surprise changes: connects the bedroom (scene 61) to Lupin Burg and adds the pink elf to it
@@ -1598,6 +1673,60 @@ public partial class MainWindow : Window
         RefreshZoneListIfVisible();
     }
 
+    // Tools > LBA2: race track (RaceTrackWindow): builds an island's track into the game folder, or puts the folder back.
+    private void Lba2RaceTrack_Click(object sender, RoutedEventArgs e)
+    {
+        if (!Lba2Engine.IsGameFolder(gameRoot))
+        {
+            MessageBox.Show(this, "The LBA2 game folder isn't set. Choose it under File > Settings.", "Race track", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        // (a build rewrites the outside scenes of the island it is on; any island's, as the dialog picks the island)
+        if (Terrain.RaceTrackIsland.All.FirstOrDefault(i => scriptSession.EditedScenes.Any(s => s >= i.FirstScene && s <= i.LastScene)) is { } edited)
+        {
+            MessageBox.Show(this, $"Some of {edited.Name}'s outside scenes ({edited.FirstScene}-{edited.LastScene}) have unsaved script edits. Save or discard them first.", "Race track", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (playing) StopPlay();
+        var window = new RaceTrackWindow(gameRoot, RaceTrackChanged).WithOwner(this);
+        window.ShowDialog();
+    }
+
+    // A race track build (or putting the files back) changed islands' ground and decor bodies and SCENE.HQR on disk -- several islands'
+    // at once, and some of Citadel Island's inside scenes for its story: everything that read them is dropped and shown again (a scene
+    // with unsaved script edits is kept: ForgetScene).
+    private void RaceTrackChanged()
+    {
+        zoneCache.Clear();
+        foreach (var entry in allSceneEntries) scriptSession.ForgetScene(entry.Option.Index);
+        InvalidateNativeIsland();
+        // (a build can make an island -- Sendell's Well -- and scenes of their own, and putting the folder back takes them away: then the
+        // lists are made again, which loads the island shown, or the first there is when it has gone)
+        if (IslandsOrScenesChanged())
+        {
+            PopulateAssetLists();
+            RefreshZoneListIfVisible();
+            return;
+        }
+        var shownChanged = Terrain.RaceTrackIsland.All.SelectMany(i => i.IslandFiles).Contains(activeFile, StringComparer.OrdinalIgnoreCase);
+        if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
+        else if (shownChanged && File.Exists(Path.Combine(gameRoot, activeFile))) LoadIsland(Path.Combine(gameRoot, activeFile));
+        else if (nativeViewActive) RenderNativeCamera();
+        RefreshZoneListIfVisible();
+    }
+
+    // Whether the game folder's islands or scenes are not the ones the lists show.
+    private bool IslandsOrScenesChanged()
+    {
+        if (currentGame != GameKind.Lba2 || !Directory.Exists(gameRoot)) return false;
+        var files = Directory.EnumerateFiles(gameRoot, "*.ILE").Select(p => Path.GetFileName(p)).Where(n => !n.StartsWith("_", StringComparison.OrdinalIgnoreCase));
+        var listed = islandOptions.Select(o => o.Display).Where(d => d != OtherIslandLabel);
+        if (!files.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(listed)) return true;
+        var scenePath = Path.Combine(gameRoot, "SCENE.HQR");
+        try { return File.Exists(scenePath) && HqrArchive.CountEntries(scenePath) != sceneSlotsListed; }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException) { return false; }
+    }
+
     // Tools > LBA2: edit a scene as data on a plan of it (Lba2SceneEditorWindow).
     private void Lba2Editor_Click(object? sender, RoutedEventArgs e)
     {
@@ -1656,6 +1785,25 @@ public partial class MainWindow : Window
         }
     }
 
+    // Tools > export 3D models: opens on what is on screen (the island, the interior, the LBA1 scene).
+    private void Export3D_Click(object sender, RoutedEventArgs e)
+    {
+        var lba1 = Lba1Configured ? EditorSettings.Current.Lba1Directory : null;
+        var lba2 = File.Exists(Path.Combine(gameRoot, "BODY.HQR")) ? gameRoot : null;
+        string? hint = null, file = null;
+        if (currentGame == GameKind.Lba2 && lba2 is not null)
+        {
+            if (interiorSceneActive) { hint = "LBA2 interiors"; file = $"interior_{interiorSceneNumber:D3}"; }
+            else { hint = "LBA2 islands"; file = Path.GetFileNameWithoutExtension(activeFile).ToLowerInvariant(); }
+        }
+        else if (currentGame == GameKind.Lba1 && lba1 is not null) { hint = "LBA1 scenes"; file = $"scene_{interiorSceneNumber:D3}"; }
+        try { Export.ExportWindow.Show(this, lba1, lba2, hint, file); }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            MessageBox.Show(this, $"Couldn't open the export window: {error.Message}", "Export 3D models", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     // Tools > bricks and sprites: the game's run-length pictures with a pixel editor, PNG import / export.
     private void AssetEditor_Click(object? sender, RoutedEventArgs e)
     {
@@ -1710,11 +1858,13 @@ public partial class MainWindow : Window
     // The scene editor hands an actor over to the full attribute dialog or the script editor, which work on the scene shown here.
     private void EditLba1ActorFromEditor(int scene, int actor, bool script)
     {
-        if (currentGame != GameKind.Lba1 || lba1Game is null)
-        {
-            MessageBox.Show(this, "Switch the main window to LBA1 (the Game selector) to use the full editors.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
+        // Used to just refuse with "switch to LBA1 yourself" -- IslandEditor_Click's own equivalent (the
+        // LBA2 island terrain editor entry point) switches for the user instead, so this now matches it.
+        // SwitchGame can itself decline (unsaved terrain edits, confirmed away) -- the recheck after it
+        // mirrors IslandEditor_Click's own, and a decline here just leaves the editor window's request
+        // unfulfilled rather than piling on a second dialog explaining why.
+        if (currentGame != GameKind.Lba1) SwitchGame(GameKind.Lba1);
+        if (currentGame != GameKind.Lba1 || lba1Game is null) return;
         zoneCache.Clear();
         lba1Session.ForgetScene(scene);
         ReloadLba1AfterEdit();
@@ -1736,6 +1886,7 @@ public partial class MainWindow : Window
         }
         catch (Exception error)
         {
+            SetStatus($"Saved, but couldn't reload the view: {error.Message}", StatusKind.Warning);
             DebugLog.Log($"MainWindow: LBA1 reload failed: {error}");
             return;
         }
@@ -1773,10 +1924,11 @@ public partial class MainWindow : Window
 
         foreach (var (index, x, y, halfWidth, halfHeight, isMarker) in interiorActors)
         {
+            if (hideAllActors) continue;
             var sx = (x - interiorCenter.X) * interiorZoom + vw / 2;
             var sy = (y - interiorCenter.Y) * interiorZoom + vh / 2;
             if (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40) continue;
-            if (isMarker) AddDummyMarker(sx, sy, halfHeight * 2 * interiorZoom);
+            if (isMarker) { if (!hideDummyActors) AddDummyMarker(sx, sy, halfHeight * 2 * interiorZoom); }
             else if (lba1ActorMarkers.TryGetValue(index, out var body)) AddBodyMarker(body.Marker.Image, sx, sy, halfHeight * interiorZoom);
             var hit = new Avalonia.Controls.Shapes.Ellipse
             {
@@ -1800,16 +1952,17 @@ public partial class MainWindow : Window
         UpdatePlacementMarker();
     }
 
-    // Zooms by `factor`, keeping the canvas point under `anchor` (viewport
-    // coordinates) fixed.
-    private void ZoomInterior(double factor, Point? anchor = null)
+    // Zooms by `factor`, keeping the canvas point under `anchor` (viewport coordinates) fixed. `maxZoom` is the
+    // wheel's own tighter ceiling (InteriorWheelMaxZoom) or the override ceiling (InteriorMaxZoom, the default
+    // -- text box and holding a +/- button both want the wider range).
+    private void ZoomInterior(double factor, Point? anchor = null, double maxZoom = InteriorMaxZoom)
     {
         if (interiorZoom <= 0) return;
         var vw = ViewportHost.ActualWidth;
         var vh = ViewportHost.ActualHeight;
         var a = anchor ?? new Point(vw / 2, vh / 2);
         var before = new Point((a.X - vw / 2) / interiorZoom + interiorCenter.X, (a.Y - vh / 2) / interiorZoom + interiorCenter.Y);
-        interiorZoom = Math.Clamp(interiorZoom * factor, InteriorFitZoom(), InteriorMaxZoom);
+        interiorZoom = Math.Clamp(interiorZoom * factor, InteriorFitZoom(), maxZoom);
         interiorCenter = new Point(before.X - (a.X - vw / 2) / interiorZoom, before.Y - (a.Y - vh / 2) / interiorZoom);
         ApplyInteriorView();
     }
@@ -1957,6 +2110,11 @@ public partial class MainWindow : Window
 
         foreach (var (index, sx, sy, hitHalfWidth, hitHalfHeight) in lastNativeActorScreens)
         {
+            // The real body pixels (when not a dummy) are baked into the framebuffer by the native renderer
+            // itself, gated separately by the RendererDrawActors flag (see RenderNativeCamera's drawActors
+            // argument) -- skipping the marker/hit-target here on top of that is what removes the rest
+            // (click target, selection ring, dummy glyph) for "hide all actors".
+            if (hideAllActors) continue;
             var screenX = sx * scaleX;
             var screenY = sy * scaleY;
             if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
@@ -1969,7 +2127,7 @@ public partial class MainWindow : Window
             // to click reliably before this.
             var hitWidth = Math.Max(hitHalfWidth * 2 * scaleX, 20);
             var hitHeight = Math.Max(hitHalfHeight * 2 * scaleY, 20);
-            if (lastNativeInvisibleActors?.Contains(index) == true) AddDummyMarker(screenX, screenY, hitHeight);
+            if (lastNativeInvisibleActors?.Contains(index) == true) { if (!hideDummyActors) AddDummyMarker(screenX, screenY, hitHeight); }
             if (highlightSelection && selectedActorIndex == index) AddSelectionRing(screenX, screenY, hitWidth, hitHeight);
             var hit = new Avalonia.Controls.Shapes.Ellipse
             {
@@ -2051,6 +2209,171 @@ public partial class MainWindow : Window
             else OpenActorAttributesWindow(index);
         }
         if (editMode == EditMode.Script && ScriptTab.IsSelected) SyncScriptListSelection(index);
+
+        // Drag to reposition. Outdoors (LBA2 native view) a screen point maps to a world point by a ray-plane intersection (NativeCameraModel.RayToPlane, the
+        // one BeginPan3D/MovePan3D use to drag the camera target); in the fixed isometric pictures (LBA2 interiors, LBA1) the picture is affine, so a
+        // pointer movement is a movement in the plane of the actor's height (BeginInteriorActorDrag). A plain click still behaves exactly as above: a
+        // click that never crosses ActorDragThresholdPx never becomes a "drag".
+        if (nativeViewActive && !interiorSceneActive && editMode != EditMode.Script
+            && nativeRenderer.RendererLibrary is { } dragLibrary
+            && dragLibrary.GetActor(index, out var dax, out var day, out var daz, out _)
+            && dragLibrary.GetActorAttributes(index, out var dbeta, out var dbody, out var danim, out var dlife, out var darmor, out var dhit, out var dmove)
+            && dragLibrary.GetActorFlags(index, out var dflags))
+        {
+            draggingActorIndex = index;
+            actorDragStartScreen = e.GetPosition(TerrainViewport);
+            actorDragMoved = false;
+            actorDragPlaneY = day;
+            actorDragOriginal = new Lba2ActorPersistence.Snapshot(dax, day, daz, dbeta, dbody, danim, dlife, darmor, dhit, dmove, dflags);
+            actorDragKind = ActorDragKind.Exterior;
+            TerrainViewport.CaptureMouse();
+        }
+        // ... and the same in the isometric pictures (LBA2 interiors, LBA1 scenes and joined maps).
+        else if (interiorSceneActive && editMode != EditMode.Script) { if (!BeginInteriorActorDrag(index, e.GetPosition(ViewportHost))) DebugLog.Log($"MainWindow: actor {index} can't be dragged here (interior view, joined view {lba2JoinedView})"); }
+        // Nothing armed: say why in the log, so "I clicked an actor and it wouldn't move" can be traced.
+        else DebugLog.Log($"MainWindow: actor {index} clicked, not draggable: native view {nativeViewActive}, interior {interiorSceneActive}, mode {editMode}, joined view {lba2JoinedView}, library {(nativeRenderer.RendererLibrary is not null)}");
+    }
+
+    // ---- dragging an actor in the isometric pictures (LBA2 interiors, LBA1 scenes and maps) ------------------------------------------------------------
+    // The picture is affine, so a pointer movement on the picture is a movement in the plane of the actor's own height: the actor's new spot is its old
+    // one plus the difference between where the pointer is now and where it was picked up, both put onto that plane. A ring follows the pointer while
+    // dragging (the picture itself is redrawn from the saved file when the pointer is let go).
+    private enum ActorDragKind { Exterior, Lba2Interior, Lba1 }
+    private ActorDragKind actorDragKind;
+    private Point actorDragStartCanvas;
+    private (double X, double Y, double Z) actorDragStartWorld;
+    private (int X, int Y, int Z)? actorDragNew;
+    private int actorDragScene;
+    private Lba1AreaTile? actorDragTile;
+    private Avalonia.Controls.Shapes.Ellipse? actorDragGhost;
+
+    private Point InteriorCanvasOf(Point view)
+        => new((view.X - ViewportHost.ActualWidth / 2) / interiorZoom + interiorCenter.X, (view.Y - ViewportHost.ActualHeight / 2) / interiorZoom + interiorCenter.Y);
+
+    private bool BeginInteriorActorDrag(int index, Point view)
+    {
+        if (interiorZoom <= 0 || lba2JoinedView) return false;
+        if (currentGame == GameKind.Lba1)
+        {
+            var scene = index / 1000;
+            if (!lba1ViewScenes.TryGetValue(scene, out var model) || model.Actors.FirstOrDefault(a => a.Index == index % 1000) is not { } actor) return false;
+            if (lba1CurrentTiles?.FirstOrDefault(t => t.Scene == scene && t.HoldsPoint(actor.X, actor.Z)) is not { } tile) return false;
+            actorDragKind = ActorDragKind.Lba1; actorDragScene = scene; actorDragTile = tile;
+            actorDragStartWorld = (actor.X, actor.Y, actor.Z);
+        }
+        else
+        {
+            if (nativeRenderer.RendererLibrary is not { } library
+                || !library.GetActor(index, out var x, out var y, out var z, out _)
+                || !library.GetActorAttributes(index, out var beta, out var body, out var anim, out var life, out var armor, out var hit, out var move)
+                || !library.GetActorFlags(index, out var flags)) return false;
+            actorDragKind = ActorDragKind.Lba2Interior;
+            actorDragOriginal = new Lba2ActorPersistence.Snapshot(x, y, z, beta, body, anim, life, armor, hit, move, flags);
+            actorDragStartWorld = (x, y, z);
+        }
+        draggingActorIndex = index;
+        actorDragStartScreen = view;
+        actorDragStartCanvas = InteriorCanvasOf(view);
+        actorDragMoved = false;
+        actorDragNew = null;
+        ViewportHost.CaptureMouse();
+        return true;
+    }
+
+    private void UpdateInteriorActorDrag(Point view)
+    {
+        var now = InteriorCanvasOf(view);
+        var y = (int)Math.Round(actorDragStartWorld.Y);
+        double nx, nz;
+        Point? ring;
+        if (actorDragKind == ActorDragKind.Lba1)
+        {
+            double u = (now.X - actorDragStartCanvas.X) * 512 / 24, v = (now.Y - actorDragStartCanvas.Y) * 512 / 12;
+            nx = actorDragStartWorld.X + (u + v) / 2; nz = actorDragStartWorld.Z + (v - u) / 2;
+            nx = Math.Clamp(nx, 0, 32767); nz = Math.Clamp(nz, 0, 32767);
+            var tile = actorDragTile!;
+            ring = lba1ShownImage is { } image ? InteriorCanvasToView(image.Project(nx + tile.OffsetX, y + tile.OffsetY, nz + tile.OffsetZ)) : null;
+        }
+        else
+        {
+            var library = nativeRenderer.RendererLibrary;
+            if (library is null || !SolveInteriorGround(library, actorDragStartCanvas, y, out var sx, out var sz) || !SolveInteriorGround(library, now, y, out var px, out var pz)) return;
+            nx = Math.Clamp(actorDragStartWorld.X + (px - sx), 0, 32767); nz = Math.Clamp(actorDragStartWorld.Z + (pz - sz), 0, 32767);
+            ring = library.ProjectInteriorPoint((int)nx, y, (int)nz, out var cx, out var cy) ? InteriorCanvasToView(new Point(cx, cy)) : null;
+        }
+        actorDragNew = ((int)Math.Round(nx), y, (int)Math.Round(nz));
+        if (ring is not { } at) return;
+        if (actorDragGhost is null)
+        {
+            actorDragGhost = new Avalonia.Controls.Shapes.Ellipse { Width = 28, Height = 28, Stroke = Brushes.Yellow, StrokeThickness = 3, Fill = new SolidColorBrush(Color.FromArgb(70, 255, 255, 0)), IsHitTestVisible = false };
+            BrushOverlayCanvas.Children.Add(actorDragGhost);
+        }
+        Canvas.SetLeft(actorDragGhost, at.X - 14); Canvas.SetTop(actorDragGhost, at.Y - 14);
+    }
+
+    private void EndInteriorActorDrag(int index)
+    {
+        if (actorDragGhost is not null) { BrushOverlayCanvas.Children.Remove(actorDragGhost); actorDragGhost = null; }
+        if (!actorDragMoved || actorDragNew is not { } to) return;
+        if (actorDragKind == ActorDragKind.Lba1)
+        {
+            Lba1ActorData data;
+            try
+            {
+                var record = new Scenes.SceneStore(Scenes.SceneGame.Lba1, EditorSettings.Current.Lba1Directory).LoadRecord(actorDragScene);
+                data = Lba1ActorRecord.Read(record, index % 1000);
+            }
+            catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException) { FileLabel.Text = $"Couldn't move the actor: {error.Message}"; return; }
+            data.X = to.X; data.Y = to.Y; data.Z = to.Z;
+            var problem = SaveLba1Actor(actorDragScene, data);
+            FileLabel.Text = problem ?? "Actor moved and saved to the game's files.";
+            return;
+        }
+        var library = nativeRenderer.RendererLibrary;
+        if (library is null || actorDragOriginal is not { } original) return;
+        if (Lba2ActorPersistence.Locate(library, index) is not { } located) { FileLabel.Text = "Couldn't move the actor: its scene isn't the one currently loaded."; return; }
+        var error2 = Lba2ActorPersistence.Save(gameRoot, located.Scene, located.IndexInScene, original, original with { X = to.X, Y = to.Y, Z = to.Z }, out var note);
+        FileLabel.Text = error2 is not null ? $"Actor not moved: {error2}" : note is null ? "Actor moved and saved to the game's files." : $"Actor moved and saved, except: {note}";
+        if (error2 is null) ShowInteriorScene(interiorSceneNumber, keepView: true);
+    }
+
+    // ---- dragging an actor to reposition it (see ActorMarker_MouseLeftButtonDown) ----
+    private int? draggingActorIndex;
+    private Point actorDragStartScreen;
+    private bool actorDragMoved;
+    private double actorDragPlaneY;
+    private Lba2ActorPersistence.Snapshot? actorDragOriginal;
+    private const double ActorDragThresholdPx = 4; // below this a click-release is still just a click/select/open, not a drag
+
+    private void UpdateActorDrag(int index, Point screen)
+    {
+        var model = cameraModel;
+        if (model is null) return;
+        var w = TerrainViewport.ActualWidth; var h = TerrainViewport.ActualHeight;
+        if (w < 1 || h < 1) return;
+        // Held at the height the actor already had (actorDragPlaneY), not re-picked against the ground: matches
+        // BeginPan3D/MovePan3D's own camera-target drag, and means a drag never silently changes an actor's height
+        // -- only Y in the Attributes window's own field, or a future ground-following mode, should do that.
+        if (!model.RayToPlane(screen.X * model.FrameWidth / w, screen.Y * model.FrameHeight / h, actorDragPlaneY, out var wx, out var wz)) return;
+        nativeRenderer.RendererLibrary?.SetActorPosition(index, (int)wx, (int)actorDragPlaneY, (int)wz);
+        RenderNativeCamera(); // already coalesces bursts of calls into one in-flight render -- see its own comment
+    }
+
+    private void CommitActorDrag(int index)
+    {
+        var library = nativeRenderer.RendererLibrary;
+        if (library is null || actorDragOriginal is not { } original) return;
+        if (Lba2ActorPersistence.Locate(library, index) is not { } located)
+        {
+            FileLabel.Text = "Actor moved for this session, but couldn't be saved to the game files (its scene isn't the one currently loaded).";
+            return;
+        }
+        if (!library.GetActor(index, out var x, out var y, out var z, out _)) return;
+        var updated = original with { X = x, Y = y, Z = z };
+        var error = Lba2ActorPersistence.Save(gameRoot, located.Scene, located.IndexInScene, original, updated, out var bodyAnimNote);
+        FileLabel.Text = error is not null
+            ? $"Actor moved for this session, but not saved to the game files: {error}"
+            : bodyAnimNote is null ? "Actor moved and saved to the game's files." : $"Actor moved and saved, except: {bodyAnimNote}";
     }
 
     // One independent, non-modal window per actor per kind (script/
@@ -2407,9 +2730,14 @@ public partial class MainWindow : Window
     {
         if (minimapPopup is not null) { minimapPopup.Activate(); return; }
         minimapPopup = new MinimapPopupWindow(this);
+        WindowLifecycle.Register(minimapPopup, "MinimapPopupWindow");
         minimapPopup.ImageClicked += NavigateMinimapTo;
         minimapPopup.Closed += (_, _) => minimapPopup = null;
         RefreshMinimapPopup();
+        // MinimapContent.UpdateLayout() (inside RefreshMinimapPopup) just ran, so ActualWidth/Height are
+        // current -- the same box that snapshot's own image came from, so sizing the window to this aspect
+        // ratio is sizing it to the image's own.
+        minimapPopup.SizeToAspect(MinimapContent.ActualWidth, MinimapContent.ActualHeight);
         minimapPopup.ShowOwned();
     }
 
@@ -2451,6 +2779,21 @@ public partial class MainWindow : Window
     // jump the displayed percentage; zooming in (smaller distance) reads as
     // >100%, matching how "zoom" reads on a camera or a document viewer.
     private const double DefaultCameraDistance = 30000;
+    // Two tiers, both loosened from the original single 3000-50000 (native) / 12000-120000 (software): neither
+    // end of either tier is load-bearing -- AffGrilleExtWide's wideRadius stays fixed at 2 regardless of
+    // distance (see RunNativeRenderLoop's own comment), so cost doesn't change with zoom, and the software path
+    // is plain double math with no divide-by-zero or index risk at either extreme. Kept finite, not fully
+    // unbounded, only so a runaway scroll (or a held button) can't reach a distance so large or small the view
+    // is just a blank/degenerate frame.
+    //
+    // The scroll wheel is capped at the tighter Wheel* range (5000%-10%) so a fast scroll can't run away to an
+    // extreme in a couple of notches; the text box and holding a +/- button both reach the wider override range
+    // instead (20000%-1%) -- both share the same distance bounds since native and software share
+    // DefaultCameraDistance.
+    private const double WheelMinDistance = 600, WheelMaxDistance = 300000;         // 5000%, 10%
+    private const double OverrideMinDistance = 150, OverrideMaxDistance = 3000000;  // 20000%, 1%
+    private const int NativeMinDistance = (int)OverrideMinDistance, NativeMaxDistance = (int)OverrideMaxDistance;
+    private const double SoftwareMinDistance = OverrideMinDistance, SoftwareMaxDistance = OverrideMaxDistance;
     private void UpdateZoomLabel()
     {
         if (interiorSceneActive) { ZoomLabel.Text = $"{Math.Round(interiorZoom * 100)}%"; return; }
@@ -2487,12 +2830,12 @@ public partial class MainWindow : Window
         var distance = DefaultCameraDistance / (percent / 100.0);
         if (nativeViewActive)
         {
-            nativeDistance = (int)Math.Clamp(distance, 3000, 50000);
+            nativeDistance = (int)Math.Clamp(distance, NativeMinDistance, NativeMaxDistance);
             RenderNativeCamera();
         }
         else
         {
-            cameraDistance = Math.Clamp(distance, 12000, 120000);
+            cameraDistance = Math.Clamp(distance, SoftwareMinDistance, SoftwareMaxDistance);
             RenderSoftwareTerrain();
         }
         UpdateZoomLabel();
@@ -2520,8 +2863,12 @@ public partial class MainWindow : Window
         else if (interiorSceneActive) FitInteriorView();
         else Reset_Click(sender, e);
     }
-    private void ZoomIn_Click(object? sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1.25); return; } if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
-    private void ZoomOut_Click(object? sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1 / 1.25); return; } if (interiorSceneActive) { ZoomInterior(1 / 1.25); return; } if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
+    // A proportional step (~25%), not the old fixed +/-4000 units: now that these are RepeatButtons (holding
+    // one fires Click repeatedly -- see the XAML), a fixed step would take ~750 repeats to cross the override
+    // range's full 150-3000000 span. A ratio step covers it in ~44 regardless of where it starts, and matches
+    // the wheel/terrainEditor/interior zoom's own factor-based feel.
+    private void ZoomIn_Click(object? sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1.25); return; } if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = (int)Math.Max(NativeMinDistance, nativeDistance / 1.25); RenderNativeCamera(); } else { cameraDistance = Math.Max(SoftwareMinDistance, cameraDistance / 1.25); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
+    private void ZoomOut_Click(object? sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1 / 1.25); return; } if (interiorSceneActive) { ZoomInterior(1 / 1.25); return; } if (nativeViewActive) { nativeDistance = (int)Math.Min(NativeMaxDistance, nativeDistance * 1.25); RenderNativeCamera(); } else { cameraDistance = Math.Min(SoftwareMaxDistance, cameraDistance * 1.25); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
     // Gated on RotateViewCheckBox so the left mouse button can be freed up
     // for other uses (actor placement/selection, etc.) without it always
     // spinning the camera underneath whatever else is being clicked.
@@ -2548,6 +2895,7 @@ public partial class MainWindow : Window
             if (PickGround(at, out var gx, out var gz))
             {
                 hoverCell = (gx, gz);
+                terrainEditor!.ScreenPick = box => ScreenPickBox(at, box);
                 if (terrainEditor!.PointerDown(gx, gz, PickToleranceCells(at))) { paintingTerrain = true; TerrainViewport.CaptureMouse(); }
                 DrawTerrainOverlay();
             }
@@ -2565,6 +2913,15 @@ public partial class MainWindow : Window
     private bool interiorPanning;
     private void TerrainViewport_MouseMove(object? sender, PointerEventArgs e)
     {
+        if (draggingActorIndex is int dragIndex)
+        {
+            var interiorDrag = actorDragKind != ActorDragKind.Exterior;
+            var screen = interiorDrag ? e.GetPosition(ViewportHost) : e.GetPosition(TerrainViewport);
+            if (!actorDragMoved && (Math.Abs(screen.X - actorDragStartScreen.X) > ActorDragThresholdPx || Math.Abs(screen.Y - actorDragStartScreen.Y) > ActorDragThresholdPx))
+                actorDragMoved = true;
+            if (actorDragMoved) { if (interiorDrag) UpdateInteriorActorDrag(screen); else UpdateActorDrag(dragIndex, screen); }
+            return;
+        }
         if (interiorPanning)
         {
             var p = e.GetPosition(ViewportHost);
@@ -2597,17 +2954,33 @@ public partial class MainWindow : Window
         else
         {
             cameraYaw += dx * .35;
-            RenderSoftwareTerrain();
+            ScheduleSoftwareTerrainRender();
         }
     }
     private void TerrainViewport_MouseUp(object? sender, PointerReleasedEventArgs e)
     {
+        if (draggingActorIndex is int dragIndex)
+        {
+            if (actorDragKind != ActorDragKind.Exterior) EndInteriorActorDrag(dragIndex);
+            else if (actorDragMoved) CommitActorDrag(dragIndex);
+            draggingActorIndex = null;
+            actorDragMoved = false;
+            actorDragOriginal = null;
+            Mouse.Capture(null);
+            // A scene or island box that still holds the keyboard focus keeps Ctrl+Z for its own text, so a move could not be undone from the keyboard: the view takes the focus.
+            ViewportHost.Focusable = true;
+            ViewportHost.Focus();
+            return;
+        }
         if (paintingTerrain && e.ChangedButton == MouseButton.Left) { terrainEditor?.PointerUp(); paintingTerrain = false; DrawTerrainOverlay(); }
         if (panning3D && e.ChangedButton == MouseButton.Middle) panning3D = false;
         orbiting = false; interiorPanning = false;
         if (!paintingTerrain && !panning3D) Mouse.Capture(null);
     }
-    private void TerrainViewport_MouseWheel(object? sender, PointerWheelEventArgs e) { if (interiorSceneActive) { ZoomInterior(e.WheelDelta > 0 ? 1.15 : 1 / 1.15, e.GetPosition(ViewportHost)); return; } if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.WheelDelta > 0 ? 1200 : -1200), 3000, 50000); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.WheelDelta * 40, 12000, 120000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
+    // Capped at the tighter Wheel*/InteriorWheelMaxZoom range -- see NativeMinDistance's own comment. The text
+    // box and holding a +/- button (ZoomIn_Click/ZoomOut_Click/ApplyZoomFromTextBox) reach the wider override
+    // range instead.
+    private void TerrainViewport_MouseWheel(object? sender, PointerWheelEventArgs e) { if (interiorSceneActive) { ZoomInterior(e.WheelDelta > 0 ? 1.15 : 1 / 1.15, e.GetPosition(ViewportHost), InteriorWheelMaxZoom); return; } if (nativeViewActive) { nativeDistance = (int)Math.Clamp(nativeDistance - (e.WheelDelta > 0 ? 1200 : -1200), WheelMinDistance, WheelMaxDistance); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.WheelDelta * 40, WheelMinDistance, WheelMaxDistance); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
     private void RenderNativeCamera()
     {
         if (!nativeViewActive) return;
@@ -2688,6 +3061,7 @@ public partial class MainWindow : Window
             var bitmap = nativeRenderer.RenderIslandDirect(islandName, palette, camX, camY, camZ, nativeAlpha, nativeBeta, nativeGamma, camDistance,
                 wideRadiusCubes: wideRadius,
                 drawSky: desiredSkyEnabled,
+                drawActors: !hideAllActors,
                 afterRenderBeforeUnlock: () =>
                 {
                     if (library is null) return;
@@ -2933,9 +3307,89 @@ public partial class MainWindow : Window
     }
     private void ViewportHost_SizeChanged(object? sender, SizeChangedEventArgs e) { if (interiorSceneActive) ApplyInteriorView(); }
     private void TerrainViewport_SizeChanged(object? sender, SizeChangedEventArgs e) { if (interiorSceneActive) return; if (nativeViewActive) DrawNativeActorOverlay(); else RenderSoftwareTerrain(); }
-    private void Window_Loaded(object? sender, RoutedEventArgs e) { }
-    private void Window_Closing(object? sender, WindowClosingEventArgs e)
+    // Startup does enough synchronous work before the window ever appears (native renderer init, an
+    // island load, a first native render) that Windows' foreground-lock grace period can already have
+    // elapsed by the time Show() actually runs -- past that window, a newly started process no longer
+    // gets automatic focus, so it opens behind whatever already had it, with only a taskbar flash to
+    // show for it. Confirmed live: a plain Activate() / Topmost pulse alone does NOT fix this -- Topmost
+    // only reorders the Z-order, it doesn't grant the "foreground rights" the lock is withholding, so
+    // toggling it back off just drops the window back where it already was. AttachThreadInput is the
+    // actual, standard workaround: it borrows the current foreground thread's input state for the
+    // duration of the call, which SetForegroundWindow accepts as authorization from any process.
+    //
+    // One attempt at Loaded turned out not to be reliable enough on its own (still reported happening) --
+    // AttachThreadInput can fail transiently (the foreground thread's own state isn't always attachable
+    // the instant this runs), and Loaded itself fires before the first real paint, so something later in
+    // startup (the first native render, layout finishing) could plausibly still be mid-flight. Retrying a
+    // few times a little apart, and again once from ContentRendered (which fires later -- after the first
+    // frame is actually on screen, not just laid out), covers both without the complexity of trying to
+    // find one exact root cause for what's fundamentally a racy OS mechanism.
+    // Windows only: X11 and Wayland have no equivalent foreground lock, and a window manager there decides focus by its own
+    // policy, which an application is not meant to override. Wired from Avalonia's Opened (there is no ContentRendered).
+    private void Window_Loaded(object? sender, RoutedEventArgs e) { if (OperatingSystem.IsWindows()) ForceForegroundRetrying(this); }
+
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int command);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] private static extern void SwitchToThisWindow(IntPtr hWnd, bool altTab);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+
+    // Attempts at 0, 150 ms ... then every half second for about four seconds in all: the first attempt is at Loaded (before the first
+    // real paint), and the native renderer's own window / the first native render can still take the focus after that. It stops as soon
+    // as the window really is the foreground window. Each attempt escalates: the borrowed-input SetForegroundWindow, then (from the
+    // second attempt) a topmost pulse + SwitchToThisWindow, then a synthetic Alt tap (the old "release the foreground lock" trick, which
+    // also works when the foreground window belongs to an elevated process that AttachThreadInput can't attach to).
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void ForceForegroundRetrying(Window window, int attempt = 0)
     {
+        var done = ForceForeground(window, attempt);
+        if (attempt == 0 || done || attempt >= 9) DebugLog.Log($"MainWindow: foreground attempt {attempt}: {(done ? "now in front" : "still behind")}");
+        if (done || attempt >= 9) return;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(attempt < 3 ? 150 : 500) };
+        timer.Tick += (_, _) => { timer.Stop(); ForceForegroundRetrying(window, attempt + 1); };
+        timer.Start();
+    }
+
+    // Returns whether the window is (now) the foreground window.
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static bool ForceForeground(Window window, int attempt)
+    {
+        var handle = window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        if (handle == IntPtr.Zero) return false;
+        if (GetForegroundWindow() == handle) return true;
+        if (IsIconic(handle)) ShowWindow(handle, 9);       // SW_RESTORE
+        var foreground = GetForegroundWindow();
+        var foregroundThread = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, IntPtr.Zero);
+        var thisThread = GetCurrentThreadId();
+        var attached = foregroundThread != 0 && foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true);
+        try
+        {
+            if (attempt >= 1)
+            {
+                const uint noMoveNoSize = 0x0001 | 0x0002;        // SWP_NOSIZE | SWP_NOMOVE
+                SetWindowPos(handle, new IntPtr(-1), 0, 0, 0, 0, noMoveNoSize);      // HWND_TOPMOST, then straight back
+                SetWindowPos(handle, new IntPtr(-2), 0, 0, 0, 0, noMoveNoSize);      // HWND_NOTOPMOST
+            }
+            if (attempt >= 2)
+            {
+                keybd_event(0x12, 0, 0, UIntPtr.Zero);            // VK_MENU down / up
+                keybd_event(0x12, 0, 2, UIntPtr.Zero);
+            }
+            BringWindowToTop(handle);
+            SetForegroundWindow(handle);
+            if (attempt >= 1) SwitchToThisWindow(handle, true);
+        }
+        finally { if (attached) AttachThreadInput(thisThread, foregroundThread, false); }
+        window.Activate();
+        return GetForegroundWindow() == handle;
+    }
+    private void Window_Closing(object? sender, WindowClosingEventArgs e)    {
         StopPlay();
         SaveAudioIfDirty();
         if (!ConfirmTerrainDiscard()) { e.Cancel = true; return; }
@@ -2953,7 +3407,7 @@ public partial class MainWindow : Window
         // Ctrl+Z / Ctrl+Y undo and redo saved scene changes; text boxes keep their own undo.
         if (Keyboard.Modifiers == KeyModifiers.Control && e.Key is Key.Z or Key.Y && Keyboard.FocusedElement is not TextBox)
         {
-            RunHistoryStep(undo: e.Key == Key.Z);
+            StepHistory(undo: e.Key == Key.Z);
             e.Handled = true;
             return;
         }
@@ -2966,25 +3420,66 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        // TryPan below assumes the outdoor island's own coordinate space
+        // TryPan/tilt below assumes the outdoor island's own coordinate space
         // (IsWorldPositionOnIsland, SyncPanScrollBars writing targetX/Z) --
         // arrow-key panning isn't wired up for interior scenes (only the
         // scrollbars are, via RenderInteriorPan), and letting this run
         // anyway would silently overwrite the pan scrollbars' interior-mode
         // range/value with stale outdoor coordinates.
         if (interiorSceneActive || terrainShown) return;
+        // WASD is an alias for the arrow keys -- unlike arrows, W/A/S/D are ordinary typed characters, so
+        // this only fires outside a text box (an editable ComboBox's own entry field is a TextBoxBase too),
+        // or every "d" typed while renaming something would also nudge the camera. Checking
+        // Keyboard.IsKeyDown for all four directions on every KeyDown, rather than switching on just e.Key,
+        // is what makes holding two at once (e.g. Up+Left) register as one diagonal move/tilt instead of
+        // only ever reacting to whichever key was pressed most recently.
+        if (Keyboard.FocusedElement is TextBox) return;
+        var left = Keyboard.IsKeyDown(Key.Left) || Keyboard.IsKeyDown(Key.A);
+        var right = Keyboard.IsKeyDown(Key.Right) || Keyboard.IsKeyDown(Key.D);
+        var up = Keyboard.IsKeyDown(Key.Up) || Keyboard.IsKeyDown(Key.W);
+        var down = Keyboard.IsKeyDown(Key.Down) || Keyboard.IsKeyDown(Key.S);
+        if (e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.A or Key.D or Key.W or Key.S) || (!left && !right && !up && !down)) return;
+        var horizontal = (right ? 1 : 0) - (left ? 1 : 0);
+        var vertical = (down ? 1 : 0) - (up ? 1 : 0);
+
+        // Ctrl held: tilt the camera instead of panning -- the same nativeAlpha/nativeBeta (native view) or
+        // cameraYaw (software view) that dragging the mouse with "Rotate/tilt with mouse" checked already
+        // drives (TerrainViewport_MouseMove), just nudged a fixed step per keypress instead of by drag
+        // distance. The software view's camera pitch is a fixed 38 degrees (SoftwareTerrainRenderer.Render's
+        // own hardcoded argument) -- it has no pitch to tilt, so Ctrl+Up/Down does nothing there, only
+        // Ctrl+Left/Right (yaw) does.
+        if ((Keyboard.Modifiers & KeyModifiers.Control) != 0)
+        {
+            if (nativeViewActive)
+            {
+                nativeBeta += horizontal * 64;
+                nativeAlpha += vertical * 64;
+                RenderNativeCamera();
+            }
+            else if (horizontal != 0)
+            {
+                cameraYaw += horizontal * 10;
+                ScheduleSoftwareTerrainRender();
+            }
+            e.Handled = true;
+            return;
+        }
+
         var step = (nativeViewActive ? nativeDistance : cameraDistance) * .04;
-        double dx = 0, dz = 0;
-        if (e.Key == Key.Left) dx = -step;
-        else if (e.Key == Key.Right) dx = step;
-        else if (e.Key == Key.Up) dz = -step;
-        else if (e.Key == Key.Down) dz = step;
-        else return;
-        TryPan(dx, dz);
+        TryPan(horizontal * step, vertical * step);
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
         e.Handled = true;
     }
-    private void Open_Click(object? sender, RoutedEventArgs e) { if (currentGame == GameKind.Lba1) return; var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot }; if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName); }
+    // LBA1 has no equivalent "open a file" concept here -- it works from the one installed game folder
+    // (File > Settings), not a chosen .ILE -- so this used to just silently do nothing for it, on both the
+    // menu click and the Ctrl+O shortcut (a global KeyBinding, so disabling the menu item alone wouldn't
+    // have covered the keyboard path anyway).
+    private void Open_Click(object? sender, RoutedEventArgs e)
+    {
+        if (currentGame == GameKind.Lba1) { SetStatus("LBA1 doesn't use Open -- it plays from the game folder set under File > Settings."); return; }
+        var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot };
+        if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName);
+    }
 
     private void Settings_Click(object? sender, RoutedEventArgs e)
     {
@@ -3023,9 +3518,28 @@ public partial class MainWindow : Window
         foreach (var w in windows) w.ReloadForRestyle();
     }
 
-    // File > Save writes the island the terrain editor changed; with nothing of that pending it is the old JSON draft export.
-    private void Save_Click(object? sender, RoutedEventArgs e) { if (terrainEditor is { Dirty: true } editor) editor.Save(); else Export_Click(sender, e); }
-    private void Export_Click(object? sender, RoutedEventArgs e) { var dialog = new SaveFileDialog { Filter = "JSON draft (*.json)|*.json", FileName = Path.GetFileNameWithoutExtension(activeFile) + ".json" }; if (dialog.ShowDialog() != true) return; var draft = new { format = "lba2-ile-draft", width = 16, height = 16, tiles = fallbackTiles }; File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(draft, new JsonSerializerOptions { WriteIndented = true })); }
+    // FileLabel used to be one unchanging colour for every message, so a failure read identically to a
+    // success or a routine status line. These are the same warning/good colours Theme.xaml's own header
+    // Warning covers both "went wrong" and "didn't happen the way you'd expect," since the status line
+    // only ever draws that one severity, not a separate error/warning split.
+    private enum StatusKind { Info, Success, Warning }
 
-    private enum TerrainType { Grass, Sand, Water, Stone, Dirt }
+    private void SetStatus(string message, StatusKind kind = StatusKind.Info)
+    {
+        FileLabel.Text = message;
+        // A resource-key reference, not a resolved Brush, so this keeps tracking the active theme even
+        // though FileLabel itself is only ever set here rather than bound once in XAML.
+        FileLabel.SetResourceReference(TextBlock.ForegroundProperty, kind switch { StatusKind.Success => "ThemeSuccessBrush", StatusKind.Warning => "ThemeWarningBrush", _ => "ThemeDisabledBrush" });
+    }
+
+    // File > Save writes pending terrain edits -- the only kind of change this button covers; zone, actor,
+    // and script edits each save from their own Apply button. This used to silently fall through to
+    // exporting a hardcoded placeholder map as a "JSON draft" when nothing was terrain-dirty -- dead
+    // prototype scaffolding left over from before the real save paths existed, sitting behind the app's
+    // most standard shortcut. It's just a status message now.
+    private void Save_Click(object sender, RoutedEventArgs e)
+    {
+        if (terrainEditor is { Dirty: true } editor) editor.Save();
+        else SetStatus("Nothing to save here -- zone, actor, and script edits each save from their own Apply button.", StatusKind.Info);
+    }
 }

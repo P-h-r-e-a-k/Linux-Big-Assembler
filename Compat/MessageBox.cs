@@ -22,7 +22,9 @@ public static class MessageBox
     public static MessageBoxResult Show(Window? owner, string text, string caption) => Show(owner, text, caption, MessageBoxButton.OK, MessageBoxImage.None);
     public static MessageBoxResult Show(Window? owner, string text, string caption, MessageBoxButton button) => Show(owner, text, caption, button, MessageBoxImage.None);
 
-    public static MessageBoxResult Show(Window? owner, string text, string caption, MessageBoxButton button, MessageBoxImage image)
+    // `defaultResult` is WPF's: which button Enter presses. Left out, it is the first one (the affirmative), as WPF's
+    // five-argument overload did; a question whose answer is destructive passes the safe one so Enter can't do it.
+    public static MessageBoxResult Show(Window? owner, string text, string caption, MessageBoxButton button, MessageBoxImage image, MessageBoxResult defaultResult = MessageBoxResult.None)
     {
         owner ??= DialogPump.ActiveWindow;
         var result = MessageBoxResult.None;
@@ -45,12 +47,14 @@ public static class MessageBox
             buttons.Children.Add(b);
             return b;
         }
+        // The first button is the default one unless the caller named another.
+        bool Default(MessageBoxResult value, bool first) => defaultResult == MessageBoxResult.None ? first : defaultResult == value;
         switch (button)
         {
             case MessageBoxButton.OK: Add("OK", MessageBoxResult.OK, isDefault: true, isCancel: true); break;
-            case MessageBoxButton.OKCancel: Add("OK", MessageBoxResult.OK, isDefault: true); Add("Cancel", MessageBoxResult.Cancel, isCancel: true); break;
-            case MessageBoxButton.YesNo: Add("Yes", MessageBoxResult.Yes, isDefault: true); Add("No", MessageBoxResult.No, isCancel: true); break;
-            case MessageBoxButton.YesNoCancel: Add("Yes", MessageBoxResult.Yes, isDefault: true); Add("No", MessageBoxResult.No); Add("Cancel", MessageBoxResult.Cancel, isCancel: true); break;
+            case MessageBoxButton.OKCancel: Add("OK", MessageBoxResult.OK, Default(MessageBoxResult.OK, true)); Add("Cancel", MessageBoxResult.Cancel, Default(MessageBoxResult.Cancel, false), isCancel: true); break;
+            case MessageBoxButton.YesNo: Add("Yes", MessageBoxResult.Yes, Default(MessageBoxResult.Yes, true)); Add("No", MessageBoxResult.No, Default(MessageBoxResult.No, false), isCancel: true); break;
+            case MessageBoxButton.YesNoCancel: Add("Yes", MessageBoxResult.Yes, Default(MessageBoxResult.Yes, true)); Add("No", MessageBoxResult.No, Default(MessageBoxResult.No, false)); Add("Cancel", MessageBoxResult.Cancel, Default(MessageBoxResult.Cancel, false), isCancel: true); break;
         }
         var glyph = image switch
         {

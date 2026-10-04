@@ -54,6 +54,7 @@ extern void FollowCamSyncTarget(void);
  * WriteConfigFile (both PERSO.CPP); most are also console cvars. Defaults in
  * FOLLOWCAM_CFG.H. */
 extern S32 FollowCamera;              /* the Auto camera is on (config key FollowCamera) */
+void FollowCamReapplyLift(void);      /* after the exterior's camera set-up: the ground-clearance eye lift again */
 extern S32 FollowCamReengageFrames;   /* frames before auto-cam re-centers after a manual pan */
 extern S32 FollowCamDriftDivisor;     /* auto-cam re-center drift divisor (higher = gentler) */
 extern S32 FollowCamHDRecompose;      /* pull-in+steepen recompose at tall render heights (1=on) */

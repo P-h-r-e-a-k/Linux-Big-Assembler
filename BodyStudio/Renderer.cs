@@ -40,10 +40,13 @@ public static class Renderer
     // KeyBackground and KeyGrid are the colours a marker is made transparent by (Lba1ActorImages.Transparent): renders that become markers keep them; a picture shown as it is passes its own.
     public static readonly uint KeyBackground=Argb.Pack(25,30,39),KeyGrid=Argb.Pack(44,52,64);
     public static readonly uint ViewBackground=Argb.Pack(232,240,250),ViewGrid=Argb.Pack(203,221,240);
-    // The rest of the app's own light theme (Theme.axaml), so Body Studio's Avalonia windows don't look like a different program.
-    public static readonly uint PanelBackground=Argb.Pack(0xE8,0xF0,0xFA),FieldBackground=Argb.Pack(0xFF,0xFF,0xFF),ButtonBackground=Argb.Pack(0xD6,0xE6,0xF7),
-        ButtonBorder=Argb.Pack(0x9F,0xBE,0xE0),ButtonHover=Argb.Pack(0xC3,0xDB,0xF5),Accent=Argb.Pack(0x1B,0x6E,0xC2),
-        Border=Argb.Pack(0xA9,0xC3,0xE0),Text=Argb.Pack(0x10,0x24,0x3E),TextMuted=Argb.Pack(0x4E,0x6B,0x8A);
+    // The app's own chrome palette used to be duplicated here too (PanelBackground, FieldBackground, ...)
+    // for BodyStudioWindow/AnimationStudioWindow's own controls to match by eye -- gone now that both
+    // reference the real theme resources directly (SetResourceReference over Themes/*.axaml, see their own
+    // ApplyTheme), which also means they retheme live instead of only ever matching whatever this file's
+    // own copy was frozen to at the time. KeyBackground/KeyGrid/ViewBackground/ViewGrid above are
+    // different: they feed the rasterizer below directly (Render's own background/gridLine parameters),
+    // not window chrome, so they stay.
     // The picture is a plain BGRA buffer (FlatImage); everything is drawn straight into the pixel array, nothing is anti-aliased.
     public static FlatImage Render(Body model,uint[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null,uint? background=null,uint? gridLine=null)
     {
@@ -72,10 +75,14 @@ public static class Renderer
         {
             var normals=model.VertexNormals();var toLight=Vector3.Normalize(new Vector3(-0.35f,0.55f,-0.75f));float max=LightModel.Max(model.Game);
             previewLight=normals.Select(n=>{var r=new Vector3(n.X*MathF.Cos(yaw)+n.Z*MathF.Sin(yaw),n.Y,-n.X*MathF.Sin(yaw)+n.Z*MathF.Cos(yaw));return Math.Clamp(Vector3.Dot(r,toLight),0,1)*max;}).ToArray();
+            if(model.LightScale is{}scales)for(int i=0;i<previewLight.Length&&i<scales.Length;i++)previewLight[i]*=scales[i];
         }
         int Colour(int index)=>unchecked((int)palette[Math.Clamp(index,0,255)]);
+        // LBA2's see-through polygons (type 2) are drawn last, over what is behind them
+        bool SeeThrough(Face f)=>model.Game==2&&f.Material==2&&f.Texture==null;
         foreach(var f in model.Faces)
         {
+            if(SeeThrough(f))continue;
             int colour=Colour(f.Colour);
             bool faceLit=previewLight!=null&&LightModel.IsLit(f,model.Game,model.Lit);
             // the game's lighting: flat faces take one intensity, Gouraud faces one per corner (blended below)
@@ -143,6 +150,32 @@ public static class Renderer
             {
                 float dx=x+.5f-p.X,dy=y+.5f-p.Y,d2=dx*dx+dy*dy;if(d2>r*r)continue;
                 Plot(x,y,c.Z-MathF.Sqrt(r*r-d2)/scale,colour);
+            }
+        }
+        // as the game fills them: what is behind keeps its place in its ramp and takes the polygon's ramp (here: its brightness picks the step).
+        // There is no "nothing drawn here yet" case to fall back to a backdrop colour for: unlike the GDI+ original, which
+        // composited a transparent polygon layer over the cleared Graphics at the end, this buffer starts filled with the
+        // background and already holds the ground grid and the solid polygons, so what is in it IS what is behind them.
+        foreach(var f in model.Faces)
+        {
+            if(!SeeThrough(f))continue;
+            for(int t=1;t<f.Points.Length-1;t++)
+            {
+                var a=rotated[f.Points[0]];var b=rotated[f.Points[t]];var c=rotated[f.Points[t+1]];
+                var pa=Screen(a);var pb=Screen(b);var pc=Screen(c);float area=Edge(pa,pb,pc.X,pc.Y);
+                if(Math.Abs(area)<.001f)continue;
+                int x0=Math.Max(0,(int)MathF.Floor(Math.Min(pa.X,Math.Min(pb.X,pc.X)))),x1=Math.Min(width-1,(int)MathF.Ceiling(Math.Max(pa.X,Math.Max(pb.X,pc.X))));
+                int y0=Math.Max(0,(int)MathF.Floor(Math.Min(pa.Y,Math.Min(pb.Y,pc.Y)))),y1=Math.Min(height-1,(int)MathF.Ceiling(Math.Max(pa.Y,Math.Max(pb.Y,pc.Y))));
+                for(int y=y0;y<=y1;y++)for(int x=x0;x<=x1;x++)
+                {
+                    float wa=Edge(pb,pc,x+.5f,y+.5f)/area,wb=Edge(pc,pa,x+.5f,y+.5f)/area,wc=1-wa-wb;
+                    if(wa<-.0001f||wb<-.0001f||wc<-.0001f)continue;
+                    float z=wa*a.Z+wb*b.Z+wc*c.Z;int index=y*width+x;
+                    if(z>depth[index])continue;
+                    uint under=unchecked((uint)pixels[index]);
+                    int step=Math.Clamp((int)MathF.Round((Argb.R(under)*0.30f+Argb.G(under)*0.59f+Argb.B(under)*0.11f)*15/255f),0,15);
+                    pixels[index]=Colour((f.Colour&0xF0)|step);
+                }
             }
         }
         // the wireframe: every polygon's edges, a translucent light blue over the shaded picture

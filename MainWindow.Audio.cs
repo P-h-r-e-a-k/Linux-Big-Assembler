@@ -1,3 +1,4 @@
+using System.IO;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -11,8 +12,9 @@ using Avalonia.Threading;
 namespace LBAAssembler;
 
 // The sound balance for playing scenes, per game: mute, and music / speech / effects levels (the games' own balance is off, the
-// music drowns the speech). Shown on the PLAY tab; LBA2's engine reads its volumes when it starts, the LBA1 play view applies
-// them at once. They are saved with the editor's settings.
+// music drowns the speech). Shown on the PLAY tab. LBA2's engine reads its volumes when it starts, and while it plays they reach it
+// at once through its control socket (its snd_* settings); the LBA1 play view applies them at once. They are saved with the
+// editor's settings.
 public partial class MainWindow
 {
     private bool audioSyncing;
@@ -37,7 +39,7 @@ public partial class MainWindow
                 ? "The Play scene button starts the scene that is open in the game (LBA2's own engine) inside this window. It plays what is saved on disk."
                 : "The Play scene button plays the scene that is open in the LBA1 play view inside this window. It plays what is saved on disk.";
             AudioNote.Text = currentGame == GameKind.Lba2
-                ? "The game reads its volumes when it starts: change them here, then play (or restart) the scene."
+                ? "These change the sound at once while the game plays. A game started muted has no sound at all until it is restarted."
                 : "These change the sound at once while a scene is playing.";
         }
         finally { audioSyncing = false; }
@@ -57,6 +59,9 @@ public partial class MainWindow
         AudioMusicSlider.IsEnabled = AudioVoicesSlider.IsEnabled = AudioEffectsSlider.IsEnabled = !audio.Mute;
         audioDirty = true;
         lba1Play?.ApplyAudio();
+        PushLba2Audio();
+        if (!audio.Mute && currentGame == GameKind.Lba2 && playing && playingGame == GameKind.Lba2 && Lba2Play.LastOptions is { Sound: false })
+            AudioNote.Text = "The game was started muted, without sound: restart it (Restart) to hear it.";
     }
 
     private void AudioSlider_Changed(object? sender, RangeBaseValueChangedEventArgs e)
@@ -66,6 +71,7 @@ public partial class MainWindow
         audio.Music = (int)AudioMusicSlider.Value; audio.Voices = (int)AudioVoicesSlider.Value; audio.Effects = (int)AudioEffectsSlider.Value;
         ShowAudioValues(audio);
         audioDirty = true;
+        PushLba2Audio();
     }
 
     private void AudioReset_Click(object? sender, RoutedEventArgs e)
@@ -76,6 +82,33 @@ public partial class MainWindow
         audioDirty = true;
         SyncAudioControls();
         lba1Play?.ApplyAudio();
+        PushLba2Audio();
+    }
+
+    // LBA2 while it plays: the balance goes to the running game through its control socket, as the engine's own settings (0-127; the
+    // CD volume is the music's too, and mute is the master volume). One command at a time: a slider being dragged sends only its
+    // latest value once the one before has been answered.
+    private bool lba2AudioSending, lba2AudioAgain;
+
+    private async void PushLba2Audio()
+    {
+        if (!playing || playingGame != GameKind.Lba2 || currentGame != GameKind.Lba2) return;
+        if (lba2AudioSending) { lba2AudioAgain = true; return; }
+        lba2AudioSending = true;
+        try
+        {
+            do
+            {
+                lba2AudioAgain = false;
+                if (lba2Control is not { } client) return;
+                var a = EditorSettings.Current.Lba2Audio;
+                var music = AudioLevels.ToEngine(a.Music);
+                var answer = await client.SendAsync($"snd_wave {AudioLevels.ToEngine(a.Effects)};snd_voice {AudioLevels.ToEngine(a.Voices)};snd_music {music};snd_cd {music};snd_master {(a.Mute ? 0 : 127)}");
+                DebugLog.Log($"MainWindow: sound balance sent to the game: {answer.Replace('\n', ' ').Trim()}");
+            } while (lba2AudioAgain);
+        }
+        catch (IOException error) { DebugLog.Log($"MainWindow: the sound balance didn't reach the game: {error.Message}"); }
+        finally { lba2AudioSending = false; }
     }
 
     private void SaveAudioIfDirty()

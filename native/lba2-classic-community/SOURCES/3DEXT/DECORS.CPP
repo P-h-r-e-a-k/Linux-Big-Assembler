@@ -339,13 +339,25 @@ void AffichageObjetDecorsZBuf(void) {
                                  ptrobj->Yworld,
                                  ptrobj->Zworld);
 
-            if (LongProjectPoint(X0, Y0, Z0)) {
+            S32 seen = LongProjectPoint(X0, Y0, Z0);
+            const S32 zrot = CameraZr - Z0;
+            // A race-track mod's piece of raised road (LBA Assembler: its box over its footprint and touching nothing, its top under its
+            // bottom -- no game decor has one) is still drawn while a corner of its box is in front of the camera, though its middle has
+            // gone behind it: a long piece passing under a close camera left a hole in the road.
+            if (!seen && ptrobj->YMax < ptrobj->YMin) {
+                for (S32 c = 0; c < 4 && !seen; c++) {
+                    LongWorldRotatePoint((c & 1) ? ptrobj->XMax : ptrobj->XMin, ptrobj->YMin, (c & 2) ? ptrobj->ZMax : ptrobj->ZMin);
+                    seen = Z0 <= CameraZrClip;
+                }
+            }
+
+            if (seen) {
                 // Test preclipping a mettre ici
                 //				if( (Xp>VIEW_EXT_X0) AND (Xp<VIEW_EXT_X1)
                 //				AND (Yp>VIEW_EXT_Y0) AND (Yp<VIEW_EXT_Y1) )
                 {
                     // add dans listtri
-                    ptrtri->Zrot = CameraZr - Z0;
+                    ptrtri->Zrot = zrot;
                     ptrtri->Num = i;
                     ptrtri->PtrDec = ptrobj;
                     ptrtri++;

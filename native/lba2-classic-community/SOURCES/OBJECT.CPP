@@ -715,6 +715,8 @@ void UseOneClover(void) {
             }
 
             // reajuste altitude au cas ou l'on soit sur un penché
+            // (on a race-track mod's raised road, the road's own height: the ground under it may be the sea)
+            RaceMod_FloorFor(ptrobj->Obj.Y);
             y = CalculAltitudeObjet(x, z, -1);
         } else {
             x += (SIZE_BRICK_XZ / 2);
@@ -733,6 +735,7 @@ void UseOneClover(void) {
         Nzw = z;
 
         PtrReajustPos(PtrWorldColBrick(Nxw, Nyw, Nzw));
+        RaceMod_FloorForNothing();
 
         ptrobj->Obj.X = Nxw;
         ptrobj->Obj.Y = Nyw;
@@ -1304,6 +1307,8 @@ void ChangeCube() {
         // Recale Twinsen pour eviter de rentrer dans une collision
         if (CubeMode == CUBE_EXTERIEUR) {
             ShadowX = SceneStartX;
+            // (a scene that starts on a race-track mod's raised road starts on it, not on the ground under it)
+            RaceMod_FloorFor(SceneStartY);
             ShadowY = CalculAltitudeObjet(SceneStartX, SceneStartZ, 0);
             ShadowZ = SceneStartZ;
         } else
@@ -1314,6 +1319,7 @@ void ChangeCube() {
         Nzw = ShadowZ;
 
         PtrReajustPos(PtrWorldColBrick(Nxw, Nyw, Nzw));
+        RaceMod_FloorForNothing();
 
         ptrobj->Obj.X = Nxw;
         ptrobj->Obj.Y = Nyw;
@@ -1501,6 +1507,7 @@ void HitObj(U8 numhitter, U8 num, S32 hitforce, S32 beta) {
     if (ptrobjt->Armure <= hitforce
                                AND ptrobjt->Armure < 51) {
         hitforce -= ptrobjt->Armure;
+        const S32 raceCar = num == NUM_PERSO && RaceMod_CarHit(); // a race-track mod's car is stopped dead instead (RACEMOD.CPP)
 
         if ((ptrobjt->GenAnim == GEN_ANIM_CHOC)
                 OR(ptrobjt->GenAnim == GEN_ANIM_CHOC2)) {
@@ -1537,6 +1544,7 @@ void HitObj(U8 numhitter, U8 num, S32 hitforce, S32 beta) {
             LastJoyFlag = TRUE;
         }
 
+        if (raceCar) hitforce = 0;
         ptrobjt->LifePoint -= hitforce;
 
         /* attention dans l'outil LifePoint est un word
@@ -1572,6 +1580,12 @@ void FoudroieObj(U8 numhitter, U8 num, S32 armure) {
         return;
     if (num == NUM_PERSO AND GodMode) // GOD cheat: ignore combat damage
         return;
+    // a race-track mod's race: lightning stops Twinsen's car as a land mine does, and kills no one (RACEMOD.CPP)
+    if (num == NUM_PERSO AND RaceMod_NoHarm()) {
+        RaceMod_CarHit();
+        InitHitExtraPof(ptrobjt->Obj.X, ptrobjt->Obj.Y + ptrobjt->YMax + 1, ptrobjt->Obj.Z, armure);
+        return;
+    }
 
     ptrobjt->HitBy = numhitter;
 
@@ -1684,7 +1698,8 @@ S32 CheckObjCol(U8 numobj) {
         if ((n != numobj)
                 AND(ptrobjt->Obj.Body.Num != -1)
             //		AND (!(ptrobj->Flags&INVISIBLE))
-            AND(ptrobjt->CarryBy != numobj)) {
+            AND(ptrobjt->CarryBy != numobj)
+                AND !RaceMod_NoCollide(n)) {      /* a race-track mod's mushrooms, penguins and oil slicks (RACEMOD.CPP) */
             xt0 = ptrobjt->Obj.X + ptrobjt->XMin;
             xt1 = ptrobjt->Obj.X + ptrobjt->XMax;
             yt0 = ptrobjt->Obj.Y + ptrobjt->YMin;
@@ -2655,7 +2670,8 @@ void ReceptionObj() {
             return;
         }
 
-        if (StartYFalling - Nyw >= 16 * SIZE_BRICK_Y) { // trop haut mort directe
+        // (a race-track mod's race: no fall kills or hurts Twinsen in his car -- it stops a moment, as on a land mine: RACEMOD.CPP)
+        if (StartYFalling - Nyw >= 16 * SIZE_BRICK_Y AND !RaceMod_NoHarm()) { // trop haut mort directe
             InitHitExtraPof(APtObj->Obj.X,
                             APtObj->Obj.Y + APtObj->YMax + 1,
                             APtObj->Obj.Z,
@@ -2669,7 +2685,8 @@ void ReceptionObj() {
                             APtObj->Obj.Z,
                             5);
 
-            APtObj->LifePoint -= 5;
+            if (RaceMod_NoHarm()) RaceMod_CarHit();
+            else APtObj->LifePoint -= 5;
             InitAnim(GEN_ANIM_RECEPTION_2, ANIM_ALL_THEN, NUM_PERSO);
         } else if (StartYFalling - Nyw > 1) { // reception normale
             InitAnim(GEN_ANIM_RECEPTION, ANIM_ALL_THEN, NUM_PERSO);
@@ -3080,6 +3097,8 @@ S32 GereCodesJeu(U8 numobj) {
         case CJ_ANIMATED_LAVE:
             switch (numobj) {
             case NUM_PERSO:
+                // (a race-track mod's car: put back on the road instead, RACEMOD.CPP RaceMod_Rescue)
+                if (RaceMod_Rescue()) break;
                 validepos = FALSE;
 
                 if (!FlagWater) {
@@ -3241,11 +3260,17 @@ S32 GereCodesJeu(U8 numobj) {
 //▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 /*──────────────────────────────────────────────────────────────────────────*/
 
+// A race-track jump's flight flown at the car's speed: around the hero's ObjectSetInterDep (RACEMOD.CPP, RACEMOD.H).
+extern void RaceMod_JumpClock(T_OBJ_3D *obj, S32 genAnim, S32 move);
+extern void RaceMod_JumpClockAfter(T_OBJ_3D *obj, S32 flag);
+
 void GereObjAnim(U8 numobj) {
     S32 numanim;
 
     if (APtObj->Obj.Anim.Num != -1) {
+        if (numobj == NUM_PERSO) RaceMod_JumpClock(&APtObj->Obj, APtObj->GenAnim, APtObj->Move); // a race-track jump flown at the car's speed (RACEMOD.CPP)
         S32 flag = ObjectSetInterDep(&APtObj->Obj);
+        if (numobj == NUM_PERSO) RaceMod_JumpClockAfter(&APtObj->Obj, flag);
 
         if (APtObj->Obj.Master & 1)
             APtObj->WorkFlags |= ANIM_MASTER_ROT;
@@ -5367,6 +5392,7 @@ void AffScene(S32 flagflip) {
        this frame draws with, and turning the filter on must not let a frame
        sample tables that were never built. */
     Poly_EnsureBlendLUT();
+    { extern void RaceMod_Frame(void); RaceMod_Frame(); }                /* a race-track mod's opponent, put where it has got to (RACEMOD.CPP) */
 
     S32 n, c, cmpt;
     S32 dx, dy;
@@ -6123,6 +6149,7 @@ startaffscene:
 
     /*------------------------------------------------------------------------*/
     { extern void EditorOverlay_Draw(void); EditorOverlay_Draw(); }      /* the level editor's zone boxes and actor paths (EDITOR_OVERLAY.CPP) */
+    { extern void RaceMod_Draw(void); RaceMod_Draw(); }                  /* a race-track mod's gear, speed and lap times (RACEMOD.CPP) */
     //DrawZonesDec()	;
 
     //	if ( FlagNoFlip )	return	;//	Cf DoFoundObj()

@@ -5,7 +5,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Styling;
 using Avalonia.Threading;
 using LBAAssembler;
 using LBAAssembler.Lba1;
@@ -24,16 +23,18 @@ namespace LbaBodyStudio;
 // individual bone poses by hand) -- that's flagged as a possible future step in project-mario-roster
 // memory, not attempted here given the time this whole roster/animation effort already took; this is
 // "adjust the procedural generator's own knobs and preview/export the result," a genuinely complete
-// and useful tool on its own, not a placeholder.
+// and useful tool on its own, not a placeholder. Like Body Studio it stopped being a WinForms Form for
+// the Interface Audit (see BodyStudioWindow.cs's own comment); control types and the theme mechanism
+// changed, the behaviour did not.
 public sealed class AnimationStudioWindow : Window
 {
     readonly ComboBox character = Combo("Mario", "Luigi", "Peach", "Toad", "Bowser", "Yoshi");
     readonly ComboBox game = Combo("LBA2", "LBA1");
     readonly ComboBox animType = Combo("Walk", "Run", "Idle", "Jump");
-    readonly NumericUpDown swingDeg = Number(0, 90, 22), kneeDeg = Number(0, 90, 35), armDeg = Number(0, 90, 18), leanDeg = Number(-20, 20, 0);
-    readonly NumericUpDown frameCount = Number(2, 24, 8), frameTicks = Number(1, 40, 9);
+    readonly NumberBox swingDeg = Number(0, 90, 22), kneeDeg = Number(0, 90, 35), armDeg = Number(0, 90, 18), leanDeg = Number(-20, 20, 0);
+    readonly NumberBox frameCount = Number(2, 24, 8), frameTicks = Number(1, 40, 9);
     readonly ModelView preview = new();
-    readonly TextBlock status = new() { Text = "Choose a character and clip, then Regenerate.", TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush(Renderer.Text) };
+    readonly TextBlock status = new() { Text = "Choose a character and clip, then Regenerate.", TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
     readonly Button regenerate = new() { Content = "Regenerate" }, export = new() { Content = "Export…", IsEnabled = false };
     readonly CheckBox playing = new() { Content = "Play", IsChecked = true };
     // 33 ms: the same ~30 frames a second the WinForms timer ran at.
@@ -47,20 +48,24 @@ public sealed class AnimationStudioWindow : Window
 
     public AnimationStudioWindow()
     {
-        Title = "LBA Assembler — Animation Studio"; Width = 1200; Height = 930; MinWidth = 900; MinHeight = 600; FontSize = 13; WindowStartupLocation = WindowStartupLocation.CenterScreen; Background = Brushes.White;
+        Title = "LBA Assembler — Animation Studio"; Width = 1200; Height = 930; MinWidth = 900; MinHeight = 600; FontSize = 13; WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        this.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
         var root = new DockPanel(); Content = root;
-        var statusBar = new Border() { Height = 48, Padding = new Thickness(16, 8, 16, 8), Background = Brush(Renderer.PanelBackground), Child = status }; DockPanel.SetDock(statusBar, Dock.Bottom); root.Children.Add(statusBar);
+        var statusBar = new Border() { Height = 48, Padding = new Thickness(16, 8, 16, 8), Child = status }; statusBar.SetResourceReference(Border.BackgroundProperty, "ThemeWindowBrush"); DockPanel.SetDock(statusBar, Dock.Bottom); root.Children.Add(statusBar);
         // 390/360, matching Body Studio's own BodyStudioWindow.cs panel sizing -- 320/280 clipped several of
         // this form's own longer field labels/combo text at the panel edge (confirmed live 2026-09-23).
-        var main = new Grid() { Background = Brush(Renderer.Border) }; root.Children.Add(main);
+        var main = new Grid(); main.SetResourceReference(Panel.BackgroundProperty, "ThemeBorderBrush"); root.Children.Add(main);
         main.ColumnDefinitions.Add(new ColumnDefinition(390, GridUnitType.Pixel) { MinWidth = 360 }); main.ColumnDefinitions.Add(new ColumnDefinition(4, GridUnitType.Pixel)); main.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
-        var splitter = new GridSplitter() { Background = Brush(Renderer.Border) }; Grid.SetColumn(splitter, 1); main.Children.Add(splitter);
-        var left = new DockPanel() { Background = Brush(Renderer.PanelBackground) }; Grid.SetColumn(left, 0); main.Children.Add(left);
+        var splitter = new GridSplitter(); splitter.SetResourceReference(Control.BackgroundProperty, "ThemeBorderBrush"); Grid.SetColumn(splitter, 1); main.Children.Add(splitter);
+        var left = new DockPanel(); left.SetResourceReference(Panel.BackgroundProperty, "ThemeWindowBrush"); Grid.SetColumn(left, 0); main.Children.Add(left);
         var fields = new StackPanel() { Margin = new Thickness(18) };
         void Add(Control c) { c.Margin = new Thickness(0, 0, 0, 10); fields.Children.Add(c); }
-        void Label(string text) { Add(new TextBlock() { Text = text, FontWeight = FontWeight.Bold }); }
-        void Field(string text, Control c) { Add(new TextBlock() { Text = text, Margin = new Thickness(0, 2, 0, 3) }); Add(c); }
-        void Note(string text) { Add(new TextBlock() { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 255, HorizontalAlignment = HorizontalAlignment.Left, Foreground = Brush(Renderer.TextMuted) }); }
+        // Description text (wrapped to the column) reads softer than headings and field names: that is the only
+        // difference between the two, so the wrap width doubles as which theme brush the text takes.
+        TextBlock Themed(string text, double maxWidth = 0) { var t = new TextBlock() { Text = text, TextWrapping = TextWrapping.Wrap }; if (maxWidth > 0) { t.MaxWidth = maxWidth; t.HorizontalAlignment = HorizontalAlignment.Left; } t.SetResourceReference(TextBlock.ForegroundProperty, maxWidth > 0 ? "ThemeTextMutedBrush" : "ThemeTextBrush"); return t; }
+        void Label(string text) { var t = Themed(text); t.FontWeight = FontWeight.Bold; Add(t); }
+        void Note(string text) => Add(Themed(text, 255));
+        void Field(string text, Control c) { var t = Themed(text); t.Margin = new Thickness(0, 2, 0, 3); Add(t); Add(c); }
 
         Label("ANIMATION STUDIO");
         Note("Generates walk/run/idle/jump clips procedurally (AnimGenerator.cs) for any roster character -- the same 19-bone rig every custom body shares. Adjust the joint-angle knobs below and Regenerate to preview.");
@@ -82,36 +87,38 @@ public sealed class AnimationStudioWindow : Window
         foreach (var c in new Control[] { character, game, animType, swingDeg, kneeDeg, armDeg, leanDeg, frameCount, frameTicks })
         {
             if (c is ComboBox cb) cb.SelectionChanged += (_, _) => export.IsEnabled = false;
-            if (c is NumericUpDown n) n.ValueChanged += (_, _) => export.IsEnabled = false;
+            if (c is NumberBox n) n.ValueChanged += () => export.IsEnabled = false;
         }
         ApplyTheme();
         playTimer.Start();
         Closed += (_, _) => playTimer.Stop();
     }
 
+    // Run once, right after the whole tree is built (called from the constructor) -- every assignment below is
+    // SetResourceReference (Compat/ResourceCompat.cs: a DynamicResource binding), not a resolved Brush, so it keeps
+    // tracking the active theme forever after with no need to ever re-run this on a later theme switch.
     void ApplyTheme()
     {
         foreach (var c in BodyStudioWindow.Descendants(this))
         {
             switch (c)
             {
-                case NumericUpDown nu: nu.Background = Brush(Renderer.FieldBackground); nu.Foreground = Brush(Renderer.Text); nu.BorderBrush = Brush(Renderer.Border); nu.BorderThickness = new Thickness(1); break;
-                case ComboBox combo: combo.Background = Brush(Renderer.FieldBackground); combo.Foreground = Brush(Renderer.Text); combo.BorderBrush = Brush(Renderer.Border); break;
-                case Button b when b != export: b.Background = Brush(Renderer.ButtonBackground); b.Foreground = Brush(Renderer.Text); b.BorderBrush = Brush(Renderer.ButtonBorder); b.BorderThickness = new Thickness(1); break;
-                case CheckBox chk: chk.Foreground = Brush(Renderer.Text); break;
-                case TextBlock lbl when lbl != status: lbl.Foreground = lbl.MaxWidth < double.PositiveInfinity ? Brush(Renderer.TextMuted) : Brush(Renderer.Text); break;
+                case NumberBox nb: nb.ApplyTheme("ThemeFieldBrush", "ThemeTextBrush", "ThemeButtonBorderBrush"); break;
+                case Button b when b != export:
+                    b.SetResourceReference(Control.BackgroundProperty, "ThemeRaisedBrush");
+                    b.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+                    b.SetResourceReference(Control.BorderBrushProperty, "ThemeButtonBorderBrush");
+                    break;
+                case CheckBox chk: chk.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); break;
             }
         }
-        export.Classes.Add("accent"); export.Background = Brush(Renderer.Accent); export.Foreground = Brushes.White; export.FontWeight = FontWeight.Bold; export.BorderBrush = Brush(Renderer.Accent);
-        Styles.Add(BodyStudioWindow.HoverStyle(x => x.OfType<Button>().Not(y => y.Class("accent")), Renderer.ButtonHover));
-        Styles.Add(BodyStudioWindow.HoverStyle(x => x.OfType<Button>().Class("accent"), Argb.Lighten(Renderer.Accent, 0.25f)));
+        export.SetResourceReference(Control.BackgroundProperty, "ThemeAccentBrush");
+        export.SetResourceReference(Control.ForegroundProperty, "ThemeAccentTextBrush");
+        export.FontWeight = FontWeight.Bold;
+        status.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
     }
-    static IBrush Brush(uint argb) => BodyStudioWindow.Brush(argb);
     static ComboBox Combo(params string[] items) { var c = new ComboBox() { HorizontalAlignment = HorizontalAlignment.Stretch }; foreach (var item in items) c.Items.Add(item); c.SelectedIndex = 0; return c; }
-    static NumericUpDown Number(int min, int max, int value) => new() { Minimum = min, Maximum = max, Value = value, Increment = 1, FormatString = "0" };
-    static int Value(NumericUpDown n) => (int)(n.Value ?? 0);
-
-    static readonly (int Red, int Skin, int Dark, int Blue)[] MarioLuigiLba2 = [(80, 35, 97, 197)];
+    static NumberBox Number(int min, int max, int value) => new(min, max, value);
 
     void Regenerate()
     {
@@ -140,8 +147,8 @@ public sealed class AnimationStudioWindow : Window
             var nbBones = body.Bones.Count;
             Anim anim = (animType.SelectedItem as string) switch
             {
-                "Walk" => AnimGenerator.Gait(gameIndex, nbBones, Value(frameCount), Value(frameTicks), Value(swingDeg), Value(kneeDeg), Value(armDeg), 0),
-                "Run" => AnimGenerator.Gait(gameIndex, nbBones, Value(frameCount), Value(frameTicks), Value(swingDeg), Value(kneeDeg), Value(armDeg), Value(leanDeg)),
+                "Walk" => AnimGenerator.Gait(gameIndex, nbBones, frameCount.Value, frameTicks.Value, swingDeg.Value, kneeDeg.Value, armDeg.Value, 0),
+                "Run" => AnimGenerator.Gait(gameIndex, nbBones, frameCount.Value, frameTicks.Value, swingDeg.Value, kneeDeg.Value, armDeg.Value, leanDeg.Value),
                 "Idle" => AnimGenerator.Idle(gameIndex, nbBones),
                 "Jump" => AnimGenerator.Jump(gameIndex, nbBones),
                 _ => AnimGenerator.Walk(gameIndex, nbBones),

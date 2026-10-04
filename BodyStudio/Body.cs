@@ -21,6 +21,12 @@ public sealed class Body
     // Write the body with the game's lighting data (vertex normals, Gouraud polygons) instead of flat unlit polygons. The normals
     // are computed from the geometry at write time, so this stays right when a generator moves points about.
     public bool Lit;
+    // LBA2: how much of the game's light each point takes, as a share of what a normal 10240 long takes (null: 1 everywhere). The light a
+    // point gets is its normal's length times the light's, and the game's own bodies use it point by point: 16384 on most of Twinsen and Zoe
+    // (the whole ramp, fifteen steps), 8192 on the Emperor's coat, less on what should stay dark. A point whose normal is shorter takes fewer
+    // ramp steps, so a polygon starting high in its ramp (a pink at the end of the reds, a near-black at the start of the greys) keeps to a
+    // few colours instead of running the whole ramp or past its end; 0 is a point the light leaves alone.
+    public float[]? LightScale;
     // LBA2 textured polygons: the texture table (low 16 bits: offset into the page, high 16: repeat mask) and, when set by the caller, the page (RESS.HQR entry 6, 256 x 256)
     public uint[] Textures = [];
     public byte[]? TexturePage;
@@ -104,6 +110,14 @@ public sealed class Body
             if(count<1||count>550||groupCount<1||groupCount>30)throw new InvalidDataException("Body exceeds engine limits.");
             Range(b,p,count*8);Range(b,groupOffset,groupCount*8);
             for(int i=0;i<count;i++,p+=8)m.Vertices.Add(ReadVector(b,p));
+            // normals notably shorter or longer than 10240: the body's own light scales (LightScale)
+            int normalCount=I(b,48),normalOffset=I(b,52);
+            if(normalCount==count&&normalOffset>0&&normalOffset<=b.Length-count*8)
+            {
+                var lengths=new float[count];
+                for(int i=0;i<count;i++){var n=ReadVector(b,normalOffset+i*8);lengths[i]=n.Length()/10240f;}
+                if(lengths.Any(l=>l>0.01f&&Math.Abs(l-1)>0.12f))m.LightScale=lengths.Select(l=>Math.Abs(l-1)>0.12f?l:1f).ToArray();
+            }
             int start=0;
             for(int i=0;i<groupCount;i++) { int q=groupOffset+i*8,n=U(b,q+4);m.Bones.Add(new(start,n,U(b,q+2),i==0?-1:U(b,q),b[q..(q+8)]));start+=n; }
             p=I(b,68);int end=I(b,76);Range(b,p,end-p);
@@ -204,7 +218,8 @@ public sealed class Body
         for(int i=0;i<sum.Length;i++)sum[i]=sum[i].LengthSquared()>1e-9f?Vector3.Normalize(sum[i]):Vector3.Zero;
         return sum;
     }
-    // LBA2 vertex normals are 10240 long, LBA1 normals 63 long with a "range" of 315 (what the retail bodies use).
+    // LBA2 vertex normals are written 10240 long times the point's share of the light (LightScale; the retail bodies' run from 2048 to 31744,
+    // most of them 16384), LBA1 normals 63 long with a "range" of 315 (what the retail bodies use).
     static short Scaled(float v,float length)=>(short)Math.Clamp((int)Math.Round(v*length),-32767,32767);
     public byte[] Write()
     {
@@ -243,14 +258,16 @@ public sealed class Body
             for(int j=0;j<Bones.Count;j++)for(int i=Bones[j].Start;i<Bones[j].Start+Bones[j].Count;i++){WriteVector(w,Vertices[i]);w.Write((ushort)j);}
             int normals=(int)s.Position;
             if(normalsOfPoints==null)w.Write(new byte[Vertices.Count*8]);
-            else for(int j=0;j<Bones.Count;j++)for(int i=Bones[j].Start;i<Bones[j].Start+Bones[j].Count;i++){var n=normalsOfPoints[i];w.Write(Scaled(n.X,10240));w.Write(Scaled(n.Y,10240));w.Write(Scaled(n.Z,10240));w.Write((ushort)j);}
+            else for(int j=0;j<Bones.Count;j++)for(int i=Bones[j].Start;i<Bones[j].Start+Bones[j].Count;i++){var n=normalsOfPoints[i];float length=LightScale is{}ls&&i<ls.Length?10240*ls[i]:10240;w.Write(Scaled(n.X,length));w.Write(Scaled(n.Y,length));w.Write(Scaled(n.Z,length));w.Write((ushort)j);}
             int polys=(int)s.Position;
-            // blocks of triangles / quads, textured ones (type 8, or 10 = Gouraud lit when Lit) apart from the plain ones (type 0, or 4 = Gouraud)
-            foreach(var group in Faces.GroupBy(f=>(Quad:f.Points.Length==4,Textured:f.Texture!=null)))
+            // blocks of triangles / quads, textured ones (type 8, or 10 = Gouraud lit when Lit) apart from the plain ones (type 0, or 4 = Gouraud);
+            // a plain face whose Material is 0 stays flat and unlit (type 0) in a lit body too: drawn in its colour as it is (a flame, a shadow),
+            // and one whose Material is 2 stays see-through (type 2: what is behind it, moved into its colour's ramp -- a wing, a pane)
+            foreach(var group in Faces.GroupBy(f=>(Quad:f.Points.Length==4,Textured:f.Texture!=null,Flat:f.Texture==null&&f.Material==0,Trans:Lit&&f.Texture==null&&f.Material==2)))
             {
                 if(group.Key.Quad==false&&group.First().Points.Length!=3)throw new InvalidDataException("LBA2 requires triangles or quads.");
                 bool quad=group.Key.Quad,textured=group.Key.Textured;int stride=textured?(quad?32:24):12;
-                w.Write((ushort)((quad?32768:0)|(textured?(Lit?10:8):(Lit?4:0))));w.Write((ushort)group.Count());w.Write(8+group.Count()*stride);
+                w.Write((ushort)((quad?32768:0)|(textured?(Lit?10:8):group.Key.Trans?2:(Lit&&!group.Key.Flat?4:0))));w.Write((ushort)group.Count());w.Write(8+group.Count()*stride);
                 foreach(var f in group)
                 {
                     if(!textured){foreach(int i in f.Points)w.Write((ushort)i);if(!quad)w.Write((ushort)0);w.Write((ushort)f.Colour);w.Write((ushort)0);continue;}

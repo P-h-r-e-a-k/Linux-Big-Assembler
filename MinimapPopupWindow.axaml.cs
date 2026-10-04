@@ -32,6 +32,49 @@ public partial class MinimapPopupWindow : Window
 
     public void SetImage(IImage? source) => PopupImage.Source = source;
 
+    // Sizes the window so its own content area matches the given aspect ratio (MainWindow's own
+    // MinimapContent.ActualWidth/Height, i.e. the same box RefreshMinimapPopup snapshots into the image
+    // this window shows) -- called once, right before the window is first shown. Without this the window
+    // always opened at its fixed XAML default (520x520, square), and Stretch="Uniform" -- correct in itself
+    // -- then letterboxed the image with black bars on whichever axis the content's own shape didn't happen
+    // to match a square, which is most islands (few are square). Still just a starting point: the window
+    // stays freely resizable (Avalonia's default, as it was under WPF's ResizeMode="CanResize"), so the user
+    // can resize away from this afterward exactly as before.
+    public void SizeToAspect(double contentWidth, double contentHeight)
+    {
+        if (contentWidth <= 0 || contentHeight <= 0) return;
+        const double MaxDimension = 720, MinDimension = 320;
+        var scale = MaxDimension / Math.Max(contentWidth, contentHeight);
+        var targetWidth = contentWidth * scale;
+        var targetHeight = contentHeight * scale;
+        if (Math.Max(targetWidth, targetHeight) < MinDimension)
+        {
+            var upscale = MinDimension / Math.Max(targetWidth, targetHeight);
+            targetWidth *= upscale; targetHeight *= upscale;
+        }
+        // PopupContent is what should actually match the aspect ratio; SizeToContent lets Avalonia work out
+        // exactly how much window chrome (title bar, the Border's own Margin) that needs around it, rather
+        // than this guessing at title-bar height itself.
+        PopupContent.Width = targetWidth;
+        PopupContent.Height = targetHeight;
+        // Avalonia difference: WPF's SizeToContent simply overrode an explicit Window Width/Height, while
+        // here the XAML's 520x520 would still constrain the measure -- clear them so the content's own size
+        // is what the window is sized from. They stay cleared afterwards; the window keeps whatever size
+        // this pass gave it, and resizing works from there as usual.
+        Width = double.NaN;
+        Height = double.NaN;
+        SizeToContent = SizeToContent.WidthAndHeight;
+        // One-shot: once this pass has actually resized the window (Loaded priority runs after the layout
+        // pass SizeToContent needs), let PopupContent go back to filling whatever size the window is, so
+        // the window staying resizable isn't fighting an explicit fixed content size on every later resize.
+        Dispatcher.UIThread.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            SizeToContent = SizeToContent.Manual;
+            PopupContent.Width = double.NaN;
+            PopupContent.Height = double.NaN;
+        });
+    }
+
     private void PopupContent_MouseLeftButtonDown(object? sender, PointerPressedEventArgs e)
     { if (!e.IsLeft) return;
         if (PopupImage.Source is not Bitmap bitmap) return;

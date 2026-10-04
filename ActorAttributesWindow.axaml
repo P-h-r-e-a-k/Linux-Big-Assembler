@@ -2,7 +2,7 @@
         xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Actor Attributes" Height="620" Width="780" MinHeight="480" MinWidth="660"
-        Background="#FFFFFF" Foreground="#10243E" FontFamily="{StaticResource EditorFont}"
+        Background="{DynamicResource ThemeFieldBrush}" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="{StaticResource EditorFont}"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="22">
         <Grid.ColumnDefinitions>
@@ -19,7 +19,7 @@
         <StackPanel Grid.Row="0" Grid.Column="0">
             <TextBlock x:Name="EyebrowLabel" Text="Actor attributes" Classes="Eyebrow"/>
             <TextBlock x:Name="TitleLabel" Text="Actor 0" FontSize="19" Margin="0,4,0,4"/>
-            <TextBlock x:Name="StatusLabel" Text="" Foreground="#1B6EC2" FontSize="11" Margin="0,0,0,4"/>
+            <TextBlock x:Name="StatusLabel" Text="" Foreground="{DynamicResource ThemeAccentBrush}" FontSize="11" Margin="0,0,0,4"/>
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
@@ -78,7 +78,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
-                                          ToolTip.Tip="{Binding Description}" Foreground="#10243E" Margin="0,3,0,3"/>
+                                          ToolTip.Tip="{Binding Description}" Foreground="{DynamicResource ThemeTextBrush}" Margin="0,3,0,3"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -86,13 +86,13 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
-                                          ToolTip.Tip="{Binding Description}" Foreground="#10243E" Margin="0,3,0,3"/>
+                                          ToolTip.Tip="{Binding Description}" Foreground="{DynamicResource ThemeTextBrush}" Margin="0,3,0,3"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Grid>
 
-                <TextBlock x:Name="WaypointsLabel" Text="" Foreground="#7C93AC" FontFamily="{StaticResource EditorMonoFont}" FontSize="10" Margin="0,16,0,0"/>
+                <TextBlock x:Name="WaypointsLabel" Text="" Foreground="{DynamicResource ThemeDisabledBrush}" FontFamily="{StaticResource EditorMonoFont}" FontSize="10" Margin="0,16,0,0"/>
             </StackPanel>
         </ScrollViewer>
 
@@ -102,18 +102,18 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border x:Name="PreviewBorder" Grid.Row="0" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1">
+            <Border x:Name="PreviewBorder" Grid.Row="0" Background="{DynamicResource ThemeFieldBrush}" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1">
                 <Grid>
                     <Image x:Name="BodyPreviewImage" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="None" Cursor="SizeWestEast"
                            PointerPressed="BodyPreviewImage_MouseLeftButtonDown" PointerMoved="BodyPreviewImage_MouseMove"
                            PointerReleased="BodyPreviewImage_MouseLeftButtonUp"/>
-                    <TextBlock x:Name="BodyPreviewFallbackLabel" Text="preview unavailable" Foreground="#8FB0D6" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"
+                    <TextBlock x:Name="BodyPreviewFallbackLabel" Text="preview unavailable" Foreground="{DynamicResource ThemeBorderStrongBrush}" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"
                                HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="12"/>
                 </Grid>
             </Border>
 
             <StackPanel Grid.Row="1" Margin="0,8,0,0">
-                <CheckBox x:Name="PauseAnimationCheck" Content="Pause animation" Foreground="#10243E" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"
+                <CheckBox x:Name="PauseAnimationCheck" Content="Pause animation" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="{StaticResource EditorMonoFont}" FontSize="10"
                           IsCheckedChanged="PauseAnimationCheck_Changed"/>
                 <TextBlock Text="Rotation speed" Classes="FieldLabel" Margin="0,8,0,2"/>
                 <Slider x:Name="RotationSpeedSlider" Minimum="0" Maximum="96" Value="24" TickFrequency="8" IsSnapToTickEnabled="True"

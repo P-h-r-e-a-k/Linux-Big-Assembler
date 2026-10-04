@@ -1954,7 +1954,14 @@ void	GereExtras()
 		{
 			S32	a, y ;
 
-			if( ptrextra->Info==0 )
+			if( ptrextra->Info==0 AND RaceMod_ProtectionFree() )
+			{
+				// (a race's power-up: no magic taken -- RACEMOD.CPP turns the spell off when its time is up)
+				ListObjet[ptrextra->Owner].Flags |= NO_CHOC ;
+
+				PlayProtectSamples( ptrextra ) ;
+			}
+			else if( ptrextra->Info==0 )
 			{
 				// regarde si l'on doit consommer de la magie
 				MagicPoint -= GetDeltaMove( &ptrextra->U.Move ) ;
@@ -1971,7 +1978,7 @@ void	GereExtras()
 				PlayProtectSamples( ptrextra ) ;
 			}
 
-			if( MagicPoint<=PROTECT_ALARME_SEUIL )
+			if( RaceMod_ProtectionFree() ? RaceMod_ProtectionEnding() : MagicPoint<=PROTECT_ALARME_SEUIL )
 			{
 				ptrextra->Flags |= EXTRA_CLIGNOTE ;
 			}

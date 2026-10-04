@@ -25,6 +25,7 @@ internal sealed class Lba2ControlClient : IDisposable
     private readonly StreamReader reader;
     private readonly StreamWriter writer;
     private readonly object sendLock = new();
+    private readonly SemaphoreSlim sendGate = new(1, 1);
     private readonly Thread readThread;
     private volatile bool disposed;
     private readonly StringBuilder pendingResponse = new();
@@ -72,8 +73,18 @@ internal sealed class Lba2ControlClient : IDisposable
 
     // One console command; returns its response lines (without the terminator). Commands are
     // serialized (the server handles one client, one command at a time) -- a second caller waits
-    // for the first's response before its own is sent.
-    public Task<string> SendAsync(string command)
+    // for the first's response before its own is sent. (Without the wait, a command sent while
+    // another's response was still coming took over the pending response, and the first caller's
+    // task never finished: the Play panel's sound sliders send while a resize or a step may be
+    // in flight.)
+    public async Task<string> SendAsync(string command)
+    {
+        await sendGate.WaitAsync().ConfigureAwait(false);
+        try { return await SendOne(command).ConfigureAwait(false); }
+        finally { sendGate.Release(); }
+    }
+
+    private Task<string> SendOne(string command)
     {
         lock (sendLock)
         {
@@ -82,8 +93,9 @@ internal sealed class Lba2ControlClient : IDisposable
             try { writer.WriteLine(command); }
             catch (Exception error) when (error is IOException or ObjectDisposedException)
             {
+                // (callers catch IOException: a closed connection is one)
                 pendingCompletion = null;
-                tcs.TrySetException(error);
+                tcs.TrySetException(error as IOException ?? new IOException(error.Message, error));
             }
             return tcs.Task;
         }
@@ -145,6 +157,10 @@ internal sealed class Lba2ControlClient : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        // a command still waiting for its response never gets one now
+        TaskCompletionSource<string>? tcs;
+        lock (sendLock) { tcs = pendingCompletion; pendingCompletion = null; }
+        tcs?.TrySetException(new IOException("the control connection was closed"));
         try { client.Close(); } catch (SocketException) { }
         reader.Dispose();
         try { writer.Dispose(); } catch (IOException) { }

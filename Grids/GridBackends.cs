@@ -105,6 +105,18 @@ internal sealed class Lba2GridBackend : IGridBackend
 
     private int StyleOf(int id) => file.Read(griStart + id)[0];
 
+    // Grid `id`'s entry in LBA_BKG.HQR and its bytes as stored (header and all), for a save that writes it together with a scene
+    // (SceneStore.SaveMany's extra edits: one undo step for both -- SceneNuke).
+    public int GridEntry(int id) => griStart + id;
+    public byte[] RawGrid(int id) => file.Read(griStart + id);
+
+    // The scenes whose interior is grid `id` (the table after the bricks), by number.
+    public IReadOnlyList<int> ScenesOfGrid(int id)
+    {
+        var table = file.Read(brkStart + maxBrk);
+        return Enumerable.Range(0, table.Length / 2).Where(s => table[s * 2 + 1] == id).ToList();
+    }
+
     public byte[] LoadGrid(int id) => ToLba1Shape(file.Read(griStart + id));
     public byte[] LoadLibrary(int id) => file.Read(bllStart + StyleOf(id));
     public IReadOnlyList<int> LibraryUsers(int id) { var style = StyleOf(id); return Grids.Where(g => StyleOf(g.Id) == style).Select(g => g.Id).ToList(); }
