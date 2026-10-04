@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
+    <!-- Matches the release tag, so editor.log's startup line names the build a bug report came from. -->
+    <Version>1.1.0</Version>
     <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
     <ApplicationManifest></ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>

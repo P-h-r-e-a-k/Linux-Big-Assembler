@@ -89,11 +89,21 @@ jobs:
           cat dist/SHA256SUMS.txt
           echo "archive=$name.tar.gz" >> "$GITHUB_OUTPUT"
 
+      # A release that is worth describing can carry its own notes in the repository, at
+      # docs/release-notes/<tag>.md; what is written there goes above the download and requirements
+      # boilerplate below, which every release needs and nobody wants to retype.
       - name: Release notes
         run: |
           archive="${{ steps.package.outputs.archive }}"
+          written="docs/release-notes/${{ steps.release.outputs.tag }}.md"
           {
-            echo "The Linux Big Assembler (LBA1 / LBA2 level editor), built from \`$GITHUB_SHA\` by GitHub Actions."
+            if [ -f "$written" ]; then
+              cat "$written"
+              echo
+              echo "Built from \`$GITHUB_SHA\` by GitHub Actions."
+            else
+              echo "The Linux Big Assembler (LBA1 / LBA2 level editor), built from \`$GITHUB_SHA\` by GitHub Actions."
+            fi
             echo
             echo '## Download'
             echo
