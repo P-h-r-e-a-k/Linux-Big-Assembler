@@ -17,3 +17,6 @@ obj
 debug.log
 release/*
 settings.json
+
+# Python caches (tools/RaceTrackPlan)
+__pycache__/

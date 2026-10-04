@@ -428,7 +428,7 @@ void InitHoloPlan() {
 #ifdef LBA_EDITOR
     else if ((ZoomedIsland == 5) AND(ListVarGame[FLAG_CELEBRATION].Value))
 #else
-    else if ((ZoomedIsland == 5) AND(ListVarGame[FLAG_CELEBRATION]))
+    else if ((ZoomedIsland == 5) AND RaceMod_StatueShown(ListVarGame[FLAG_CELEBRATION]))
 #endif
     {
         id = HQR_BEGIN_MAP + (2 * 13); //	Celebra2
@@ -629,7 +629,9 @@ void InitObjectifIsland() {
 void InitAngleArrow() {
     S32 arrow;
 
-    for (arrow = 0; arrow < MAX_OBJECTIF + MAX_ARROW; arrow++) {
+    // (every arrow the table holds: the island view draws positions up to MAX_CUBE, not MAX_ARROW -- the game's own 104-188 and a
+    // race-track mod's 222 were left with no spin offset)
+    for (arrow = 0; arrow < MAX_OBJECTIF + MAX_CUBE; arrow++) {
         DecalTimerRef[arrow] = 3072;
     }
 }

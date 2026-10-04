@@ -137,6 +137,8 @@ internal sealed class IslandDocument
         for (var cubeId = 1; cubeId < 128; cubeId++)
         {
             var recordIndex = 7 + (cubeId - 1) * 6;
+            // (past the island's records the "slots" are bytes of its first record: a nuke's rewrite of it made one look like a cube)
+            if (recordIndex + 1 >= archive.Slots) break;
             if (!archive.IsValid(recordIndex)) continue;
             var polygonRecord = archive.Read(recordIndex - 2);
             var decorIndex = recordIndex - 3;

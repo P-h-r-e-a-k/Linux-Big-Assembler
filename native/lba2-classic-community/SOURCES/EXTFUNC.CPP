@@ -247,7 +247,7 @@ void InitGrilleExt(char *defpathname) {
         LastIsland = 1;
         numskysea = RESS_SKYSEA00;
     } else {
-        if (Island == 5 AND ListVarGame[FLAG_CELEBRATION].Value) {
+        if (Island == 5 AND RaceMod_StatueShown(ListVarGame[FLAG_CELEBRATION].Value)) {
             strcpy(IslandName, GetRessName("celebra2"));
             LastIsland = 1;
         }
@@ -302,6 +302,9 @@ void InitGrilleExt(U32 numcube) {
         Island = PhantomIsland;
     }
 
+    // a race-track mod's set of tracks: the one raced on this island now, before its weather and file are chosen (RACEMOD.CPP)
+    RaceMod_Island(Island);
+
     // GROSSE Rustine pour charger la citadelle quand il fait beau ou
     // quand il pleut
     switch (Island) {
@@ -323,7 +326,7 @@ void InitGrilleExt(U32 numcube) {
         break;
 
     case 5:
-        if (ListVarGame[FLAG_CELEBRATION]) {
+        if (RaceMod_StatueShown(ListVarGame[FLAG_CELEBRATION])) {
             if (!strstr(IslandName, "celebra2"))
                 LastIsland = 1; // pour que le chargement s'effectue
 
@@ -348,6 +351,9 @@ void InitGrilleExt(U32 numcube) {
             *(char *)strchr(IslandName, ';') = '\0';
 
         numskysea = RESS_SKYSEA0 + Island;
+        // a race-track mod's track on an island file the game never loads (MOON.ILE, the Emerald Moon's older copy): raced as this
+        // island's, with its sky and palette (RACEMOD.CPP RaceMod_IslandFile)
+        if (const char *raced = RaceMod_IslandFile(Island)) strcpy(IslandName, raced);
     }
 
     if (NumCube != NUM_CUBE_PHANTOM) {
@@ -449,6 +455,7 @@ static void ObjectDisplayForcedBlack(T_OBJ_3D *obj)
 }
 
 void AffichageActorsZBuf(void) {
+    if (!RendererDrawActors) return;
     for (S32 n = 1; n < NbObjets; n++) {
         T_OBJET *ptrobj = &ListObjet[n];
 
@@ -972,6 +979,18 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     return 1;
 }
 
+// AffGrilleExtWide is reachable only from RENDERER_API.CPP (the editor's wide/minimap
+// preview) -- this file (EXTFUNC.CPP) is compiled into both that renderer target and the
+// standalone game executable, but RendererLoadCubeScene/RendererLoadNeighborCubeData are
+// defined only in RENDERER_API.CPP itself, which the standalone exe never links. Without
+// this guard the exe build carries a call to a symbol with no definition anywhere in its
+// link: GCC's LTO can prove the (genuinely unreachable there) call dead and silently drop
+// it in a Release build, so `cmake --build` reports success, but a plain -O0 Debug build
+// (no LTO, nothing to prove it dead) fails to link outright -- undefined reference to
+// `RendererLoadNeighborCubeData(int, int)`. Found while trying to get a debug build of
+// lba2cc.exe running under gdb.
+#ifdef LBA2_RENDERER_HOST
+
 // Matches RENDERER_API.CPP's own WORLD_CUBE_SIZE (HOLO.H's SCE: 32768 world
 // units per exterior cube), duplicated rather than shared to keep this
 // file's only dependency on the renderer API boundary at zero.
@@ -1105,10 +1124,13 @@ void AffGrilleExtWide(int radiusCubes) {
     CopyScreen(Log, Screen);
 }
 
+#endif // LBA2_RENDERER_HOST
+
 void AffGrilleExt() {
     SetFollowCamera(VueOffsetX, VueOffsetY, VueOffsetZ,
                     AlphaCam, BetaCam, GammaCam,
                     VueDistance);
+    FollowCamReapplyLift();
 
     SetLightVector(AlphaLight, BetaLight, 0);
 
@@ -1206,7 +1228,10 @@ void GetShadowExt(S32 xw, S32 yw, S32 zw) {
     }
 
     ShadowX = xw;
+    // (a race-track mod's raised road is the floor under what stands on it: RACEMOD.CPP)
+    RaceMod_FloorFor(yw);
     ShadowY = CalculAltitudeObjet(xw, zw, cj);
+    RaceMod_FloorForNothing();
     ShadowZ = zw;
 
     // peut-etre faut-il rajouter ces deux lignes pour etre plus exact dans le tri
@@ -1927,7 +1952,17 @@ S32 GetSkateBeta(S32 nx, S32 nz) {
 /*──────────────────────────────────────────────────────────────────────────*/
 // Gestion de l'animation de l'objet scénarique passé (numobj) en mode
 // extérieur. Fait appel à certaines fonctions utilisées aussi en intérieur
+static void DoAnimExtGround(U8 numobj);
+
+// (A race-track mod's raised road, RACEMOD.CPP: while the object is moved, the ground under it is the road's floor where the road
+// passes at its height.)
 void DoAnimExt(U8 numobj) {
+    RaceMod_FloorFor(ListObjet[numobj].Obj.Y);
+    DoAnimExtGround(numobj);
+    RaceMod_FloorForNothing();
+}
+
+static void DoAnimExtGround(U8 numobj) {
 #ifndef COMPILATOR
     T_OBJET *ptrobj;
     S32 n;
@@ -1991,6 +2026,17 @@ void DoAnimExt(U8 numobj) {
         if (APtObj->Move == MOVE_BUGGY_MANUAL) {
             DoAnimBuggy(APtObj);
         }
+    }
+
+    // a race-track mod's vertical loop carries the car round its ring (RACEMOD.CPP RaceMod_Loop): nothing else moves it -- no ground,
+    // no collisions -- and up there is no place to be put back to
+    if (numobj == NUM_PERSO AND RaceMod_Loop(OldX, OldY, OldZ, &Nxw, &Nyw, &Nzw)) {
+        APtObj->WorkFlags &= ~(FALLING | SKATING);
+        APtObj->Obj.X = Nxw;
+        APtObj->Obj.Y = Nyw;
+        APtObj->Obj.Z = Nzw;
+        validepos = FALSE;
+        goto findoanimext;
     }
 
     if (!(APtObj->WorkFlags & FALLING)
@@ -2057,6 +2103,11 @@ void DoAnimExt(U8 numobj) {
         }
     }
 
+    // a race-track mod's raised road has a rail: the hero stays inside its edges
+    if (numobj == NUM_PERSO) {
+        RaceMod_Rail(OldX, OldY, OldZ, &Nxw, &Nzw);
+    }
+
     /* test/reajuste pos */
 
     if (APtObj->Flags & CHECK_BRICK_COL) {
@@ -2071,6 +2122,10 @@ void DoAnimExt(U8 numobj) {
 
         if (APtObj->Flags & CHECK_OBJ_COL) {
             CheckObjCol(numobj);
+            // (an actor's box pushes the hero aside -- an opponent's car sideswiping his: the rail holds him on the raised road still)
+            if (numobj == NUM_PERSO) {
+                RaceMod_Rail(OldX, OldY, OldZ, &Nxw, &Nzw);
+            }
         }
 
         /*		if( numobj==NUM_PERSO )
@@ -2295,6 +2350,13 @@ void DoAnimExt(U8 numobj) {
     if (Col1 != 0)
         ptrobj->Col |= 128;
 
+    // a race-track mod's raised road: whatever moved the hero this frame -- actors' boxes push him aside, and lower him to see whether he
+    // stands on one, in more than one place above -- still inside its rail, and not through the road he stood on
+    if (numobj == NUM_PERSO) {
+        RaceMod_Rail(OldX, OldY, OldZ, &Nxw, &Nzw);
+        RaceMod_Floor(OldX, OldY, OldZ, Nxw, &Nyw, Nzw);
+    }
+
     /* protege sortie du cube */
 
     // à virer puisqu'on pourra descendre en dessous de 0
@@ -2307,7 +2369,9 @@ void DoAnimExt(U8 numobj) {
     FlagHeroOutX = FlagHeroOutZ = FALSE;
     PhantomX = PhantomY = 0; // peut etre sorti ailleurs
 
-    if (!NumBuggy OR numobj != NUM_BUGGY OR !IsBuggyPresent()) {
+    // (a race-track mod's opponent cars stand where they are on the lap, over the cube's edge too: kept inside it, a car just over the
+    // edge stood on the edge itself, a wall in the player's way -- RACEMOD.CPP)
+    if ((!NumBuggy OR numobj != NUM_BUGGY OR !IsBuggyPresent()) AND !RaceMod_FreeOfCube(numobj)) {
         S32 flagchgcube = TRUE;
         S32 marge = DEMI_BRICK_XZ;
 

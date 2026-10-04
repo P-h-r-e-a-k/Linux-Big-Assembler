@@ -15,6 +15,9 @@ internal sealed class HqrArchive
     }
 
     public int Count => offsets.Length;
+    // The slots the file really has: its first word is the offset table's size in bytes, which Count takes as the number of slots
+    // (4x too many: the slots past the table are read from the first record's own bytes, and can look like records).
+    public int Slots => offsets.Length / 4;
     public IEnumerable<int> ValidIndices => Enumerable.Range(0, offsets.Length).Where(IsValid);
 
     // Count is deliberately not used for this: it treats the raw offset-

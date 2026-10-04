@@ -8,6 +8,8 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Body Studio's windows and its preview control (Renderer.cs ModelView) are WPF -->
+    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>BodyPipeline</RootNamespace>
@@ -15,10 +17,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- (WPF takes System.IO out of the implicit usings) -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="..\..\BodyStudio\**\*.cs" Link="BodyStudio\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- the WPF windows are the app's, not the harness's (their control names clash with Windows Forms') -->
+    <Compile Remove="..\..\BodyStudio\BodyStudioWindow.cs;..\..\BodyStudio\AnimationStudioWindow.cs;..\..\BodyStudio\NumberBox.cs" />
     <Compile Include="..\..\EditorSettings.cs" Link="EditorSettings.cs" />
     <Compile Include="..\..\AudioLevels.cs" Link="AudioLevels.cs" />
-    <Compile Include="..\..\Scenes\**\*.cs" Link="Scenes\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\RaceCarSetup.cs" Link="RaceCarSetup.cs" />
+    <Compile Include="..\..\Scenes\**\*.cs" Exclude="..\..\Scenes\SceneNuke.cs" Link="Scenes\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Lba1\Lba1GridEdit.cs" Link="Lba1\Lba1GridEdit.cs" />
     <Compile Include="..\..\Lba1\Lba1GridCodec.cs" Link="Lba1\Lba1GridCodec.cs" />
     <Compile Include="..\..\Lba1\Lba1GridValidator.cs" Link="Lba1\Lba1GridValidator.cs" />

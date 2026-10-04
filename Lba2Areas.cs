@@ -11,8 +11,9 @@ namespace LBAAssembler;
 // The maps are drawn with the managed grid renderer (Lba2Interiors), the same as the LBA1 ones.
 internal static class Lba2Areas
 {
-    // `Scene` sits where the `Nth` (0 = first) cube-change zone of `Anchor` leading to it puts it.
-    internal readonly record struct Link(int Anchor, int Scene, int Nth = 0);
+    // `Scene` sits where the `Nth` (0 = first) cube-change zone of `Anchor` leading to it puts it, or, given `Cells`, that far from `Anchor`
+    // (cells in x, layers in y, cells in z), for two scenes whose zones don't say where they meet.
+    internal readonly record struct Link(int Anchor, int Scene, int Nth = 0, (int X, int Y, int Z)? Cells = null);
 
     internal static readonly Link[] Links =
     {
@@ -31,17 +32,23 @@ internal static class Lba2Areas
         new(151, 155), new(155, 159), new(159, 163), new(152, 156), new(156, 160), new(160, 164), new(153, 157), new(157, 161), new(161, 165), new(154, 158), new(158, 162), new(162, 166),
         new(163, 80),
         // Every other group of interiors whose cube-change zones lead into one another both ways (`lba2groups` lists them): one map each, the first
-        // scene of a link placed where its zone puts the second. Links whose two zones disagree are left out (the temple's first two scenes, the
-        // Esmer shuttle and the departure room's space port).
+        // scene of a link placed where its zone puts the second. Links whose two zones disagree are left out (the Esmer shuttle and the departure
+        // room's space port), except the Temple of Bù's two scenes below.
         // Citadel Island: Twinsen's house, the Tralu building, the tavern and its cellar, the baggage claim building and the sewer with the rooms off it.
         new(0, 1),
         new(2, 19), new(2, 20),
         new(3, 4),
         new(5, 6), new(6, 16),
         new(17, 18), new(17, 21), new(17, 34),
-        // White Leaf Desert: the Esmer base with the temple's second scene, the hacienda with the two Turkish baths and the passage between them, the
-        // School of Magic and its training room, and the protection spell cave.
-        new(11, 12),
+        // White Leaf Desert: the Temple of Bù's two scenes, the hacienda with the two Turkish baths and the passage between them, the School of Magic
+        // and its training room, and the protection spell cave. The temple's two scenes meet on a flight of stairs that both of them draw: the first
+        // scene's stairs go down westwards to its door (at x 16, rows 19-21) and the second's go up eastwards to its own (x 63, rows 2-4), and they
+        // are the same stairs, brick for brick, with the second scene 46 cells west, 16 layers down and 17 cells south. The zones agree on x and z
+        // but not on the height (9 and 13 layers down: the first scene's door zone starts below the stairs, and the second scene lands Twinsen on
+        // the floor under its stairs), so the stairs place it. There the second scene lies under the first one's western rooms, which hide part of
+        // it on the picture; it is left where it is rather than moved clear (see IsStacked). The Esmer base (12) is left out: its door into the
+        // temple's second scene doesn't put the two anywhere that fits.
+        new(10, 11, Cells: (-46, -16, 17)),
         new(29, 24), new(29, 25), new(29, 30), new(30, 32),
         new(27, 28), new(27, 33),
         new(183, 184),
@@ -87,7 +94,7 @@ internal static class Lba2Areas
         (3, "Tavern"),
         (5, "Baggage claim building"),
         (17, "Sewer"),
-        (11, "Esmer base"),
+        (10, "Temple of Bù"),
         (29, "Turkish baths"),
         (27, "School of Magic"),
         (183, "Protection spell cave"),
@@ -128,8 +135,6 @@ internal static class Lba2Areas
         // Baggage claim building
         (5, -2, 0, 0),
         (16, -4, 0, -1),
-        // Esmer base
-        (12, -52, 0, 0),
         // Inside Base (Emerald Moon)
         (23, 0, 0, -2),
         (52, 3, 0, 0),
@@ -192,8 +197,9 @@ internal static class Lba2Areas
         (187, 0, 87, 0), (192, 0, 107, 0), (185, 0, 162, 0), (186, 0, 194, 0),
     };
 
-    // Maps whose scenes really stack one above another (the Dark Monk statue): their overlap is counted in cells, not in the plan view.
-    public static bool IsStacked(Lba1Area area) => area.Tiles.Any(t => t.Scene == 185);
+    // Maps whose scenes really stack one above another: their overlap is counted in cells, not in the plan view. The Dark Monk statue, and the
+    // Temple of Bù, whose second scene is a lower level under the first one's western rooms (the two share only the stairwell both of them draw).
+    public static bool IsStacked(Lba1Area area) => area.Tiles.Any(t => t.Scene is 185 or 10);
 
     private static int Round(int value, int unit) => (int)Math.Round(value / (double)unit) * unit;
 
@@ -218,7 +224,8 @@ internal static class Lba2Areas
         foreach (var link in Links)
         {
             if (load(link.Scene) is null) continue;
-            if (OffsetOf(link, load) is { } o) AddEdge(link.Anchor, link.Scene, o.X, o.Y, o.Z);
+            var offset = link.Cells is { } c ? (c.X * 512, c.Y * 256, c.Z * 512) : OffsetOf(link, load);
+            if (offset is { } o) AddEdge(link.Anchor, link.Scene, o.Item1, o.Item2, o.Item3);
         }
 
         var areas = new List<Lba1Area>();

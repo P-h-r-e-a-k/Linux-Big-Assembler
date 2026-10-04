@@ -20,6 +20,7 @@ public partial class MainWindow
     private bool lba2JoinedView;
     private string? lba2AreaName;
     private IReadOnlyList<Lba1AreaTile>? lba2CurrentTiles;
+    private string? lba2AreaIslandFile;
 
     // Scene-list entries for a joined LBA2 map carry the map's number as -(map + 1), like the LBA1 ones.
     private static int Lba2AreaOption(int area) => -(area + 1);
@@ -171,6 +172,8 @@ public partial class MainWindow
         lba2JoinedView = true;
         lba2AreaName = areaName;
         lba2CurrentTiles = tiles;
+        lba2AreaIslandFile = islandFile;
+        lba2JoinedImage = image;
         SetMode(EditMode.Explore);
         interiorContent = new Rect(0, 0, image.Width, image.Height);
         nativeViewActive = false;
@@ -192,7 +195,15 @@ public partial class MainWindow
         ApplyInteriorView();
         RefreshZoneListIfVisible();
         ApplyMode();
-        UpdateLocation();
+    }
+
+    // The joined map on screen drawn again from the files (after an undo or redo changed one of its scenes), where the view was.
+    private void RedrawLba2JoinedMap()
+    {
+        if (!lba2JoinedView || lba2CurrentTiles is not { Count: > 0 } tiles || lba2AreaName is not { } name) return;
+        var (zoom, center) = (interiorZoom, interiorCenter);
+        ShowLba2Tiles(tiles, name, lba2AreaIslandFile);
+        if (zoom > 0) { interiorZoom = zoom; interiorCenter = center; ApplyInteriorView(); }
     }
 
     // In a joined map an actor is picked; double-clicking it opens its scene on its own, with the actor selected.
@@ -214,6 +225,5 @@ public partial class MainWindow
         ShowInteriorScene(scene);
         selectedActorIndex = actor - 1;
         RefreshActorOverlayForSelection();
-        UpdateLocation();
     }
 }

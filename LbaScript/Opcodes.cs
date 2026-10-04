@@ -212,7 +212,7 @@ internal static class Lba2Tables
         new(150, "END_MESSAGE_OBJ", LifeForm.Plain, new[] { Obj() }),
         new(151, "PARM_SAMPLE", LifeForm.Plain, new[] { S16("decalage"), U8("volume"), S16("frequency") }),
         new(152, "NEW_SAMPLE", LifeForm.Plain, new[] { S16("sample"), S16("decalage"), U8("volume"), S16("frequency") }),
-        new(153, "POS_OBJ_AROUND", LifeForm.Plain, new[] { Obj(), U8("around") }),
+        new(153, "POS_OBJ_AROUND", LifeForm.Plain, new[] { Obj(), Obj("around") }),   // both actors: PosObjetAroundAnother(around, obj)
         new(154, "PCX_MESS_OBJ", LifeForm.Plain, new[] { U8("pcx"), U8("effect"), Obj(), S16("message") }),
     };
 

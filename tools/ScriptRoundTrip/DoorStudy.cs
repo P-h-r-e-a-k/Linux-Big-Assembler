@@ -332,17 +332,18 @@ internal static class DoorWalk
     }
 }
 
-// scenezones <folder> <scene>: every zone of a scene.
+// scenezones <folder> <scene>: every zone of a scene (an LBA2 folder's when it has LBA2.HQR).
 internal static class SceneZoneDump
 {
     public static int Run(string[] args)
     {
-        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba1, args[1]);
+        var game = File.Exists(Path.Combine(args[1], "LBA2.HQR")) ? LBAAssembler.Scenes.SceneGame.Lba2 : LBAAssembler.Scenes.SceneGame.Lba1;
+        var store = new LBAAssembler.Scenes.SceneStore(game, args[1]);
         var scene = store.Load(int.Parse(args[2]));
         for (var i = 0; i < scene.Zones.Count; i++)
         {
             var z = scene.Zones[i];
-            Console.WriteLine($"zone {i}: type {z.Type} x {z.X0}..{z.X1} y {z.Y0}..{z.Y1} z {z.Z0}..{z.Z1} info {string.Join(",", z.Info)}");
+            Console.WriteLine($"zone {i}: type {z.Type} num {z.Num} x {z.X0}..{z.X1} y {z.Y0}..{z.Y1} z {z.Z0}..{z.Z1} info {string.Join(",", z.Info)}");
         }
         return 0;
     }

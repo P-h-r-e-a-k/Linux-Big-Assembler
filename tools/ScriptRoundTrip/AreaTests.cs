@@ -95,6 +95,13 @@ internal static class AreaTests
             var forward = Lba2Areas.OffsetOf(link, interiors.LoadScene);
             var back = Lba2Areas.OffsetOf(new Lba2Areas.Link(link.Scene, link.Anchor), interiors.LoadScene);
             if (link == new Lba2Areas.Link(185, 187)) { Check(forward is not null && back is null, "LBA2: the wizards' scene (185) has a one-way zone down to the third scene (187), which has none back"); continue; }
+            if (link.Cells is { } cells)
+            {
+                // placed by hand: the zones still agree on where it is sideways, within two cells either way
+                Check(forward is { } hf && back is { } hb && Math.Abs(hf.X / 512 - cells.X) <= 2 && Math.Abs(hf.Z / 512 - cells.Z) <= 2 && Math.Abs(-hb.X / 512 - cells.X) <= 2 && Math.Abs(-hb.Z / 512 - cells.Z) <= 2,
+                    $"LBA2: scene {link.Scene}, placed by hand from {link.Anchor}, is where both zones between them put it sideways");
+                continue;
+            }
             Check(forward is { } f && back is { } b && Math.Abs(f.X + b.X) <= 2 * 512 && Math.Abs(f.Y + b.Y) <= 3 * 256 && Math.Abs(f.Z + b.Z) <= 3 * 512,
                 $"LBA2: scene {link.Scene}'s zone back to {link.Anchor} agrees with the zone forward to within a few cells");
         }
@@ -146,11 +153,31 @@ internal static class AreaTests
 
         // never overlap
         // (in the plan view: a brick in the same x, z column at any height; a part of a scene may stand over the rest of that scene: it is the top of its stairs)
-        var overlapping = ScriptRoundTrip.Lba2AreaStudy.Overlaps(interiors, areas, false);
+        // (the Temple of Bù's two scenes, a stacked map, share the stairwell both of them draw where they meet, and nothing else: checked below)
+        var overlapping = ScriptRoundTrip.Lba2AreaStudy.Overlaps(interiors, areas, false).Where(o => !(areas[o.Area].Tiles.Any(t => t.Scene == 10) && o.A == 10 && o.B == 11)).ToList();
         Check(overlapping.Count == 0, $"LBA2: no two scenes of any joined map share a plan column ({overlapping.Count} pairs do" + (overlapping.Count > 0 ? $", e.g. {overlapping[0].A} and {overlapping[0].B}" : "") + ")");
         var tileKeys = areas.SelectMany(a => a.Tiles.Select(t => t.Key)).ToHashSet();
         Check(Lba2Areas.Separations.Select(s => s.Scene).Distinct().Count() == Lba2Areas.Separations.Length && Lba2Areas.Separations.All(s => tileKeys.Contains(s.Scene) && Math.Abs(s.Dx) <= 60 && Math.Abs(s.Dz) <= 60 && (s.Dy == 0 || s.Scene is 185 or 186 or 187 or 192)),
             "LBA2: every separation is for one tile of a map and moves it sideways by at most 60 cells (the Dark Monk Statue's scenes are lifted instead)");
+        // the Temple of Bù: its two scenes, not the Esmer base, and placed where the flight of stairs both draw is the same stairs: the second scene's
+        // stairs (x 58-62, rows 2-4, above the floor under them) have the first scene's layers (x 12-16, rows 19-21) 16 layers up, column for column
+        var temple = areas.SingleOrDefault(a => a.Tiles.Any(t => t.Scene == 10));
+        Check(temple is not null && temple.Name == "Temple of Bù" && temple.Island == 2 && temple.Tiles.Select(t => t.Scene).Order().SequenceEqual(new[] { 10, 11 }) && !areas.Any(a => a.Tiles.Any(t => t.Scene == 12)),
+            "LBA2: the Temple of Bù is its two scenes, and the Esmer base (12) is a scene of its own");
+        if (temple is not null)
+        {
+            HashSet<(int, int, int)> Layers(int scene, int x0, int z0) => interiors.Placements(scene).Where(p => p.X >= x0 && p.X <= x0 + 4 && p.Z >= z0 && p.Z <= z0 + 2).Select(p => (p.X - x0, p.Y, p.Z - z0)).ToHashSet();
+            var (first, second) = (Layers(10, 12, 19), Layers(11, 58, 2));
+            Check(At(temple, 11) == (-46, -16, 17) && first.Count > 0 && first.SetEquals(second.Where(p => p.Item2 >= 16).Select(p => (p.Item1, p.Item2 - 16, p.Item3))),
+                $"LBA2: the temple's second scene is placed 46 cells west, 16 layers down and 17 cells south of the first, where the stairs both scenes draw are the same bricks ({first.Count} of them)");
+            // left there (no move to keep it clear): a stacked map, whose two scenes share no cell but the stairwell both draw (its stairs and wall: the first
+            // scene's columns x 9-17, rows 18-22)
+            var (t10, t11) = (temple.Tiles.Single(t => t.Scene == 10), temple.Tiles.Single(t => t.Scene == 11));
+            HashSet<(int X, int Y, int Z)> Cells(Lba1AreaTile t) => interiors.Placements(t).Select(p => (p.X + t.OffsetX / 512, p.Y + t.OffsetY / 256, p.Z + t.OffsetZ / 512)).ToHashSet();
+            var shared = Cells(t10).Intersect(Cells(t11)).ToList();
+            Check(Lba2Areas.IsStacked(temple) && !Lba2Areas.Separations.Any(s => s.Scene is 10 or 11) && shared.Count > 0 && shared.All(c => c.X >= 9 && c.X <= 17 && c.Z >= 18 && c.Z <= 22),
+                $"LBA2: the temple's two scenes stay where the stairs put them, one under the other, and share only the stairwell's cells ({shared.Count}: x {shared.Select(c => c.X).DefaultIfEmpty().Min()}-{shared.Select(c => c.X).DefaultIfEmpty().Max()}, y {shared.Select(c => c.Y).DefaultIfEmpty().Min()}-{shared.Select(c => c.Y).DefaultIfEmpty().Max()}, z {shared.Select(c => c.Z).DefaultIfEmpty().Min()}-{shared.Select(c => c.Z).DefaultIfEmpty().Max()})");
+        }
         var stairs = tower.Tiles.Where(t => t.Scene == 177).ToList();
         Check(stairs.Count == 2 && stairs.Single(t => t.Window is not null).Window == new CellWindow(44, 44, 63, 63) && stairs.Single(t => t.Window is null).Without == new CellWindow(44, 44, 63, 63)
             && stairs.Single(t => t.Window is not null).OffsetY - stairs.Single(t => t.Window is null).OffsetY == 17 * 256,

@@ -48,7 +48,9 @@ internal sealed class IslandMapRenderer
         var index = islandName.ToUpperInvariant() switch
         {
             "CITABAU" => 42, "DESERT" => 29, "EMERAUDE" => 30, "OTRINGAL" => 31, "CELEBRAT" or "CELEBRA2" => 32, "PLATFORM" => 33,
-            "MOSQUIBE" => 34, "KNARTAS" => 35, "ILOTCX" => 36, "ASCENCE" => 37, _ => 27,
+            "MOSQUIBE" => 34, "KNARTAS" => 35, "ILOTCX" => 36, "ASCENCE" => 37,
+            // island 1 (Sendell's Well, cut from the retail game: a SENDELL.ILE made for it), and the old copy of the Emerald Moon
+            "SENDELL" => 28, "MOON" => 30, _ => 27,
         };
         try
         {

@@ -315,6 +315,25 @@ render frame through before the blocking work starts, so the cursor/strip really
 `ActorAttributesWindow`'s own Body/Animation combos are the shared `FilterableComboBox` now (see the main window's Island/Scene pickers, or LBA1's own actor
 window), not a second, separately-maintained implementation of the same type-to-filter behaviour.
 
+## Export 3D models (glTF, OBJ, PLY, STL)
+
+**Tools > Editors > LBA1 / LBA2: export 3D models** (also a button in the Build tab and "Export 3D..." in Objects and bodies) writes the game's
+3D content for other tools; the files are not meant for the game. It opens on what is on screen (the island, the interior, the LBA1 scene).
+
+- **What:** LBA2 islands (the lit, textured ground of every cube plus every object placed on it; the Desert island includes the race track of
+  the game folder's own DESERT.ILE), the objects of each island's .OBL (buildings, trees, props), interiors and joined interiors, LBA1 scenes
+  and joined maps, every actor (by entity), every body of BODY.HQR of both games, and LBA2's fixed objects (OBJFIX.HQR: items, globes ...).
+- **Formats:** glTF binary (.glb: textures, colours, baked light, instanced objects), Wavefront OBJ (+ .mtl and PNG textures), PLY (vertex colours),
+  STL (bare triangles). Coordinates are converted to the right-handed, Y-up system of those formats; the default scale is 0.001 (about a metre for Twinsen).
+- **Limits:** bodies are in their neutral pose (no skeleton or animation), lighting other than the islands' baked light is dropped, and the block maps
+  of interiors and LBA1 scenes are boxes in each brick's average colour (the bricks are pictures, so ramps and curves are boxes).
+- **Preview and parts:** the window has a 3D preview (drag to turn, wheel to zoom, right drag to slide) of whatever is selected. Besides whole islands there
+  are single cubes ("ground by cube") and single buildings, trees or props where they stand ("one object at a time"; a ground margin takes some of the
+  island round it). "Stand on the origin" moves each model to the origin; "Combine the selected into one file" writes several items as one model, keeping
+  their places in the world or standing them in a row.
+- **Batch:** `LBAAssembler.exe --export <folder> [--format glb|obj|ply|stl] [--category text] [--only text] [--limit n] [--scale n] [--no-terrain] [--no-objects] [--ground-margin n] [--keep-places] [--combine --name file]`
+  exports without a window and writes a summary to `<folder>/export.log`.
+
 ## Modes: Explore, Build, Script
 
 The main window has three modes, chosen with the buttons at the top of the right-hand column (or Ctrl+1 / Ctrl+2 / Ctrl+3, or
@@ -336,6 +355,33 @@ the View menu). The window title shows the game folder the editor is working in.
 - **Script** is for the actors' scripts: click an actor, or double-click it in the **SCRIPT** tab's list of the actors in view,
   to open its script window (right-click an actor in Build mode also offers *Edit Script...*, which switches to this mode).
 
+**Nuke this scene...** (at the foot of the BUILD tab, in every Build view) blows up everything in the scene that is open and leaves a
+flat, empty scene (`Scenes/SceneNuke.cs`). After a question that says what goes, every actor, zone and track point is removed except
+Twinsen and the **exits** (the cube-change zones, type 0: without them the game could not leave the scene; on an island the engine's
+Zoe stand-in in slot 1, entity 14 at 0,0, stays too), and the scripts of what stays are emptied. The ground: an LBA1 scene or an
+LBA2 interior gets one layer of its own most walked-on floor block (the one-layer, solid, plain block with the most uncovered cells,
+of any size: a room's tiles are often 2 x 2 blocks) under every column it had anything in, holes those enclose filled; an island
+cube loses its buildings and objects, its land is levelled to the middle of its heights and eased into the neighbouring cubes over
+four cells, painted with its most common flat ground, its water, lava and blocking ground drained, and its light baked again (the sea,
+the low ground the cube's edge reaches, stays sea). An island cube can be **several scenes** (the same place at other points of the
+story: Desert cube 8,9 is scenes 61 and 201) and the 3D view draws one of them: they share the ground, so they are all emptied.
+**Everything connected goes with it** while *Join connected areas* is ticked: a joined map (LBA1's outside maps, LBA2's joined
+interiors -- Build mode works on a joined LBA2 map for this, though nothing else in it can be edited there) loses every one of its
+scenes, and an LBA2 island every cube that has a scene, all levelled to one height, in a **chain reaction** out from the scene in focus
+(the one in the middle of the view; on an island, the cube under it, then its neighbours ring by ring; in a map, the scenes by how far
+they are from it). Unticked, it is the one scene (on an island, the cube under the middle of the view). Twinsen is put where he stood if there is floor there, else on the nearest
+floored cell (the engines find the cell under a point as (x + 256) / 512). Everything is saved at once as **one undo step** (Edit >
+Undo brings back the scene records, the grid in `LBA_GRI.HQR` / `LBA_BKG.HQR` and the island's records exactly). An interior whose
+grid other scenes share says so in the question. The **animation** (`NukeOverlay.cs`) holds a picture of the view, draws the emptied
+scene underneath, compares the two pictures per 8-pixel tile and blows up only what changed: shards of the old picture flung from a wave
+of fireballs that runs out from the middle, sparks, smoke, a shake, a white flash and a shockwave, then the smoke clears over the new
+ground (about four seconds; a click or Esc skips it). A chain reaction places a charge on each scene or cube (its filled grid columns'
+middle, or the cube's middle through the 3D view's camera): each part of the picture goes off with its nearest charge, a ring of the chain
+at a time (the whole chain within about 2.6 seconds), each charge with a shockwave of its own, the flash after the last. Commands:
+`nuke <lba1|lba2> <game folder> <scene> [island .ILE] [--whole] [--scenes a,b,...] [--dry]` (the same without the window, for a copy
+of the game: `--whole` the scene's whole island, `--scenes` a joined map's other scenes in the order they go off), `store nuke` (tests),
+`store nukesweep` (every LBA1 scene, every LBA2 interior and island cube nuked, stood on and undone).
+
 **Colours and text.** The interface uses a light blue scheme shared with a sister project (windows #E8F0FA, surfaces #F3F8FF, inputs and
 lists #FFFFFF, alternate rows #EAF3FD, buttons #D6E6F7 with hover #C3DBF5 and border #9FBEE0, headers #D2E3F6, menus #DCEAFA, borders
 #A9C3E0, text #10243E, muted text #4E6B8A, disabled #7C93AC, selection and accent #1B6EC2 with white text). Windows' own title bars stay the
@@ -347,12 +393,17 @@ marks or an empty border for them). Labels are sentence case ("Zones in view", "
 
 **Joined LBA2 interiors.** LBA2's interior scenes that lead into one another through cube-change zones are drawn as one map too (`Lba2Areas`), 24 maps
 in all (`lba2groups <folder>` lists every group of interiors whose zones lead into one another both ways): on Citadel Island Twinsen's house, Tralu, the tavern,
-the baggage claim building and the sewer with the rooms off it; on the White Leaf Desert the Esmer base, the Turkish baths with the hacienda, the School of
+the baggage claim building and the sewer with the rooms off it; on the White Leaf Desert the Temple of Bù (its two scenes), the Turkish baths with the hacienda, the School of
 Magic and the protection spell cave; Emerald Moon's Inside Base (Baldino's cell and the buildings around it); on Otringal the Imperial Hotel, the elevators, the prison, the casino, the bar, the souvenir
 shop and the Emperor's palace (the sixteen rooms of the maze and the last room); Wannies Island's mine (its first three rooms and the entrance: the mine's temple and the box transport building do not fit with them and stay scenes of their own) and city; the Mosquibee queen's throne; Celebration Island's
 Dark Monk Statue (five scenes really stacked one above another where their zones put them in the plan, each lifted so far above the one below (`Lba2Areas.Separations` Dy: 187 +87, 192 +107, 185 +162, 186 +194; `lba2screenlift <folder>` finds them from the scenes' screen silhouettes) that its picture stands clear of the lower one's, with black space between the levels; only shared cells could count there, not shared plan columns: `Lba2Areas.IsStacked`; the Celebration Island and Desert Island menu names are fixed in `Lba2IslandNames`; LBA2's scene descriptions say "White Leaf Desert" and are shown as "Desert Island", as the game itself calls it); Francos Island's Gazogem factory; and Island CX's control tower as two maps, the upper level (the stairs, the tower and the only outside scene)
 and the lower level (the room in the emperor's palace and the secret passage: put in one picture the levels lay over one another). Links whose two zones
-disagree (the temple's first two scenes, the Esmer shuttle, the departure room's space port) are left out. LBA2's scenes say nothing about which interiors
+disagree (the Esmer shuttle, the departure room's space port) are left out, and so is the Esmer base, whose door into the temple's second scene puts
+the two nowhere that fits. The temple's two scenes disagree on the height (by 4 layers) but draw the same flight of stairs where they meet, so that link
+gives its placement in cells (`Link.Cells`: the second scene 46 cells west, 16 layers down, 17 cells south, where the stairs coincide brick for brick);
+there the second scene is a lower level under the first one's western rooms, and it is left there, as accurate rather than all in view (the first
+scene's rooms hide about a third of it on the picture): like the Dark Monk Statue it is a stacked map, checked for shared cells, not plan columns, and the
+only cells its two scenes share are the stairwell both draw (its stairs and wall). LBA2's scenes say nothing about which interiors
 belong together, so the links are written down (`Lba2Areas.Links`: the second scene of a link sits where the first one's cube-change zone to it puts it, zone
 corner minus arrival point). **No two scenes of a map share a plan column** (a brick in the same x, z at any height: one floor stood over another's rooms is an
 overlap on the picture as much as one in the same cells): `lba2overlaps` lists the pairs, `lba2separate` finds the smallest sideways move of one scene of each

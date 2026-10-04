@@ -84,8 +84,11 @@ internal static class Program
             "dumpheader" => DumpHeader(args[1], int.Parse(args[2])),
             "validatecheck" => ValidateCheck(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 2),
             "animgroups" => AnimGroupsCmd(args[1], int.Parse(args[2])),
+            "animdump" => AnimDump(args[1], int.Parse(args[2])),
             "hqrpreview" => HqrPreview(args[1], int.Parse(args[2]), args.Length > 3 ? args[3] : Path.GetTempPath(), args.Length > 4 ? int.Parse(args[4]) : 2),
             "hqrpreviewress" => HqrPreviewRess(args[1], int.Parse(args[2]), int.Parse(args[3]), args[4], args.Length > 5 ? int.Parse(args[5]) : 2),
+            // oblsheet <island .OBL> <RESS palette entry> <out.png>: every decor body of an island (static bodies) in a grid, numbered
+            "oblsheet" => OblSheet(args[1], int.Parse(args[2]), args[3]),
             "testappend" => TestAppend(game),
             "normals" => Normals(game, int.Parse(args[2])),
             "enginebody" => EngineBody(args[1], args[2], args.Skip(3).DefaultIfEmpty("humanoid unlit").ToArray()),
@@ -97,12 +100,25 @@ internal static class Program
             // `findcolour green 1` returned LBA2's own colour 133 again instead of scanning LBA1).
             "findcolour" => FindColour(args.Length > 2 ? int.Parse(args[2]) : 2, args[1]),
             "ramp" => Ramp(args.Length > 2 ? int.Parse(args[2]) : 2, int.Parse(args[1])),
+            "palettesheet" => PaletteSheet(game, args[2], args.Length > 3 ? int.Parse(args[3]) : 0),
             "facecolours" => FaceColours(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 2),
-            "formsmoke" => FormSmoke(),
             "bodyroundtrip" => BodyRoundTrip(),
             "object" => ObjectPicture(int.Parse(args[1]), args[2], int.Parse(args[3]), double.Parse(args[4]), args[5]),
             "ress" => Ress(game, int.Parse(args[2])),
             "header" => Header(args[1], int.Parse(args[2])),
+            "bodyinfo" => BodyInfo(args[1], int.Parse(args[2])),
+            // renderhqr <file.hqr> <index> <game folder for the palette> <out.png> [yaw]: any LBA2 body (OBJFIX, BODY, an OBL) rendered
+            "renderhqr" => RenderHqr(args[1], int.Parse(args[2]), args[3], args[4], args.Length > 5 ? float.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture) : 0.7f),
+            // carviews <file.hqr> <index> <game folder for the palette> <out.png>: an LBA2 body from six sides (three-quarter views from above,
+            // the side, the front, the back and the top) on one sheet -- what a car needs, where renderhqr's level view suits a figure
+            // (a fifth argument: an island's palette instead of the game's main one -- its RESS.HQR entry, 27 Citadel Island in the storm, 34 the
+            // Island of the Mosquibees...)
+            "carviews" => CarViews(args[1], int.Parse(args[2]), args[3], args[4], args.Length > 5 ? int.Parse(args[5]) : 0),
+            // lightscales <file.hqr>: the LBA2 bodies whose points do not all take the whole of the light (Body.LightScale: normals shorter or
+            // longer than the usual 10240)
+            "lightscales" => LightScales(args[1]),
+            // hqrentry <file.hqr> <index> <out>: one entry, uncompressed, to a file
+            "hqrentry" => HqrEntry(args[1], int.Parse(args[2]), args[3]),
             "lba1lit" => Lba1Lit(args.Length > 1 ? int.Parse(args[1]) : 0),
             "winding" => Winding(game, args.Length > 2 ? int.Parse(args[2]) : 0, args.Length > 3 ? int.Parse(args[3]) : 20),
             _ => 2,
@@ -110,6 +126,70 @@ internal static class Program
     }
 
     private static string Folder(int game) => Folders[game - 1];
+    private static int LightScales(string hqr)
+    {
+        var archive = new Hqr(hqr); var found = 0;
+        for (var i = 0; i < archive.Count; i++)
+        {
+            Body body;
+            try { body = Body.Read(archive.Read(i), 2, allowStatic: true); } catch (Exception) { continue; }
+            if (body.LightScale is not { } scales) continue;
+            found++;
+            var odd = scales.Where(v => v != 1).ToArray();
+            Console.WriteLine($"  [{i}]: {odd.Length} of {scales.Length} points, {odd.Min():0.00}..{odd.Max():0.00}");
+        }
+        Console.WriteLine($"{hqr}: {found} of {archive.Count} bodies");
+        return 0;
+    }
+    private static int CarViews(string hqr, int index, string folder, string output, int islandPalette = 0)
+    {
+        var model = Body.Read(new Hqr(hqr).Read(index), 2, allowStatic: true);
+        model.TexturePage = new Hqr(Path.Combine(folder, "RESS.HQR")).Read(6);
+        var palette = Generator.Palette(folder);
+        if (islandPalette > 0)
+        {
+            // an island's palette: 768 bytes at the offset its entry's header gives, and outside the game shows each colour through the
+            // island's table for the usual light (every ramp's last colour becomes the one before it)
+            var xpl = new Hqr(Path.Combine(folder, "RESS.HQR")).Read(islandPalette);
+            int at = BitConverter.ToInt32(xpl, 4), table = BitConverter.ToInt32(xpl, 12) + BitConverter.ToInt32(xpl, 24) * 256;
+            palette = Enumerable.Range(0, 256).Select(i => { var k = at + xpl[table + i] * 3; return Color.FromArgb(xpl[k], xpl[k + 1], xpl[k + 2]); }).ToArray();
+        }
+        // (turn, tilt): the body turned about its vertical, then tipped towards the viewer
+        var views = new (float Yaw, float Pitch)[] { (0.65f, 0.45f), (-0.65f, 0.45f), (2.5f, 0.45f), (MathF.PI / 2, 0.08f), (0, 0.12f), (0, 1.35f) };
+        const int W = 560, H = 440;
+        using var sheet = new Bitmap(W * 3, H * 2);
+        using var g = Graphics.FromImage(sheet);
+        var world = model.World();
+        for (var v = 0; v < views.Length; v++)
+        {
+            var (yaw, pitch) = views[v];
+            var turned = world.Select(p =>
+            {
+                var q = new System.Numerics.Vector3(p.X * MathF.Cos(yaw) + p.Z * MathF.Sin(yaw), p.Y, -p.X * MathF.Sin(yaw) + p.Z * MathF.Cos(yaw));
+                return new System.Numerics.Vector3(q.X, q.Y * MathF.Cos(pitch) + q.Z * MathF.Sin(pitch), -q.Y * MathF.Sin(pitch) + q.Z * MathF.Cos(pitch));
+            }).ToArray();
+            var lowest = turned.Min(p => p.Y);
+            var copy = new Body { Game = 2, Lit = model.Lit, Static = model.Static, Header = model.Header, Textures = model.Textures, TexturePage = model.TexturePage, LightScale = model.LightScale };
+            copy.Bones.AddRange(model.Bones); copy.Faces.AddRange(model.Faces); copy.Lines.AddRange(model.Lines); copy.Spheres.AddRange(model.Spheres);
+            copy.Vertices.AddRange(turned);
+            copy.SetWorld(turned.Select(p => p with { Y = p.Y - lowest }).ToArray());
+            using var bmp = Renderer.Render(copy, palette, W, H, 0, false, background: Color.FromArgb(40, 60, 90), gridLine: Color.FromArgb(40, 60, 90));
+            g.DrawImageUnscaled(bmp, v % 3 * W, v / 3 * H);
+        }
+        sheet.Save(output, ImageFormat.Png);
+        Console.WriteLine($"{output}: {hqr}[{index}] {model.Vertices.Count} points, {model.Faces.Count} polygons, {model.Lines.Count} lines, {model.Spheres.Count} spheres");
+        return 0;
+    }
+    private static int RenderHqr(string hqr, int index, string folder, string output, float yaw)
+    {
+        var model = Body.Read(new Hqr(hqr).Read(index), 2, allowStatic: true);
+        model.TexturePage = new Hqr(Path.Combine(folder, "RESS.HQR")).Read(6);
+        using var bmp = Renderer.Render(model, Generator.Palette(folder), 600, 600, yaw, false, background: Color.FromArgb(40, 60, 90));
+        bmp.Save(output, ImageFormat.Png);
+        Console.WriteLine($"{output}: {hqr}[{index}]");
+        return 0;
+    }
+
     private static byte[] PaletteBytes(int game) => new Hqr(Path.Combine(Folder(game), "RESS.HQR")).Read(0);
 
     private static IEnumerable<(int Index, byte[] Data)> AllBodies(int game)
@@ -277,6 +357,29 @@ internal static class Program
     // 2026-09-23: LBA1 colour 22 looked like a safe brown alone, but its own bank turned out to be a
     // fire/glow effect ramp, not a smooth shade progression -- see reference-anim-hqr-format memory).
     // Always eyeball this before committing to a findcolour result in a character file.
+    // palettesheet <game> <out.png> [RESS entry]: a palette (RESS.HQR entry 0 by default; 29 is the Desert island's) as 16 ramps of 16 swatches, each labelled with its first index
+    private static int PaletteSheet(int game, string output, int entry)
+    {
+        var palette = new Hqr(Path.Combine(Folder(game), "RESS.HQR")).Read(entry);
+        using var bmp = new Bitmap(16 * 40 + 50, 16 * 30);
+        using var g = Graphics.FromImage(bmp);
+        g.Clear(Color.Black);
+        using var font = new Font("Arial", 9);
+        for (var bank = 0; bank < 16; bank++)
+        {
+            g.DrawString((bank * 16).ToString(), font, Brushes.White, 4, bank * 30 + 8);
+            for (var p = 0; p < 16; p++)
+            {
+                var i = (bank * 16 + p) * 3;
+                using var brush = new SolidBrush(Color.FromArgb(palette[i], palette[i + 1], palette[i + 2]));
+                g.FillRectangle(brush, 50 + p * 40, bank * 30, 38, 28);
+            }
+        }
+        bmp.Save(output, ImageFormat.Png);
+        Console.WriteLine(output);
+        return 0;
+    }
+
     private static int Ramp(int game, int colour)
     {
         var palette = PaletteBytes(game);
@@ -397,6 +500,34 @@ internal static class Program
         return 0;
     }
 
+    private static int HqrEntry(string file, int index, string output)
+    {
+        var data = new Hqr(file).Read(index);
+        File.WriteAllBytes(output, data);
+        Console.WriteLine($"{file}[{index}]: {data.Length} bytes -> {output}");
+        return 0;
+    }
+
+    // bodyinfo <file.hqr> <index>: an LBA2 body's bones (parent, pivot point, points, extent in the neutral pose), polygon types and colours per bone
+    private static int BodyInfo(string file, int index)
+    {
+        var body = Body.Read(new Hqr(file).Read(index), 2, true);
+        var world = body.World();
+        Console.WriteLine($"{file}[{index}]: {body.Vertices.Count} points, {body.Bones.Count} bones, {body.Faces.Count} polygons, {body.Lines.Count} lines, {body.Spheres.Count} spheres, textures {body.Textures.Length}");
+        Console.WriteLine($"  extent x {world.Min(v => v.X):0}..{world.Max(v => v.X):0}  y {world.Min(v => v.Y):0}..{world.Max(v => v.Y):0}  z {world.Min(v => v.Z):0}..{world.Max(v => v.Z):0}");
+        Console.WriteLine("  polygon types: " + string.Join(" ", body.Faces.GroupBy(f => (f.Material, f.Points.Length, f.Texture != null)).Select(g => $"{g.Key.Material}/{g.Key.Length}{(g.Key.Item3 ? "t" : "")}:{g.Count()}")));
+        for (var b = 0; b < body.Bones.Count; b++)
+        {
+            var bone = body.Bones[b];
+            var pts = Enumerable.Range(bone.Start, bone.Count).Select(i => world[i]).ToList();
+            var pivot = bone.Parent < 0 ? System.Numerics.Vector3.Zero : world[bone.Pivot];
+            var faces = body.Faces.Where(f => f.Points.Any(p => p >= bone.Start && p < bone.Start + bone.Count)).ToList();
+            var ext = pts.Count == 0 ? "" : $" x {pts.Min(v => v.X):0}..{pts.Max(v => v.X):0} y {pts.Min(v => v.Y):0}..{pts.Max(v => v.Y):0} z {pts.Min(v => v.Z):0}..{pts.Max(v => v.Z):0}";
+            Console.WriteLine($"  bone {b}: parent {bone.Parent} pivot {bone.Pivot} at ({pivot.X:0},{pivot.Y:0},{pivot.Z:0}), {bone.Count} points{ext}, {faces.Count} polygons, colours {string.Join(",", faces.Select(f => f.Colour).Distinct().Order())}");
+        }
+        return 0;
+    }
+
     private static int Ress(int game, int index)
     {
         var e = new Hqr(Path.Combine(Folder(game), "RESS.HQR")).Read(index);
@@ -455,23 +586,6 @@ internal static class Program
             Console.WriteLine($"LBA{game} {file}: {ok} bodies survive a write and read ({textured} with textured polygons), {skipped} not readable as bodies, {overStrictBudget} read fine but exceed Write()'s own strict primitive budget");
         }
         return failures == 0 ? 0 : 1;
-    }
-
-    // formsmoke: Body Studio's window builds and shows with its new controls (the flat-picture buttons, the game lighting box).
-    [STAThread]
-    private static int FormSmoke()
-    {
-        System.Windows.Forms.Application.EnableVisualStyles();
-        using var form = new MainForm();
-        form.Show();
-        System.Windows.Forms.Application.DoEvents();
-        static IEnumerable<System.Windows.Forms.Control> All(System.Windows.Forms.Control c) { foreach (System.Windows.Forms.Control child in c.Controls) { yield return child; foreach (var d in All(child)) yield return d; } }
-        var texts = All(form).Select(c => c.Text).Where(t => t.Length > 0).ToList();
-        var wanted = new[] { "Convert the reference image to game style", "Export a flat sheet of the selected template…", "Game lighting: shade the body like the game's own characters", "Flat colours" };
-        var missing = wanted.Where(w => !texts.Any(t => t == w)).ToList();
-        Console.WriteLine(missing.Count == 0 ? $"body studio window: ok ({texts.Count} labelled controls)" : "MISSING: " + string.Join(" | ", missing));
-        form.Close();
-        return missing.Count == 0 ? 0 : 1;
     }
 
     // lba1lit <body>: an LBA1 body written back lit reads back with normals for every point, and the game's own shading maths gives it about the
@@ -964,6 +1078,23 @@ internal static class Program
     // Raw ANIM.HQR group count (byte offset 2, the same U16 both Body.cs's own AnimGroups helper in
     // ActorAttributesWindow and the native AnimFitsBody read) -- for cross-checking a specific animation
     // index against a body's own NbGroupes/Bones.Count without needing a live app session.
+    // animdump <anim.hqr> <index>: an LBA2 animation's keyframes: time, step, and every bone slot that isn't a zero rotation (type, x, y, z)
+    private static int AnimDump(string hqrPath, int index)
+    {
+        var raw = new Hqr(hqrPath).Read(index);
+        int frames = BitConverter.ToUInt16(raw, 0), bones = BitConverter.ToUInt16(raw, 2), loop = BitConverter.ToUInt16(raw, 4);
+        Console.WriteLine($"entry {index}: {frames} keyframes, {bones} bone slots, loop to {loop}");
+        for (var f = 0; f < frames; f++)
+        {
+            var o = 8 + f * (8 + bones * 8);
+            short S(int at) => BitConverter.ToInt16(raw, at);
+            var slots = Enumerable.Range(0, bones).Select(b => (b, t: S(o + 8 + b * 8), x: S(o + 10 + b * 8), y: S(o + 12 + b * 8), z: S(o + 14 + b * 8)))
+                .Where(v => v.t != 0 || v.x != 0 || v.y != 0 || v.z != 0).Select(v => $"{v.b}:{(v.t == 0 ? "" : $"t{v.t} ")}{v.x},{v.y},{v.z}");
+            Console.WriteLine($"  frame {f}: time {BitConverter.ToUInt16(raw, o)} step {S(o + 2)},{S(o + 4)},{S(o + 6)}  " + string.Join("  ", slots));
+        }
+        return 0;
+    }
+
     private static int AnimGroupsCmd(string hqrPath, int index)
     {
         var raw = new Hqr(hqrPath).Read(index);
@@ -1223,6 +1354,38 @@ internal static class Program
             render.Save(Path.Combine(outDir, $"hqrpreviewress_{index}_ress{ressEntry}_{name}.png"), ImageFormat.Png);
         }
         Console.WriteLine($"  entry {index} under RESS entry {ressEntry}: {body.Faces.Count} polygons -> {outDir}");
+        return 0;
+    }
+
+    private static int OblSheet(string oblPath, int ressEntry, string outPng)
+    {
+        var hqr = new Hqr(oblPath);
+        var xpl = new Hqr(Path.Combine(Folder(2), "RESS.HQR")).Read(ressEntry);
+        var paletteOffset = BitConverter.ToInt32(xpl, 4);
+        var palette = new Color[256];
+        for (var i = 0; i < 256; i++) palette[i] = Color.FromArgb(xpl[paletteOffset + i * 3], xpl[paletteOffset + i * 3 + 1], xpl[paletteOffset + i * 3 + 2]);
+        var tiles = new List<(int Index, Bitmap Picture)>();
+        for (var i = 0; ; i++)
+        {
+            byte[] data;
+            try { data = hqr.Read(i); } catch { break; }
+            if (data.Length == 0) continue;
+            try { tiles.Add((i, Renderer.Render(Body.Read(data, 2, allowStatic: true), palette, 200, 160, 0.7f, false, background: Color.FromArgb(40, 60, 90)))); }
+            catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException) { }
+        }
+        const int cols = 10;
+        using var sheet = new Bitmap(cols * 200, (tiles.Count + cols - 1) / cols * 160);
+        using (var g = Graphics.FromImage(sheet))
+        {
+            for (var k = 0; k < tiles.Count; k++)
+            {
+                g.DrawImage(tiles[k].Picture, k % cols * 200, k / cols * 160);
+                g.DrawString(tiles[k].Index.ToString(), SystemFonts.DefaultFont, Brushes.Yellow, k % cols * 200 + 4, k / cols * 160 + 4);
+                tiles[k].Picture.Dispose();
+            }
+        }
+        sheet.Save(outPng, ImageFormat.Png);
+        Console.WriteLine($"{tiles.Count} bodies -> {outPng}");
         return 0;
     }
 

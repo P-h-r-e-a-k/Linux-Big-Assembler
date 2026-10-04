@@ -4,6 +4,7 @@
 #include "CONSOLE_STATE.H"
 #include "CONSOLE_GIVE.H"
 #include "../C_EXTERN.H"
+#include <SVGA/CLIP.H>     /* SetClipWindow: the cube jump clears a cutscene letterbox */
 #include "../COMMON.H"
 #include "../CHEATCOD.H"  // TryExecuteCheatByName, the one verb claim the console offers
 #include "../ZONE_GEOM.H" // ZonePointInBox (zonelist shares the engine's zone box test)
@@ -35,6 +36,8 @@ extern S32 GfxDitherShading;
 #include "../OBJECT.H" // SetAnim (teleport stops the hero's carried animation)
 #include "../RES_CATALOG.H"
 #include "../RES_SWITCH.H"
+#include "CONSOLE_CMD.H" // Console_ApplyPendingResSwitch: res_do_switch's own deferred-apply companion
+#include <SYSTEM/WINDOW.H> // Window_IsRendererTextureLocked: res_do_switch's own safety gate
 #include "../PERFTRACE.H"
 #include "../PERSO.H" /* WriteConfigValue (persist one setting) */
 #include <SYSTEM/CDTRACKS.H>
@@ -99,8 +102,26 @@ static void cmd_cube(int argc, const char *argv[]) {
         Console_Print("Usage: cube <number>");
         return;
     }
+    S32 target = (S32)strtol(argv[1], NULL, 0);
+    /* NUM_CUBE_PHANTOM (94) is a reserved sentinel, not a real destination -- InitGrilleExt() special-cases
+       NumCube == NUM_CUBE_PHANTOM to skip loading any island (the buggy/vehicle off-the-map-edge case), which
+       leaves every per-island HQR header and the terrain buffers it feeds (ground mesh, height map, shadow
+       lookups, ...) pointing at nothing. SCENE.HQR happens to have real content at index 94 too ("Empty water
+       outside scene"), so this collision is only reachable by asking to enter cube 94 directly, something no
+       real gameplay path does (real code reaches phantom mode a different way, by setting NewCube itself, not
+       through this command) -- confirmed with gdb: it reliably aborts or segfaults a few frames after landing,
+       depending on which of several now-unset buffers gets read first. */
+    if (target == NUM_CUBE_PHANTOM) {
+        Console_Print("Cube %d is NUM_CUBE_PHANTOM (reserved for the buggy/vehicle off-map state), not enterable directly", target);
+        return;
+    }
     Console_Close();
-    NewCube = (S32)strtol(argv[1], NULL, 0);
+    NewCube = target;
+    /* A jump leaves whatever cutscene the old scene was in (a harness's `cube` straight after boot lands mid-way through the
+       new game's opening, whose cinema_mode(1) then stayed on for the whole run: letterbox bars, and the Auto camera never ran
+       -- PERSO.CPP runs it only outside CinemaMode). As the --load path does (CONTROL.CPP). */
+    CinemaMode = FALSE;
+    SetClipWindow(0, 0, (S32)ModeDesiredX - 1, (S32)ModeDesiredY - 1);
     Console_Print("Cube %d (change on next frame)", NewCube);
 }
 
@@ -334,12 +355,15 @@ static void unique_shoot_path(const char *prefix, const char *ext, T_CAPTURE_SEQ
 }
 
 static void cmd_screenshot(int argc, const char *argv[]) {
-    (void)argc;
-    (void)argv;
     static T_CAPTURE_SEQ seq = {0, 0};
     char path[ADELINE_MAX_PATH];
 
-    unique_shoot_path("shot", "png", &seq, path, ADELINE_MAX_PATH);
+    /* screenshot [path]: to that file when one is named (a harness taking a series of shots names them itself), else the next
+       free shot_<time>.png in the save folder's shoot directory */
+    if (argc >= 2 && argv[1][0])
+        snprintf(path, sizeof(path), "%s", argv[1]);
+    else
+        unique_shoot_path("shot", "png", &seq, path, ADELINE_MAX_PATH);
     Console_RequestScreenshot(path, 1); /* 1 = PNG via SavePNG in game */
     Console_Print("Screenshot (no console): %s", path);
 }
@@ -1463,15 +1487,68 @@ static bool res_parse_wxh(const char *s, U32 *outW, U32 *outH) {
     return true;
 }
 
+/* A resolution switch pending because res_do_switch was asked for one while it
+   wasn't yet safe to actually run (see res_do_switch's own comment below).
+   Console_ApplyPendingResSwitch (this file) replays the exact same call once
+   it is. Last-write-wins if a second request arrives before the first has
+   been applied -- run_one_pending (CONTROL_SERVER.CPP) only ever executes one
+   console command per presented frame, so in practice this can only happen
+   from the interactive console, and the newer request superseding an
+   unapplied older one is the sensible behaviour anyway. */
+static bool s_resSwitchPending = false;
+static U32 s_resSwitchPendingW = 0, s_resSwitchPendingH = 0;
+
 /* Shared "fire the orchestrator, then arm the keep/revert dialog" path. Pulls
    the safety gate, captures the previous (W, H), closes the console so the
-   modal isn't occluded by it, then schedules the dialog on the next tick. */
+   modal isn't occluded by it, then schedules the dialog on the next tick.
+
+   The allowed-reason gate runs BEFORE the lock check below, so a genuinely
+   disallowed request (mid-cinematic/dialogue/holomap) is rejected immediately
+   with its real reason either way -- deferring is purely about which point in
+   a frame this runs at, never about whether the switch is a legal one.
+
+   Deferred instead of run immediately when the renderer's streaming texture is
+   currently locked (Window_IsRendererTextureLocked): this can be reached from
+   inside PresentFrame's own lock window two ways -- the control socket
+   (ControlPrePresent polls it every frame specifically so a driver reaches
+   modals too, PERSO.CPP) and the interactive console's own overlay
+   (Console_PrePresent, registered right after it) -- and Res_Switch ultimately
+   destroys and recreates that same texture (ResizeWindowSurface, WINDOW.CPP).
+   Doing that while PresentFrame() still has it locked is a real, reproduced
+   crash: PresentFrame's own later SDL_UnlockTexture call then runs against the
+   new texture, which was never the one actually locked (confirmed via two
+   matching crash dumps, both an Access Violation inside d3d11's texture
+   Unmap). Queuing the request and replaying this exact function one frame
+   later -- from Console_ApplyPendingResSwitch, called before any lock is ever
+   taken -- fixes that without changing anything about the outcome: the same
+   revert-countdown arming, the same "Resolution: WxH" text a driver watching
+   the socket sees either way, just up to one frame later than an unlocked
+   caller (the menu, or the console when it isn't mid-frame) gets. Printing
+   that line now rather than waiting for the real apply is what keeps it
+   identical either way -- Console_ApplyPendingResSwitch's replay re-checks
+   the allowed-reason gate again regardless, so a request that somehow stops
+   being legal in that one-frame gap still gets refused, just one console
+   message later than this one already promised success; not worth the extra
+   complexity of holding this response open across a frame boundary for a
+   game-state change unlikely to land within a single frame. */
 static void res_do_switch(U32 newW, U32 newH) {
     const char *why = Res_SwitchAllowedReason();
     if (why) {
         Console_Print("%s", why);
         return;
     }
+
+    if (Window_IsRendererTextureLocked()) {
+        s_resSwitchPending = true;
+        s_resSwitchPendingW = newW;
+        s_resSwitchPendingH = newH;
+        Console_Print("Resolution: %ux%u", newW, newH);
+        if (newW < UI_CANVAS_W || newH < UI_CANVAS_H)
+            Console_Print("  note: below %ux%u the UI is clipped; world render is unaffected.",
+                          (unsigned)UI_CANVAS_W, (unsigned)UI_CANVAS_H);
+        return;
+    }
+
     /* Revert has to put back what the player had chosen. ModeDesiredX/Y is
        whatever the current scene renders at, which in an interior is smaller
        than the choice. */
@@ -1494,6 +1571,13 @@ static void res_do_switch(U32 newW, U32 newH) {
     if (newW < UI_CANVAS_W || newH < UI_CANVAS_H)
         Console_Print("  note: below %ux%u the UI is clipped; world render is unaffected.",
                       (unsigned)UI_CANVAS_W, (unsigned)UI_CANVAS_H);
+}
+
+void Console_ApplyPendingResSwitch(void) {
+    if (!s_resSwitchPending)
+        return;
+    s_resSwitchPending = false;
+    res_do_switch(s_resSwitchPendingW, s_resSwitchPendingH);
 }
 
 static void cmd_perftrace_print_sink(const char *line) {
@@ -1729,6 +1813,11 @@ static void cmd_teleport(int argc, const char *argv[]) {
         hero->Obj.Z = atoi(argv[3]);
         if (argc >= 5)
             hero->Obj.Beta = (S16)atoi(argv[4]);
+        // (and his pitch and roll: how the engine turns a body by its three angles can be looked at)
+        if (argc >= 6)
+            hero->Obj.Alpha = atoi(argv[5]) & 4095;
+        if (argc >= 7)
+            hero->Obj.Gamma = atoi(argv[6]) & 4095;
         SetAnim(NUM_PERSO, GEN_ANIM_RIEN);
         Console_Print("teleport: hero -> (%d,%d,%d) beta=%d", (int)hero->Obj.X, (int)hero->Obj.Y,
                       (int)hero->Obj.Z, (int)hero->Obj.Beta);
@@ -2332,6 +2421,18 @@ static int parse_and_schedule_seq(const char *spec, int frameBased) {
      input seq 0:up:60/60:up+throw:30  walk 60 ticks, then walk+fire 30 ticks
      input fseq 3:action:4           press action on rendered frames 3-6 (a skip frame at high refresh)
      input trace 1                   log injected mask + hero anim/pos each sim tick */
+/* autodrive <0|1> [look cells] [side cells]: a race-track mod's test pilot drives the player's car along the first opponent's line
+   (RACEMOD.CPP), or that far to one side of it (to the left of the way it runs, x east and z south: a pilot against a rail). */
+static void cmd_autodrive(int argc, const char *argv[]) {
+    extern void RaceMod_AutoDrive(int on, double lookCells, double sideCells);
+    if (argc < 2) {
+        Console_Print("Usage: autodrive <0|1> [look ahead, cells] [to the side, cells]");
+        return;
+    }
+    RaceMod_AutoDrive(atoi(argv[1]), argc >= 3 ? atof(argv[2]) : 0, argc >= 4 ? atof(argv[3]) : 0);
+    Console_Print("autodrive: %s", atoi(argv[1]) ? "on" : "off");
+}
+
 static void cmd_input(int argc, const char *argv[]) {
     if (argc < 2) {
         Console_Print("Usage: input <flags> [ticks] | input seq <t:flags:dur[/...]>");
@@ -2494,8 +2595,8 @@ void Console_RegisterAll(void) {
     Console_RegisterCommandEx("timer", cmd_timer, "Advance timer by N ms (default 200)", "timer [ms]", "Advances high-res timer.");
     Console_RegisterCommandEx("status", cmd_status, "Print island, cube, chapter, objs, FPS, pos", "(no args)",
                               "Snapshot of current game state.");
-    Console_RegisterCommandEx("screenshot", cmd_screenshot, "Save next frame as PNG (no console)", "(no args)",
-                              "PNG under shoot/; console closes first.");
+    Console_RegisterCommandEx("screenshot", cmd_screenshot, "Save next frame as PNG (no console)", "screenshot [path]",
+                              "PNG to the path given, else under shoot/; console closes first.");
 #ifdef ENABLE_POLY_RECORDING
     Console_RegisterCommandEx("polyrec", cmd_polyrec, "Record the next frame's polygon draw calls",
                               "polyrec [path]",
@@ -2543,7 +2644,7 @@ void Console_RegisterAll(void) {
                               "Default on; persists to lba2.cfg (FixedTimestep key).");
 
     Console_RegisterCommandEx("teleport", cmd_teleport, "Reposition the hero in the current cube",
-                              "teleport <x> <y> <z> [beta] | teleport actor <n>",
+                              "teleport <x> <y> <z> [beta [alpha [gamma]]] | teleport actor <n>",
                               "Sets the hero's coords directly; next frame re-runs zones/collision. "
                               "'actor <n>' jumps onto actor n. Within-cube only.");
     Console_RegisterCommandEx("behaviour", cmd_behaviour, "Read/set hero behaviour (comportement)",
@@ -2566,6 +2667,10 @@ void Console_RegisterAll(void) {
                               "lifetrace <objN> | lifetrace off",
                               "Logs the object's comportement/track/zone each frame and every LF_ "
                               "condition it evaluates.");
+    Console_RegisterCommandEx("autodrive", cmd_autodrive, "Race-track test pilot: drive the player's car along the racing line",
+                              "autodrive <0|1> [look cells]",
+                              "With a race-track mod running (LBA2_RACETRACK_FILE), steers and pedals the player's "
+                              "car along the first opponent's line while he drives. For headless lap tests.");
     Console_RegisterCommandEx("objtrace", cmd_objtrace, "Trace an object's position each frame",
                               "objtrace <objN> | objtrace off",
                               "Logs the object's X/Y/Z, animation and track offset every simulated "

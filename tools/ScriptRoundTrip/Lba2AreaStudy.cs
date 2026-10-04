@@ -8,7 +8,7 @@ namespace ScriptRoundTrip;
 //   lba2areas <folder>                       every map with where each tile sits
 //   lba2overlaps <folder> [cells]            the pairs of tiles of a map that share a plan column (with `cells`: only a cell, which lets one floor stand over another)
 //   lba2separate <folder> [radius] [cells]   the smallest move of one tile per overlapping pair after which none do, as Lba2Areas.Separations lines
-//   lba2render <folder> <png> <map> [outline]   the map drawn, with each grid outlined and numbered
+//   lba2render <folder> <png> <map> [outline] [only=<scene>,..] [around=<x>,<y>,<z>]   the map drawn, with each grid outlined and numbered; only some scenes; cut out round a point
 // Two tiles overlap when they have a brick in the same (x, z) column at any height: a scene stood over another one (a floor of one above the rooms of the other)
 // is an overlap on the picture as much as one in the same cells, and the map has to have none.
 internal static class Lba2AreaStudy
@@ -119,7 +119,11 @@ internal static class Lba2AreaStudy
         var interiors = new Lba2Interiors(args[1]);
         var areas = Areas(interiors);
         var area = areas[int.Parse(args[3])];
-        var image = interiors.RenderArea(area.Tiles);
+        // only=<scene>,<scene>: draw just those scenes of the map; around=<x>,<y>,<z>: cut out the 1000 x 700 pixels (size=<w>x<h>) around that point of the map
+        // (cells, layers, cells), so pictures of different scenes of one map line up
+        var only = args.FirstOrDefault(a => a.StartsWith("only="))?[5..].Split(',').Select(int.Parse).ToHashSet();
+        var around = args.FirstOrDefault(a => a.StartsWith("around="))?[7..].Split(',').Select(int.Parse).ToArray();
+        var image = interiors.RenderArea(only is null ? area.Tiles : area.Tiles.Where(t => only.Contains(t.Scene)).ToList());
         var px = (byte[])image.Bgra.Clone();
         if (args.Length > 4 && args[4] == "outline")
         {
@@ -160,6 +164,24 @@ internal static class Lba2AreaStudy
                                 for (var sy = 0; sy < 5; sy++) for (var sx = 0; sx < 5; sx++) Plot((int)label.X + (d * 4 + x) * 5 + sx, (int)label.Y + y * 5 + sy, b, g, r);
                 Console.WriteLine($"  tile {t.Key}: origin ({t.OffsetX / 512},{t.OffsetY / 256},{t.OffsetZ / 512}) cells, colour #{n}");
             }
+        }
+        if (around is { Length: 3 })
+        {
+            var c = image.Project(around[0] * 512, around[1] * 256, around[2] * 512);
+            var size = args.FirstOrDefault(a => a.StartsWith("size="))?[5..].Split('x').Select(int.Parse).ToArray();
+            int W = size?[0] ?? 1000, H = size?[1] ?? 700;
+            var cut = new byte[W * H * 4];
+            for (var y = 0; y < H; y++)
+                for (var x = 0; x < W; x++)
+                {
+                    int sx = (int)c.X - W / 2 + x, sy = (int)c.Y - H / 2 + y;
+                    var o = (y * W + x) * 4;
+                    if (sx < 0 || sy < 0 || sx >= image.Width || sy >= image.Height) { cut[o + 3] = 255; continue; }
+                    Array.Copy(px, (sy * image.Width + sx) * 4, cut, o, 4);
+                }
+            PngWriter.Write(args[2], cut, W, H);
+            Console.WriteLine($"{W} x {H} around ({around[0]},{around[1]},{around[2]})");
+            return 0;
         }
         PngWriter.Write(args[2], px, image.Width, image.Height);
         Console.WriteLine($"{image.Width} x {image.Height}");
@@ -254,6 +276,16 @@ internal static class Lba2PlanStudy
     {
         var interiors = new Lba2Interiors(args[1]);
         var scene = int.Parse(args[2]);
+        if (args.Length > 6)
+        {
+            // lba2plan <folder> <scene> <x0> <x1> <z0> <z1>: every filled layer of each cell in the window, bottom to top
+            var (x0, x1, z0, z1) = (int.Parse(args[3]), int.Parse(args[4]), int.Parse(args[5]), int.Parse(args[6]));
+            var cells = interiors.Placements(scene).Where(c => c.X >= x0 && c.X <= x1 && c.Z >= z0 && c.Z <= z1).ToList();
+            for (var z = z0; z <= z1; z++)
+                for (var x = x0; x <= x1; x++)
+                    Console.WriteLine($"  ({x},{z}): {string.Join(" ", cells.Where(c => c.X == x && c.Z == z).Select(c => c.Y).Distinct().Order())}");
+            return 0;
+        }
         var top = new int[64, 64];
         for (var z = 0; z < 64; z++) for (var x = 0; x < 64; x++) top[x, z] = -1;
         foreach (var c in interiors.Placements(scene)) if (c.Y > top[c.X, c.Z]) top[c.X, c.Z] = c.Y;

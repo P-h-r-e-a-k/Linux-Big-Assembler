@@ -18,6 +18,7 @@
     <Compile Include="..\..\LbaScript\**\*.cs" Link="LbaScript\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\HqrArchive.cs" Link="HqrArchive.cs" />
     <Compile Include="..\..\HqrWriter.cs" Link="HqrWriter.cs" />
+    <Compile Include="..\..\Lba2TextBank.cs" Link="Lba2TextBank.cs" />
     <Compile Include="..\..\ScriptSession.cs" Link="ScriptSession.cs" />
     <Compile Include="..\..\DebugLog.cs" Link="DebugLog.cs" />
     <Compile Include="..\..\RendererLibraryApi.cs" Link="RendererLibraryApi.cs" />
@@ -50,8 +51,20 @@
     <Compile Include="..\..\Lba1\Lba1BlankScene.cs" Link="Lba1\Lba1BlankScene.cs" />
     <Compile Include="..\..\Lba2Engine.cs" Link="Lba2Engine.cs" />
     <Compile Include="..\..\Terrain\**\*.cs" Link="Terrain\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- the routes built into the program (RaceTrackPlan.Built / BuiltTwin), as the app has them -->
+    <EmbeddedResource Include="..\..\docs\racetrack\track_plan.json" LogicalName="RaceTrackPlan.Desert.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\citadel_track_plan.json" LogicalName="RaceTrackPlan.Citadel.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\citadel_storm_track_plan.json" LogicalName="RaceTrackPlan.CitadelStorm.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\mosquibe_track_plan.json" LogicalName="RaceTrackPlan.Mosquibe.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\celebration_track_plan.json" LogicalName="RaceTrackPlan.Celebration.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\celebrat_track_plan.json" LogicalName="RaceTrackPlan.CelebrationLava.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\elevator_track_plan.json" LogicalName="RaceTrackPlan.Elevator.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\sendell_track_plan.json" LogicalName="RaceTrackPlan.Sendell.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\moon_track_plan.json" LogicalName="RaceTrackPlan.Moon.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\emerald_track_plan.json" LogicalName="RaceTrackPlan.Emerald.json" />
     <Compile Include="..\..\LiveDataRoot.cs" Link="LiveDataRoot.cs" />
     <Compile Include="..\..\AudioLevels.cs" Link="AudioLevels.cs" />
+    <Compile Include="..\..\RaceCarSetup.cs" Link="RaceCarSetup.cs" />
     <Compile Include="..\..\EditorSettings.cs" Link="EditorSettings.cs" />
     <Compile Include="..\..\Assets\**\*.cs" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Grids\**\*.cs" Link="Grids\%(RecursiveDir)%(Filename)%(Extension)" />

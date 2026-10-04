@@ -11,7 +11,7 @@ internal static class NativeMap
 {
     private static readonly string[] Islands =
     {
-        "CITADEL", "MOON", "DESERT", "EMERAUDE", "OTRINGAL", "CELEBRAT", "PLATFORM", "MOSQUIBE", "KNARTAS", "ILOTCX", "ASCENCE", "SOUSCELB",
+        "CITADEL", "SENDELL", "DESERT", "EMERAUDE", "OTRINGAL", "CELEBRAT", "PLATFORM", "MOSQUIBE", "KNARTAS", "ILOTCX", "ASCENCE", "SOUSCELB",
     };
 
     public static int Run()

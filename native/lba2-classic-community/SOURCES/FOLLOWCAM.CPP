@@ -51,6 +51,21 @@ S32 FollowCamManualHold = 0;            /* frames the pitch/distance auto-assist
 static S32 FollowCamPrevBaseDist = -1;  /* dirty: zoom from GereExtKeys (numpad * /) */
 static S32 FollowCamPrevAlphaCam = -1;  /* dirty: numpad +/- elevation while follow */
 static S32 FollowCamEyeLift = 0;        /* ground clearance: eased eye lift above terrain */
+static S32 FollowCamAppliedLift = 0;    /* ... and the share of it last applied to the eye (FollowCamReapplyLift) */
+
+/* An eye of a mod's own for the camera that follows the hero, in place of the arm behind
+ * him (a race-track mod's rollercoaster of a road, where the eye rides the road behind the
+ * car: RACEMOD.CPP): given his object, the eye's place and the point to look at, cube-local;
+ * TRUE when it has one for where he is. NULL, or FALSE: the follow camera's own. */
+S32 (*FollowCamEyeHook)(S32 *eye, S32 *target) = NULL;
+static S32 FollowCamOwnEye = 0;         /* how far the view has moved onto the hook's eye, of FOLLOW_CAM_OWN_EYE_STEPS */
+static S32 FollowCamOwnEyeAt[3], FollowCamOwnEyeLooks[3];
+#define FOLLOW_CAM_OWN_EYE_STEPS 12
+
+/* A shorter arm than the zoom chosen, where something asks for one (a race-track mod's
+ * raised road coming steeply down: RACEMOD.CPP): given the chosen length, the length to
+ * use now. NULL: the chosen one. */
+S32 (*FollowCamArmHook)(S32 base) = NULL;
 static S32 FollowCamGroundSettling = 0; /* ground clearance: lift still easing (keeps the dirty check live while the hero stands still) */
 
 /* This file's live settings, applied to the rule in FOLLOWCAM_MATH.H (which the
@@ -114,11 +129,12 @@ void FollowCamTrace(void) {
     primed = TRUE;
 
     Log_Info("[cam] heroBeta %4d add %4d beta %4d target %4d step %5d delay %3d orbit %d moving %d "
-             "zone %d forced %d cine %d follow %d ext %d vue %d alpha %4d dist %6d",
+             "zone %d forced %d cine %d follow %d ext %d vue %d alpha %4d dist %6d eye %d,%d,%d",
              (int)ptr3d->Beta, (int)AddBetaCam, (int)BetaCam, (int)FollowCamTargetBeta,
              (int)step, (int)FollowCamReengageDelay, (int)ManualCameraOrbitActive, (int)moving,
              (int)CameraZone, (int)FlagCameraForcee, (int)CinemaMode, (int)FollowCamera,
-             (int)(CubeMode == CUBE_EXTERIEUR), (int)VueCamera, (int)AlphaCam, (int)VueDistance);
+             (int)(CubeMode == CUBE_EXTERIEUR), (int)VueCamera, (int)AlphaCam, (int)VueDistance,
+             (int)CameraX, (int)CameraY, (int)CameraZ);
 
     prevBeta = BetaCam;
     prevX = ptr3d->X;
@@ -131,6 +147,35 @@ void FollowCamTrace(void) {
  * they finish easing while the hero stands still). */
 static S32 FollowCamNeedsUpdate(T_OBJ_3D *ptr3d, S32 catchupDiff) {
     return ptr3d->X != FollowCamPrevHeroX OR ptr3d->Y != FollowCamPrevHeroY OR ptr3d->Z != FollowCamPrevHeroZ OR ptr3d->Beta != FollowCamPrevHeroBeta OR AddBetaCam != FollowCamPrevAddBeta OR(catchupDiff > FOLLOW_CAM_ROT_THRESHOLD OR catchupDiff < -FOLLOW_CAM_ROT_THRESHOLD) OR FollowCamBaseDist != FollowCamPrevBaseDist OR AlphaCam != FollowCamPrevAlphaCam OR FollowCamGroundSettling OR FollowCamManualHold;
+}
+
+/* The eye put at (x, y, z), looking at the view's target (VueOffset). Not the library's
+ * SetTargetCamera: that takes the target's height from the eye's Z and its Z from the
+ * eye's height (LIB386/3D/CAMERA.CPP), which nothing showed while every lifted eye was
+ * put back by the next redraw (FollowCamReapplyLift); a lifted eye aimed with it looks
+ * at the sky. */
+static void FollowCamLiftEye(S32 x, S32 y, S32 z) {
+    /* The target leads the hero (the forward lean). From an eye lifted high the view
+     * is steep, and a point that far ahead of him leaves him at the screen's bottom
+     * edge or under it: the higher the lift, the more of the lead is given up, down
+     * to a third of it. */
+    T_OBJ_3D *hero = &ListObjet[NumObjFollow].Obj;
+    S32 keep = 100 - FollowCamAppliedLift * 100 / 6000;
+    if (keep < 33)
+        keep = 33;
+    S32 tx = hero->X + (VueOffsetX - hero->X) * keep / 100;
+    S32 tz = hero->Z + (VueOffsetZ - hero->Z) * keep / 100;
+
+    SetPosCamera(x, y, z);
+    GetAngleVector3D(tx - x, VueOffsetY - y, tz - z);
+    SetAngleCamera(X0, Y0, GammaCam);
+}
+
+/* The eye put at a place of a mod's own choosing, looking at a point of its choosing. */
+static void FollowCamPlaceEye(const S32 *eye, const S32 *target) {
+    SetPosCamera(eye[0], eye[1], eye[2]);
+    GetAngleVector3D(target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]);
+    SetAngleCamera(X0, Y0, GammaCam);
 }
 
 /* Per-frame Auto-camera update (exterior). Extracted from the main loop:
@@ -298,14 +343,26 @@ void UpdateFollowCameraExt(void) {
                          * FollowCamEffectiveDist before CameraCenter(3) so terrain
                          * render (AffGrilleExt) stays consistent. */
         if (!CameraZone) {
-            if (FollowCamEffectiveDist < FollowCamBaseDist) {
+            /* (the arm's length to reach: the zoom chosen, or shorter where the hook
+             * asks -- reached a fifth of the way a frame then, it is needed at once) */
+            S32 armTarget = FollowCamBaseDist;
+            S32 armPull = FOLLOW_CAM_SPRING_RECOVER;
+            if (FollowCamArmHook) {
+                S32 asked = FollowCamArmHook(FollowCamBaseDist);
+                if (asked < armTarget) {
+                    armTarget = asked;
+                    if ((FollowCamEffectiveDist - armTarget) / 5 > armPull)
+                        armPull = (FollowCamEffectiveDist - armTarget) / 5;
+                }
+            }
+            if (FollowCamEffectiveDist < armTarget) {
                 FollowCamEffectiveDist += FOLLOW_CAM_SPRING_RECOVER;
-                if (FollowCamEffectiveDist > FollowCamBaseDist)
-                    FollowCamEffectiveDist = FollowCamBaseDist;
-            } else if (FollowCamEffectiveDist > FollowCamBaseDist) {
-                FollowCamEffectiveDist -= FOLLOW_CAM_SPRING_RECOVER;
-                if (FollowCamEffectiveDist < FollowCamBaseDist)
-                    FollowCamEffectiveDist = FollowCamBaseDist;
+                if (FollowCamEffectiveDist > armTarget)
+                    FollowCamEffectiveDist = armTarget;
+            } else if (FollowCamEffectiveDist > armTarget) {
+                FollowCamEffectiveDist -= armPull;
+                if (FollowCamEffectiveDist < armTarget)
+                    FollowCamEffectiveDist = armTarget;
             }
 
             /* HD recompose (render-time only; logical AlphaCam and
@@ -332,6 +389,26 @@ void UpdateFollowCameraExt(void) {
             VueDistance = renderDist;
             CameraCenter(3);
             AlphaCam = saveAlphaCam;
+
+            /* A mod's own eye (FollowCamEyeHook): the view moves onto it over a few
+             * frames from where the arm had it, and then is it. Nothing of the ground
+             * clearance below: the hook's eye is where the mod wants it. */
+            S32 ownEye[3], ownTarget[3];
+            if (FollowCamEyeHook AND FollowCamEyeHook(ownEye, ownTarget)) {
+                if (FollowCamOwnEye < FOLLOW_CAM_OWN_EYE_STEPS)
+                    FollowCamOwnEye++;
+                const S32 arm[3] = {CameraX, CameraY, CameraZ};
+                const S32 lean[3] = {VueOffsetX, VueOffsetY, VueOffsetZ};
+                for (S32 k = 0; k < 3; k++) {
+                    FollowCamOwnEyeAt[k] = arm[k] + (ownEye[k] - arm[k]) * FollowCamOwnEye / FOLLOW_CAM_OWN_EYE_STEPS;
+                    FollowCamOwnEyeLooks[k] = lean[k] + (ownTarget[k] - lean[k]) * FollowCamOwnEye / FOLLOW_CAM_OWN_EYE_STEPS;
+                }
+                FollowCamEyeLift = 0;
+                FollowCamAppliedLift = 0;
+                FollowCamGroundSettling = 0;
+                FollowCamPlaceEye(FollowCamOwnEyeAt, FollowCamOwnEyeLooks);
+            } else {
+            FollowCamOwnEye = 0;
 
             /* Terrain occlusion clearance: a smooth port of the
                              * classic SearchCameraPos awareness. CameraCenter(3)
@@ -363,6 +440,12 @@ void UpdateFollowCameraExt(void) {
                     if (sx < 0 OR sx > 32768 OR sz < 0 OR sz > 32768)
                         continue;
                     S32 g = PtrCalculAltitudeY(sx, sz);
+                    /* (a race-track mod's raised road: the stretch the hero is on hides him from an eye under it) */
+                    {
+                        extern S32 (*SightFloorHook)(S32 x, S32 z, S32 y);
+                        if (SightFloorHook)
+                            g = SightFloorHook(sx, sz, g);
+                    }
                     S32 sightY = hy + (ey - hy) * f / 100;
                     if (g + FollowCamGroundClearance > sightY) {
                         /* eye height that drops this occluder just
@@ -402,14 +485,17 @@ void UpdateFollowCameraExt(void) {
                                  * player's tilt. At autoFactor 0 effLift is 0, so
                                  * the player's own angle from CameraCenter stands. */
                 S32 effLift = FollowCamEyeLift * autoFactor / 100;
+                FollowCamAppliedLift = effLift;
                 if (effLift > 0) {
-                    SetPosCamera(ex, ey + effLift, ez);
-                    SetTargetCamera(VueOffsetX, VueOffsetY, VueOffsetZ, GammaCam);
+                    FollowCamLiftEye(ex, ey + effLift, ez);
                 }
             } else {
                 FollowCamGroundSettling = 0;
+                FollowCamAppliedLift = 0;
             }
+            } /* (not a mod's own eye) */
         } else {
+            FollowCamOwnEye = 0;
             VueDistance = FollowCamEffectiveDist;
             CameraCenter(3);
             /* Clear the ground-lift keep-alive too: otherwise a lift left
@@ -430,6 +516,22 @@ void UpdateFollowCameraExt(void) {
     }
 }
 
+/* The eye lift has to outlive the exterior's own camera set-up. Every full redraw
+ * goes through AffGrilleExt, which sets the camera again from its angles and distance
+ * -- the eye back where CameraCenter(3) had left it, before the lift -- and the follow
+ * camera redraws in full every frame the hero moves: the lift was worked out and then
+ * dropped before anything was drawn, so an eye behind a hill (or under a race track's
+ * raised road) stayed there. AffGrilleExt calls this after its own set-up. */
+void FollowCamReapplyLift(void) {
+    if (FollowCamera AND CubeMode == CUBE_EXTERIEUR AND !CameraZone AND !CinemaMode AND FollowCamOwnEye > 0) {
+        FollowCamPlaceEye(FollowCamOwnEyeAt, FollowCamOwnEyeLooks);
+        return;
+    }
+    if (!FollowCamera OR CubeMode != CUBE_EXTERIEUR OR CameraZone OR CinemaMode OR FollowCamAppliedLift <= 0)
+        return;
+    FollowCamLiftEye(CameraX, CameraY + FollowCamAppliedLift, CameraZ);
+}
+
 /* The two entry points below are the assignments the main loop used to make
  * into this file's statics, named for the moments that need them. */
 
@@ -443,7 +545,9 @@ void FollowCamResetToView(void) {
     /* Drop the smoothed ground lift so the recenter starts from the clean reset
      * position instead of gliding down from a stale terrain-occluder lift. */
     FollowCamEyeLift = 0;
+    FollowCamAppliedLift = 0;
     FollowCamGroundSettling = 0;
+    FollowCamOwnEye = 0;
 }
 
 void FollowCamSyncTarget(void) {

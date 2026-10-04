@@ -5,6 +5,7 @@ using LBAAssembler.Lba1;
 using LBAAssembler.Lba1.Runtime;
 using LBAAssembler.LbaScript;
 using LBAAssembler.Scenes;
+using LBAAssembler.Terrain;
 
 namespace ScriptRoundTrip;
 
@@ -38,6 +39,8 @@ internal static class StoreTests
         if (what is "historylimits" or "all") HistoryLimits();
         if (what is "hqrentryundo" or "all") HqrEntryUndo();
         if (what is "lba2newactor" or "all") Lba2NewActor();
+        if (what is "nuke" or "all") Nuke();
+        if (what is "nukesweep") NukeSweep();
         Console.WriteLine(failures == 0 ? $"store tests: all {checks} checks passed" : $"store tests: {failures} of {checks} checks FAILED");
         return failures == 0 ? 0 : 1;
     }
@@ -165,6 +168,243 @@ internal static class StoreTests
             Console.WriteLine($"  {tested} blank scenes built, saved and walked on");
         }
         finally { Cleanup(dir); }
+    }
+
+    // Build > Nuke (SceneNuke): what is left is the hero, the exits and flat ground; the grid passes the engine's rules and Twinsen stands
+    // on it; an island cube's scenes all go; one undo brings every file back as it was.
+    private static void Nuke()
+    {
+        static bool Empty(SceneModel m, int keep) => m.Actors.Count <= keep && m.Zones.All(z => z.Type == 0) && m.TrackPoints.Count == 0
+                                                    && m.Actors.All(a => a.Life is [0] && a.Track is [0]);
+        static byte[] Entry(string path, int entry) => HqrArchive.Open(path).Read(entry);
+
+        var dir = Path.Combine(Path.GetTempPath(), "lba1_nuke_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (var f in new[] { "LBA_BLL.HQR", "LBA_BRK.HQR", "FILE3D.HQR", "BODY.HQR", "ANIM.HQR", "RESS.HQR" }) File.Copy(Path.Combine(Lba1Dir, f), Path.Combine(dir, f));
+            File.Copy(Path.Combine(Lba1Dir, "SCENE.HQR.bak"), Path.Combine(dir, "SCENE.HQR"));
+            File.Copy(Path.Combine(Lba1Dir, "LBA_GRI.HQR.bak"), Path.Combine(dir, "LBA_GRI.HQR"));
+            var store = new SceneStore(SceneGame.Lba1, dir);
+            var tested = 0;
+            foreach (var slot in new[] { 0, 3, 4, 13, 42, 61, 90 })
+            {
+                var record = store.LoadRecord(slot);
+                var grid = store.LoadGrid(slot);
+                var nuke = SceneNuke.ForLba1(dir, slot);
+                nuke.Commit();
+                var after = store.Load(slot);
+                Check(Empty(after, 1), $"LBA1 nuke {slot}: only Twinsen and the exits are left");
+                var newGrid = store.LoadGrid(slot);
+                Check(!Lba1GridValidator.Validate(newGrid, store.LoadLibrary(slot)).Issues.Any(i => i.Severity == SceneIssueSeverity.Error), $"LBA1 nuke {slot}: the grid passes the engine's rules");
+                Check(Lba1GridEdit.UsedBlocksListed(newGrid), $"LBA1 nuke {slot}: the used-blocks bitmap lists the floor");
+                var runtime = new LBAAssembler.Lba1.Runtime.Lba1Runtime(new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(dir));
+                runtime.ChangeCube(slot);
+                runtime.Run(100);
+                var under =new Lba1Cube(newGrid, store.LoadLibrary(slot)).Cell(after.Hero.X / 512, after.Hero.Y / 256 - 1, after.Hero.Z / 512);
+                Check(runtime.NumCube == slot && runtime.Hero.PosY == after.Hero.Y,
+                    $"LBA1 nuke {slot}: Twinsen stands on the floor (at {runtime.Hero.PosX},{runtime.Hero.PosY},{runtime.Hero.PosZ}; placed {after.Hero.X},{after.Hero.Y},{after.Hero.Z} over block {under.Block}/{under.Second})");
+                Check(SceneHistory.Undo() is not null, $"LBA1 nuke {slot}: undone");
+                Check(store.LoadRecord(slot).AsSpan().SequenceEqual(record) && store.LoadGrid(slot).AsSpan().SequenceEqual(grid), $"LBA1 nuke {slot}: undo brings the scene and its grid back");
+                tested++;
+            }
+            Console.WriteLine($"  LBA1: {tested} scenes nuked, stood on and undone");
+
+            // several at once (Citadel's outside, a joined map): all emptied in one step, in the order given, one undo
+            var joined = new[] { 3, 1, 2, 6, 4 };
+            var before = joined.ToDictionary(s => s, s => (Record: store.LoadRecord(s), Grid: store.LoadGrid(s)));
+            var chain = SceneNuke.ForLba1(dir, joined, "Citadel Island");
+            Check(chain.Stages.Select(st => st.Scenes[0]).SequenceEqual(joined) && chain.Stages.Select(st => st.Ring).SequenceEqual(Enumerable.Range(0, joined.Length)), "LBA1 chain: the scenes go off in the order given, a ring each");
+            chain.Commit();
+            Check(joined.All(s => Empty(store.Load(s), 1)), "LBA1 chain: every scene of the map keeps only Twinsen and the exits");
+            Check(SceneHistory.UndoDescription == "Nuke 5 scenes, from scene 3", $"LBA1 chain: one undo step ({SceneHistory.UndoDescription})");
+            SceneHistory.Undo();
+            Check(joined.All(s => store.LoadRecord(s).AsSpan().SequenceEqual(before[s].Record) && store.LoadGrid(s).AsSpan().SequenceEqual(before[s].Grid)), "LBA1 chain: one undo brings every scene and grid back");
+        }
+        finally { Cleanup(dir); }
+
+        var dir2 = Path.Combine(Path.GetTempPath(), "lba2_nuke_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir2);
+        try
+        {
+            // (the retail files: a race track build keeps them beside its own as .before-racetrack)
+            foreach (var f in new[] { "SCENE.HQR", "LBA_BKG.HQR", "DESERT.ILE", "RESS.HQR" })
+                File.Copy(File.Exists(Path.Combine(Lba2Dir, f + ".before-racetrack")) ? Path.Combine(Lba2Dir, f + ".before-racetrack") : Path.Combine(Lba2Dir, f), Path.Combine(dir2, f));
+            var store = new SceneStore(SceneGame.Lba2, dir2);
+            // an interior: the bar of Desert island (its floor tiles are 2 x 2 blocks)
+            var backend = new Lba2GridBackend(dir2);
+            var gridId = backend.GridOfScene(39)!.Value;
+            var bkg = Path.Combine(dir2, "LBA_BKG.HQR");
+            var (record, rawGrid) = (store.LoadRecord(39), Entry(bkg, backend.GridEntry(gridId)));
+            var bar = SceneNuke.ForLba2(dir2, 39, null);
+            bar.Commit();
+            Check(Empty(store.Load(39), 1), "LBA2 nuke 39: only Twinsen and the exits are left");
+            var reread = new Lba2GridBackend(dir2);          // (a backend reads the files when it is made)
+            var flat = new Lba1Cube(reread.LoadGrid(gridId), reread.LoadLibrary(gridId));
+            var floorLayers = Enumerable.Range(0, 25).Where(y => Enumerable.Range(0, 64).Any(x => Enumerable.Range(0, 64).Any(z => flat.Cell(x, y, z).Block != 0))).ToList();
+            Check(floorLayers.Count == 1 && bar.Columns > 0, $"LBA2 nuke 39: one layer of floor under {bar.Columns} columns (layers {string.Join(",", floorLayers)})");
+            SceneHistory.Undo();
+            Check(store.LoadRecord(39).AsSpan().SequenceEqual(record) && Entry(bkg, backend.GridEntry(gridId)).AsSpan().SequenceEqual(rawGrid), "LBA2 nuke 39: undo brings the scene and its grid back");
+
+            // an island cube: Desert (8,9) is scenes 61 and 201, which share the ground
+            var ile = Path.Combine(dir2, "DESERT.ILE");
+            var records = new[] { 61, 201 }.ToDictionary(s => s, store.LoadRecord);
+            var island = File.ReadAllBytes(ile);
+            var desert = SceneNuke.ForLba2(dir2, 61, "DESERT.ILE");
+            Check(desert.Scenes.SequenceEqual(new[] { 61, 201 }), $"LBA2 nuke 61: the cube's scenes all go ({string.Join(", ", desert.Scenes)})");
+            desert.Commit();
+            Check(Empty(store.Load(61), 2) && Empty(store.Load(201), 2), "LBA2 nuke 61: scenes 61 and 201 keep only Twinsen, Zoe's stand-in and the exits");
+            var cube = IslandFile.Load(ile).CubeAt(8, 9)!;
+            var land = Enumerable.Range(0, IslandCube.Vertices * IslandCube.Vertices).Select(i => cube.Height(i % IslandCube.Vertices, i / IslandCube.Vertices)).Where(h => h > 0).ToList();
+            Check(cube.Decors.Count == 0 && land.Count > 0 && land.All(h => h == desert.Level), $"LBA2 nuke 61: the cube's objects are gone and its land is level at {desert.Level} ({land.Distinct().Count()} heights)");
+            SceneHistory.Undo();
+            var back = HqrFile.Parse(File.ReadAllBytes(ile));
+            var original = HqrFile.Parse(island);
+            Check(Enumerable.Range(0, original.Count).All(i => original.IsEmpty(i) ? back.IsEmpty(i) : back.Read(i).AsSpan().SequenceEqual(original.Read(i))), "LBA2 nuke 61: undo brings the island back");
+            Check(records.All(r => store.LoadRecord(r.Key).AsSpan().SequenceEqual(r.Value)), "LBA2 nuke 61: undo brings both scenes back");
+
+            // a joined map's interiors (the School of Magic)
+            var school = new[] { 27, 28, 33 };
+            var schoolBefore = school.ToDictionary(s => s, s => store.LoadRecord(s));
+            var bkgBefore = File.ReadAllBytes(bkg);
+            var magic = SceneNuke.ForLba2Interiors(dir2, school, "School of Magic");
+            magic.Commit();
+            Check(school.All(s => Empty(store.Load(s), 1)), "LBA2 chain: every interior of the map keeps only Twinsen and the exits");
+            SceneHistory.Undo();
+            var bkgBack = HqrFile.Parse(File.ReadAllBytes(bkg));
+            var bkgOriginal = HqrFile.Parse(bkgBefore);
+            Check(school.All(s => store.LoadRecord(s).AsSpan().SequenceEqual(schoolBefore[s]))
+                  && Enumerable.Range(0, bkgOriginal.Count).All(i => bkgOriginal.IsEmpty(i) ? bkgBack.IsEmpty(i) : bkgBack.Read(i).AsSpan().SequenceEqual(bkgOriginal.Read(i))), "LBA2 chain: one undo brings the interiors and their grids back");
+
+            // a whole island: every cube with a scene, in rings out from the focus's cube, levelled to one height
+            var desertScenes = Enumerable.Range(0, store.SceneCount).Where(s => store.Load(s) is { CubeMode: not 0, Island: 2 }).ToList();
+            var desertBefore = desertScenes.ToDictionary(s => s, s => store.LoadRecord(s));
+            var whole = SceneNuke.ForLba2Island(dir2, "DESERT.ILE", 61, wholeIsland: true);
+            Check(whole.Scenes.Order().SequenceEqual(desertScenes), $"LBA2 island: all {desertScenes.Count} of the island's scenes go ({whole.Scenes.Count})");
+            Check(whole.Stages[0].Scenes.Contains(61) && whole.Stages[0].Ring == 0 && whole.Stages.Zip(whole.Stages.Skip(1)).All(p => p.First.Ring <= p.Second.Ring), "LBA2 island: the chain starts at the focus's cube and goes out in rings");
+            Check(whole.Stages.Skip(1).All(st => whole.Stages.Any(o => o.Ring == st.Ring - 1 && Math.Abs(o.CubeX - st.CubeX) + Math.Abs(o.CubeY - st.CubeY) == 1)), "LBA2 island: each ring's cubes touch the ring before");
+            whole.Commit();
+            Check(desertScenes.All(s => Empty(store.Load(s), 2)), "LBA2 island: every scene keeps only Twinsen, Zoe's stand-in and the exits");
+            var levelled = IslandFile.Load(ile);
+            var cubesLevel = whole.Stages.All(st =>
+            {
+                var c = levelled.CubeAt(st.CubeX, st.CubeY)!;
+                return c.Decors.Count == 0 && c.Heights.Where(h => h > 0).All(h => h == whole.Level);
+            });
+            Check(cubesLevel, $"LBA2 island: every cube's objects are gone and its land is at one height, {whole.Level}");
+            SceneHistory.Undo();
+            var islandBack = HqrFile.Parse(File.ReadAllBytes(ile));
+            Check(Enumerable.Range(0, original.Count).All(i => original.IsEmpty(i) ? islandBack.IsEmpty(i) : islandBack.Read(i).AsSpan().SequenceEqual(original.Read(i)))
+                  && desertScenes.All(s => store.LoadRecord(s).AsSpan().SequenceEqual(desertBefore[s])), "LBA2 island: one undo brings the island and all its scenes back");
+        }
+        finally { Cleanup(dir2); }
+    }
+
+    // Every LBA1 scene and every LBA2 interior nuked and undone (`store nukesweep`, not in "all": a few minutes): the grid passes the
+    // engine's rules, Twinsen stands on floor by the engines' own rule for the cell under a point, undo is exact.
+    private static void NukeSweep()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "lba1_nukesweep_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (var f in new[] { "LBA_BLL.HQR", "LBA_BRK.HQR", "FILE3D.HQR", "BODY.HQR", "ANIM.HQR", "RESS.HQR" }) File.Copy(Path.Combine(Lba1Dir, f), Path.Combine(dir, f));
+            File.Copy(Path.Combine(Lba1Dir, "SCENE.HQR.bak"), Path.Combine(dir, "SCENE.HQR"));
+            File.Copy(Path.Combine(Lba1Dir, "LBA_GRI.HQR.bak"), Path.Combine(dir, "LBA_GRI.HQR"));
+            var store = new SceneStore(SceneGame.Lba1, dir);
+            int done = 0, stood = 0;
+            for (var slot = 0; slot < 120; slot++)
+            {
+                var record = store.LoadRecord(slot);
+                var grid = store.LoadGrid(slot);
+                try { SceneNuke.ForLba1(dir, slot).Commit(); }
+                catch (SceneEditException e) { Console.WriteLine($"  LBA1 {slot}: not nuked: {e.Message}"); continue; }
+                var after = store.Load(slot);
+                var newGrid = store.LoadGrid(slot);
+                Check(!Lba1GridValidator.Validate(newGrid, store.LoadLibrary(slot)).Issues.Any(i => i.Severity == SceneIssueSeverity.Error), $"LBA1 nuke {slot}: the grid passes the engine's rules");
+                var runtime = new LBAAssembler.Lba1.Runtime.Lba1Runtime(new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(dir));
+                runtime.ChangeCube(slot);
+                runtime.Run(60);
+                if (runtime.NumCube == slot && runtime.Hero.PosY == after.Hero.Y) stood++;
+                else Console.WriteLine($"  LBA1 {slot}: Twinsen at {runtime.Hero.PosX},{runtime.Hero.PosY},{runtime.Hero.PosZ} in {runtime.NumCube}, placed {after.Hero.X},{after.Hero.Y},{after.Hero.Z}");
+                SceneHistory.Undo();
+                Check(store.LoadRecord(slot).AsSpan().SequenceEqual(record) && store.LoadGrid(slot).AsSpan().SequenceEqual(grid), $"LBA1 nuke {slot}: undone exactly");
+                done++;
+            }
+            Check(stood == done, $"LBA1: Twinsen stands on the floor in {stood} of {done} nuked scenes");
+            Console.WriteLine($"  LBA1: {done} of 120 scenes nuked and undone, Twinsen stood in {stood}");
+        }
+        finally { Cleanup(dir); }
+
+        var dir2 = Path.Combine(Path.GetTempPath(), "lba2_nukesweep_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir2);
+        try
+        {
+            foreach (var f in new[] { "SCENE.HQR", "LBA_BKG.HQR", "RESS.HQR" })
+                File.Copy(File.Exists(Path.Combine(Lba2Dir, f + ".before-racetrack")) ? Path.Combine(Lba2Dir, f + ".before-racetrack") : Path.Combine(Lba2Dir, f), Path.Combine(dir2, f));
+            var store = new SceneStore(SceneGame.Lba2, dir2);
+            var bkg = Path.Combine(dir2, "LBA_BKG.HQR");
+            int done = 0, onFloor = 0;
+            for (var s = 0; s < store.SceneCount; s++)
+            {
+                if (store.Load(s).CubeMode != 0) continue;
+                var gridId = new Lba2GridBackend(dir2).GridOfScene(s);
+                if (gridId is null) continue;
+                var entry = new Lba2GridBackend(dir2).GridEntry(gridId.Value);
+                var (record, raw) = (store.LoadRecord(s), HqrArchive.Open(bkg).Read(entry));
+                try { SceneNuke.ForLba2(dir2, s, null).Commit(); }
+                catch (SceneEditException e) { Console.WriteLine($"  LBA2 {s}: not nuked: {e.Message}"); continue; }
+                var after = store.Load(s);
+                var backend = new Lba2GridBackend(dir2);
+                var cube = new Lba1Cube(backend.LoadGrid(gridId.Value), backend.LoadLibrary(gridId.Value));
+                var under = cube.Cell((after.Hero.X + 256) / 512, after.Hero.Y / 256 - 1, (after.Hero.Z + 256) / 512);
+                if (under.Block != 0 && cube.ShapeOf(under.Block, under.Second) == 1) onFloor++;
+                else Console.WriteLine($"  LBA2 {s}: Twinsen at {after.Hero.X},{after.Hero.Y},{after.Hero.Z} is over {under.Block}/{under.Second}");
+                SceneHistory.Undo();
+                Check(store.LoadRecord(s).AsSpan().SequenceEqual(record) && HqrArchive.Open(bkg).Read(entry).AsSpan().SequenceEqual(raw), $"LBA2 nuke {s}: undone exactly");
+                done++;
+            }
+            Check(onFloor == done, $"LBA2: Twinsen is over solid floor in {onFloor} of {done} nuked interiors");
+            Console.WriteLine($"  LBA2: {done} interiors nuked and undone, Twinsen over floor in {onFloor}");
+
+            // every island cube with a scene: its scenes all emptied, Twinsen on the new ground, undone exactly
+            string[] islands = { "citadel", "sendell", "desert", "emeraude", "otringal", "celebrat", "platform", "mosquibe", "knartas", "ilotcx", "ascence", "souscelb" };
+            var cubes = Enumerable.Range(0, store.SceneCount).Select(s => (Scene: s, Model: store.Load(s))).Where(x => x.Model.CubeMode != 0 && x.Model.Island < islands.Length)
+                .GroupBy(x => (x.Model.Island, x.Model.CubeX, x.Model.CubeY)).ToList();
+            int cubesDone = 0, standing = 0;
+            foreach (var group in cubes)
+            {
+                var file = islands[group.Key.Island].ToUpperInvariant() + ".ILE";
+                var source = Path.Combine(Lba2Dir, File.Exists(Path.Combine(Lba2Dir, file + ".before-racetrack")) ? file + ".before-racetrack" : file);
+                if (!File.Exists(source)) continue;
+                var ile = Path.Combine(dir2, file);
+                if (!File.Exists(ile)) File.Copy(source, ile);
+                var islandBytes = File.ReadAllBytes(ile);
+                var records = group.ToDictionary(x => x.Scene, x => store.LoadRecord(x.Scene));
+                SceneNuke nuke;
+                try { nuke = SceneNuke.ForLba2(dir2, group.First().Scene, file); nuke.Commit(); }
+                catch (SceneEditException e) { Console.WriteLine($"  {file} cube {group.Key.CubeX},{group.Key.CubeY}: not nuked: {e.Message}"); continue; }
+                Check(nuke.Scenes.Order().SequenceEqual(group.Select(x => x.Scene).Order()), $"{file} cube {group.Key.CubeX},{group.Key.CubeY}: all its scenes go ({string.Join(",", nuke.Scenes)})");
+                var island = IslandFile.Load(ile);
+                var ok = true;
+                foreach (var s in nuke.Scenes)
+                {
+                    var hero = store.Load(s).Hero;
+                    var ground = IslandOps.Altitude(island, group.Key.CubeX * (double)IslandFile.CubeSize + hero.X, group.Key.CubeY * (double)IslandFile.CubeSize + hero.Z) ?? -1;
+                    if (nuke.Level > 0 && (ground <= 0 || Math.Abs(ground - hero.Y) > 1)) { ok = false; Console.WriteLine($"  {file} scene {s}: Twinsen at y {hero.Y}, ground {ground}"); }
+                }
+                if (ok) standing++;
+                SceneHistory.Undo();
+                var back = HqrFile.Parse(File.ReadAllBytes(ile));
+                var original = HqrFile.Parse(islandBytes);
+                Check(Enumerable.Range(0, original.Count).All(i => original.IsEmpty(i) ? back.IsEmpty(i) : back.Read(i).AsSpan().SequenceEqual(original.Read(i)))
+                      && records.All(r => store.LoadRecord(r.Key).AsSpan().SequenceEqual(r.Value)), $"{file} cube {group.Key.CubeX},{group.Key.CubeY}: undone exactly");
+                cubesDone++;
+            }
+            Check(standing == cubesDone, $"LBA2: Twinsen is on the new ground in {standing} of {cubesDone} nuked island cubes");
+            Console.WriteLine($"  LBA2: {cubesDone} island cubes nuked and undone, Twinsen on the ground in {standing}");
+        }
+        finally { Cleanup(dir2); }
     }
 
     // A temp copy of the original LBA1 files (the .bak files hold the untouched originals).

@@ -42,6 +42,10 @@ internal sealed class EditorSettings
 
     public string Lba1Directory { get; set; } = "";
 
+    // AppTheme's own name (ThemeManager.Save/Parse), not the enum cast to int -- so inserting a new theme
+    // later doesn't renumber an already-saved choice out from under it.
+    public string Theme { get; set; } = "Light";
+
     // LBA1: show scenes that join into one map as that map (see Lba1Areas). On until the user turns it off; kept between runs. (The setting this replaces,
     // Lba1JoinAreas, started off, so its saved value says nothing about what was chosen.)
     public bool Lba1JoinConnectedAreas { get; set; } = true;
@@ -52,6 +56,9 @@ internal sealed class EditorSettings
     // The sound balance when a scene is played, per game (mute and music / speech / effects levels).
     public AudioLevels Lba1Audio { get; set; } = new();
     public AudioLevels Lba2Audio { get; set; } = new();
+
+    // The buggy's setup when Play runs an LBA2 folder with a race track built (the engine's race-track mode; RaceCarWindow).
+    public RaceCarSetup RaceCar { get; set; } = new();
 
     // Where each kind of window last was (see WindowPlacement), keyed by a name for that kind ("MainWindow",
     // "ActorAttributesWindow", ...) rather than per window instance: several windows of the same kind opened
@@ -71,6 +78,16 @@ internal sealed class EditorSettings
 
     private static EditorSettings? cached;
     public static EditorSettings Current => cached ??= Load();
+
+    // Set by MainWindow.TestEditsSession while GameDirectory/Lba1Directory are temporarily pointed at a
+    // scratch shadow copy of the game folder (see LiveDataRoot.CreateFullMirror) instead of the real one --
+    // every editor already reads these two properties directly rather than caching them (over a dozen call
+    // sites, not just MainWindow's own `gameRoot`), so redirecting them here is what makes "test first"
+    // apply uniformly without each editor needing its own awareness of it. The risk that redirection buys
+    // is exactly what this guards: ANY unrelated Save() elsewhere (a settings checkbox toggled while
+    // testing, say) would otherwise happily persist the shadow folder's scratch path as the user's real
+    // game directory. Guarded centrally here rather than by auditing every Save() call site.
+    public static bool TestModeActive;
 
     private static EditorSettings Load()
     {
@@ -103,6 +120,12 @@ internal sealed class EditorSettings
 
     public void Save()
     {
+        // Silent, not a throw: two of Save()'s four call sites (WindowLifecycle's Closed handler, every
+        // secondary window's own) have no exception handling around it at all, since a real save can only
+        // fail with IOException/UnauthorizedAccessException, both already handled by falling back to
+        // LegacySettingsDirectory below -- throwing something neither of those catches would crash on the
+        // next window closed while testing, not just skip a save that genuinely should be skipped here.
+        if (TestModeActive) { DebugLog.Log("EditorSettings: Save() skipped -- a test-edits session has GameDirectory/Lba1Directory pointed at a scratch copy."); return; }
         var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
         try
         {

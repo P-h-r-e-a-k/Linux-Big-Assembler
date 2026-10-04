@@ -67,6 +67,30 @@ internal static class HqrWriter
         return result;
     }
 
+    // Returns a copy of `hqr` with slot `index` given `newEntry` of its own, stored past the last entry, for a slot that has no data
+    // of its own: an empty one (offset 0), or one sharing another slot's data (which that slot keeps). The trailing sentinel slot, when
+    // it records the file's size, follows. (RESS.HQR's island 1 sky slot is empty; its palette slot shares the Desert island's.)
+    public static byte[] FillEntry(byte[] hqr, int index, byte[] newEntry)
+    {
+        if (hqr.Length < 4) throw new InvalidDataException("The HQR file is too small.");
+        var tableBytes = (int)BinaryPrimitives.ReadUInt32LittleEndian(hqr);
+        var slots = tableBytes / 4;
+        if (tableBytes < 8 || tableBytes > hqr.Length || (uint)index >= (uint)(slots - 1))
+            throw new ArgumentOutOfRangeException(nameof(index), "No such HQR entry.");
+        var old = BinaryPrimitives.ReadUInt32LittleEndian(hqr.AsSpan(index * 4));
+        var shared = false;
+        for (var i = 0; i < slots - 1 && old != 0; i++)
+            if (i != index && BinaryPrimitives.ReadUInt32LittleEndian(hqr.AsSpan(i * 4)) == old) shared = true;
+        if (old != 0 && !shared) throw new InvalidDataException($"HQR entry {index} has data of its own: replace it instead.");
+        var result = new byte[hqr.Length + newEntry.Length];
+        hqr.CopyTo(result, 0);
+        newEntry.CopyTo(result.AsSpan(hqr.Length));
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(index * 4), (uint)hqr.Length);
+        if (BinaryPrimitives.ReadUInt32LittleEndian(hqr.AsSpan((slots - 1) * 4)) == hqr.Length)
+            BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan((slots - 1) * 4), (uint)result.Length);
+        return result;
+    }
+
     // Returns a copy of `hqr` with entry `index` replaced by `newEntry` (a
     // complete entry including its 10-byte header, e.g. from StoredEntry).
     public static byte[] ReplaceEntry(byte[] hqr, int index, byte[] newEntry)

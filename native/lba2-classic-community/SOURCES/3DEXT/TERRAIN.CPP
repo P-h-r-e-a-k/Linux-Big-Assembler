@@ -784,6 +784,97 @@ U32 MaskVisible(U8 *in_ptr) {
 }
 
 /*──────────────────────────────────────────────────────────────────────────*/
+// A cell some of whose corners are behind the camera's near plane, drawn clipped against it in the camera's space (ClipperZ, as the
+// sea's Draw_Poly), each triangle with DrawFeuillePolyZBuf's own colour and texture. The engine used to paint such a cell black
+// from its visible edge down to the bottom of the screen (FillBlackPolyZBuf): right for flat ground passing under a camera close
+// over it, whose near part is off the bottom of the screen anyway, but a wall or a terrace beside or below the camera crosses the
+// plane too -- the stacked terraces of a race-track mod's mountain lap, the camera following the car a few cells from a cliff --
+// and the black then covered a whole side of the view, the road and the car.
+static void DrawClippedTriangle(const STRUC_CLIPVERTEX *a, const STRUC_CLIPVERTEX *b, const STRUC_CLIPVERTEX *c, T_HALF_POLY *ptrh) {
+    STRUC_CLIPVERTEX src[3], dst[8];
+    S32 k, l, color, light;
+
+    if (!(ptrh->PolyFlag + ptrh->TexFlag))
+        return;
+    src[0] = *a;
+    src[1] = *b;
+    src[2] = *c;
+    if (ptrh->TexFlag) {
+        const T_HALF_TEX *t = &ListTexDef[ptrh->IndexTex];
+        src[0].V_MapU = t->Tx0;
+        src[0].V_MapV = t->Ty0;
+        src[1].V_MapU = t->Tx1;
+        src[1].V_MapV = t->Ty1;
+        src[2].V_MapU = t->Tx2;
+        src[2].V_MapV = t->Ty2;
+    }
+    k = (S32)ClipperZ(dst, src, 3, NearClip + 1, 0);
+    if (k < 3 OR k > 8)
+        return;
+    for (l = 0; l < k; l++) {
+        if (!LongProjectPoint(dst[l].V_X0 + CameraXr, dst[l].V_Y0 + CameraYr, CameraZr - dst[l].V_Z0))
+            return;
+        if ((Xp != (S32)(S16)Xp) OR(Yp != (S32)(S16)Yp))
+            return;
+        Tab_Points[l].Pt_XE = (S16)Xp;
+        Tab_Points[l].Pt_YE = (S16)Yp;
+        Tab_Points[l].Pt_Light = (S16)dst[l].V_Light;
+        Tab_Points[l].Pt_ZO = (U16)GET_ZO(dst[l].V_Z0);
+    }
+    if (!TestVuePoly(Tab_Points))
+        return;
+    // (the colour's light is the whole triangle's average, as DrawFeuillePolyZBuf's)
+    light = a->V_Light + b->V_Light + c->V_Light;
+    color = (ptrh->Bank << 4) + 11;
+    if (ptrh->PolyFlag) {
+        if (ptrh->PolyFlag == 1)
+            color += (light * 21845) >> 24;
+        Fill_Poly(ListTypePolygone[ptrh->PolyFlag], color, k, Tab_Points);
+    }
+    if (ptrh->TexFlag) {
+        for (l = 0; l < k; l++) {
+            Tab_Points[l].Pt_MapU = dst[l].V_MapU;
+            Tab_Points[l].Pt_MapV = dst[l].V_MapV;
+        }
+        if (ptrh->TexFlag == 2)
+            color = (light * 21845) >> 24;
+        Fill_Poly((U8)ListTypePTexture[ptrh->TexFlag + (ptrh->PolyFlag << 2)], color, k, Tab_Points);
+    }
+}
+
+static void DrawFeuillePolyClipped(S32 xi, S32 zi) {
+    static const S32 ox[4] = {0, 0, 1, 1}, oz[4] = {0, 1, 1, 0}; // DrawFeuillePolyZBuf's corners 0..3
+    T_HALF_POLY *ptrh = &MapPolyGround[zi * (64 * 2) + xi * 2];
+    STRUC_CLIPVERTEX c[4];
+    S32 k, depth;
+
+    if (!(ptrh->PolyFlag + ptrh->TexFlag + (ptrh + 1)->PolyFlag + (ptrh + 1)->TexFlag))
+        return;
+    for (k = 0; k < 4; k++) {
+        const S32 vx = xi + ox[k], vz = zi + oz[k];
+        S32 light = (MapIntensity[vz * 65 + vx] & 15) * 256 - 255;
+        LongWorldRotatePoint(vx * 512, MapSommetY[vz * (NB_COTE + 1) + vx], vz * 512);
+        c[k].V_X0 = X0 - CameraXr;
+        c[k].V_Y0 = Y0 - CameraYr;
+        c[k].V_Z0 = CameraZr - Z0;
+        c[k].V_MapU = 0;
+        c[k].V_MapV = 0;
+        c[k].V_Light = (U16)(light < 0 ? 0 : light);
+        c[k].V_Dummy = 0;
+    }
+    // (the fog of its first corner, as DrawFeuillePolyZBuf's, at least at the near plane)
+    depth = c[0].V_Z0 > NearClip ? c[0].V_Z0 : NearClip;
+    SetCLUT((U16)(PalLevel + 16 * BoundRegleTrois(0, 15, ClipZFar - StartZFog, depth - StartZFog)));
+    if (ptrh->Sens == 0) {
+        DrawClippedTriangle(&c[0], &c[1], &c[2], ptrh);
+        DrawClippedTriangle(&c[2], &c[3], &c[0], ptrh + 1);
+    } else {
+        DrawClippedTriangle(&c[3], &c[0], &c[1], ptrh);
+        DrawClippedTriangle(&c[1], &c[2], &c[3], ptrh + 1);
+    }
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
 void AffichageTerrainZBuf(void) {
     S16 *ptrm;
     U8 *ptra;
@@ -860,8 +951,10 @@ void AffichageTerrainZBuf(void) {
                 DrawFeuillePolyZBuf(x, z, ptrs);
                 break;
             case 0:
+                // some corners in front of the camera, some behind it or inside its near plane: drawn clipped against the plane
+                // (it was painted black from its visible edge to the bottom of the screen: DrawFeuillePolyClipped)
                 if (mask) {
-                    FillBlackPolyZBuf(x, z, ptrs, ptra);
+                    DrawFeuillePolyClipped(x, z);
                 }
                 break;
             }

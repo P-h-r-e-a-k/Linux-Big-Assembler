@@ -4,7 +4,6 @@ using System.Linq;
 using System.Numerics;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 
 namespace LbaBodyStudio;
 
@@ -44,10 +43,12 @@ public static class Renderer
     // KeyBackground and KeyGrid are the colours a marker is made transparent by (Lba1ActorImages.Transparent): renders that become markers keep them; a picture shown as it is passes its own.
     public static readonly Color KeyBackground=Color.FromArgb(25,30,39),KeyGrid=Color.FromArgb(44,52,64);
     public static readonly Color ViewBackground=Color.FromArgb(232,240,250),ViewGrid=Color.FromArgb(203,221,240);
-    // The rest of the app's own light theme (Theme.xaml), so Body Studio's plain WinForms controls don't look like a different program.
-    public static readonly Color PanelBackground=Color.FromArgb(0xE8,0xF0,0xFA),FieldBackground=Color.White,ButtonBackground=Color.FromArgb(0xD6,0xE6,0xF7),
-        ButtonBorder=Color.FromArgb(0x9F,0xBE,0xE0),ButtonHover=Color.FromArgb(0xC3,0xDB,0xF5),Accent=Color.FromArgb(0x1B,0x6E,0xC2),
-        Border=Color.FromArgb(0xA9,0xC3,0xE0),Text=Color.FromArgb(0x10,0x24,0x3E),TextMuted=Color.FromArgb(0x4E,0x6B,0x8A);
+    // The app's own chrome palette used to be duplicated here too (PanelBackground, FieldBackground, ...)
+    // for BodyStudioWindow/AnimationStudioWindow's own controls to match by eye -- gone now that both
+    // reference the real theme resources directly (SetResourceReference, see their own ApplyTheme), which
+    // also means they retheme live instead of only ever matching whatever this file's own copy was frozen
+    // to at the time. KeyBackground/KeyGrid/ViewBackground/ViewGrid above are different: they feed the
+    // rasterizer below directly (Render's own background/gridLine parameters), not WPF chrome, so they stay.
     public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null,Color? background=null,Color? gridLine=null)
     {
         width=Math.Max(1,width);height=Math.Max(1,height);
@@ -76,9 +77,13 @@ public static class Renderer
         {
             var normals=model.VertexNormals();var toLight=Vector3.Normalize(new Vector3(-0.35f,0.55f,-0.75f));float max=LightModel.Max(model.Game);
             previewLight=normals.Select(n=>{var r=new Vector3(n.X*MathF.Cos(yaw)+n.Z*MathF.Sin(yaw),n.Y,-n.X*MathF.Sin(yaw)+n.Z*MathF.Cos(yaw));return Math.Clamp(Vector3.Dot(r,toLight),0,1)*max;}).ToArray();
+            if(model.LightScale is{}scales)for(int i=0;i<previewLight.Length&&i<scales.Length;i++)previewLight[i]*=scales[i];
         }
+        // LBA2's see-through polygons (type 2) are drawn last, over what is behind them
+        bool SeeThrough(Face f)=>model.Game==2&&f.Material==2&&f.Texture==null;
         foreach(var f in model.Faces)
         {
+            if(SeeThrough(f))continue;
             int colour=palette[Math.Clamp(f.Colour,0,255)].ToArgb();
             bool faceLit=previewLight!=null&&LightModel.IsLit(f,model.Game,model.Lit);
             // the game's lighting: flat faces take one intensity, Gouraud faces one per corner (blended below)
@@ -148,6 +153,30 @@ public static class Renderer
                 Plot(x,y,c.Z-MathF.Sqrt(r*r-d2)/scale,colour);
             }
         }
+        // as the game fills them: what is behind keeps its place in its ramp and takes the polygon's ramp (here: its brightness picks the step)
+        int backdrop=(background??KeyBackground).ToArgb();
+        foreach(var f in model.Faces)
+        {
+            if(!SeeThrough(f))continue;
+            for(int t=1;t<f.Points.Length-1;t++)
+            {
+                var a=rotated[f.Points[0]];var b=rotated[f.Points[t]];var c=rotated[f.Points[t+1]];
+                var pa=Screen(a);var pb=Screen(b);var pc=Screen(c);float area=Edge(pa,pb,pc.X,pc.Y);
+                if(Math.Abs(area)<.001f)continue;
+                int x0=Math.Max(0,(int)MathF.Floor(Math.Min(pa.X,Math.Min(pb.X,pc.X)))),x1=Math.Min(width-1,(int)MathF.Ceiling(Math.Max(pa.X,Math.Max(pb.X,pc.X))));
+                int y0=Math.Max(0,(int)MathF.Floor(Math.Min(pa.Y,Math.Min(pb.Y,pc.Y)))),y1=Math.Min(height-1,(int)MathF.Ceiling(Math.Max(pa.Y,Math.Max(pb.Y,pc.Y))));
+                for(int y=y0;y<=y1;y++)for(int x=x0;x<=x1;x++)
+                {
+                    float wa=Edge(pb,pc,x+.5f,y+.5f)/area,wb=Edge(pc,pa,x+.5f,y+.5f)/area,wc=1-wa-wb;
+                    if(wa<-.0001f||wb<-.0001f||wc<-.0001f)continue;
+                    float z=wa*a.Z+wb*b.Z+wc*c.Z;int index=y*width+x;
+                    if(z>depth[index])continue;
+                    var under=Color.FromArgb(pixels[index]==0?backdrop:pixels[index]);
+                    int step=Math.Clamp((int)MathF.Round((under.R*0.30f+under.G*0.59f+under.B*0.11f)*15/255f),0,15);
+                    pixels[index]=palette[(f.Colour&0xF0)|step].ToArgb();
+                }
+            }
+        }
         using(var layer=new Bitmap(width,height,PixelFormat.Format32bppArgb))
         {
             var locked=layer.LockBits(new Rectangle(0,0,width,height),ImageLockMode.WriteOnly,PixelFormat.Format32bppArgb);
@@ -164,7 +193,14 @@ public static class Renderer
     }
 }
 
-public sealed class ModelView : Control
+// WPF body preview: a plain composite control (not a UserControl/.xaml -- matches how every other
+// secondary window in the app builds its own tree in code, see GridEditorWindow.cs) hosting the Image
+// Renderer.Render's own GDI+ bitmap is converted onto, plus two overlay TextBlocks for the stats/hint
+// text OnPaint used to bake into the bitmap itself (crisper this way, and there's no OnPaint hook to
+// bake into once this isn't a WinForms Control any more). Renderer.Render itself is untouched -- it was
+// already plain GDI+ bitmap generation with no WinForms/Control dependency at all, so the only real
+// porting work was this shell and the final Bitmap -> BitmapSource conversion below.
+public sealed class ModelView : System.Windows.Controls.Grid
 {
     public Generated? Model;
     public float Yaw;
@@ -174,18 +210,54 @@ public sealed class ModelView : Control
     // preview, via Lba1Pose.World) -- null means "render the body's own neutral/modelled pose", the
     // original behaviour.
     public Vector3[]? Pose;
-    Point? drag;
-    public ModelView(){DoubleBuffered=true;BackColor=Renderer.ViewBackground;SetStyle(ControlStyles.ResizeRedraw,true);}
-    protected override void OnPaint(PaintEventArgs e)
+
+    readonly System.Windows.Controls.Image image=new(){Stretch=System.Windows.Media.Stretch.None,HorizontalAlignment=System.Windows.HorizontalAlignment.Left,VerticalAlignment=System.Windows.VerticalAlignment.Top};
+    readonly System.Windows.Controls.TextBlock placeholder=new(){Text="Generate a body to preview it here",Foreground=System.Windows.Media.Brushes.Silver,HorizontalAlignment=System.Windows.HorizontalAlignment.Center,VerticalAlignment=System.Windows.VerticalAlignment.Center};
+    readonly System.Windows.Controls.TextBlock stats=new(){Foreground=System.Windows.Media.Brushes.LightGray,Margin=new System.Windows.Thickness(16),HorizontalAlignment=System.Windows.HorizontalAlignment.Left,VerticalAlignment=System.Windows.VerticalAlignment.Top};
+    readonly System.Windows.Controls.TextBlock hint=new(){Foreground=System.Windows.Media.Brushes.LightGray,Margin=new System.Windows.Thickness(16),HorizontalAlignment=System.Windows.HorizontalAlignment.Left,VerticalAlignment=System.Windows.VerticalAlignment.Bottom};
+    System.Windows.Point? drag;
+
+    public ModelView()
     {
-        base.OnPaint(e);
-        if(Model==null){TextRenderer.DrawText(e.Graphics,"Generate a body to preview it here",Font,ClientRectangle,Color.Silver,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);return;}
-        using var bitmap=Renderer.Render(Model.Body,Model.Palette,Width,Height,Yaw,Wire,Bones,HeadOnly,Pose,background:Renderer.ViewBackground,gridLine:Renderer.ViewGrid);e.Graphics.DrawImageUnscaled(bitmap,0,0);
-        TextRenderer.DrawText(e.Graphics,$"LBA{Model.Body.Game}  •  {Model.Body.Vertices.Count} points  •  {Model.Body.Faces.Count} polygons  •  {Model.Body.Bones.Count} bones",Font,new Point(16,16),Color.LightGray);
-        TextRenderer.DrawText(e.Graphics,Pose==null?"Drag to rotate  |  Neutral pose  |  Palette colours":"Drag to rotate  |  Animated pose  |  Palette colours",Font,new Point(16,Height-32),Color.LightGray);
+        ClipToBounds=true;
+        // Matches the main app's own 3D viewport (SceneViewBorder in MainWindow.xaml), which retheme the
+        // same way -- the rendered body itself always sits on Renderer.ViewBackground regardless (baked
+        // into the bitmap by Renderer.Render), only the empty margin around it follows the theme.
+        this.SetResourceReference(BackgroundProperty,"ThemeWindowBrush");
+        Children.Add(image);Children.Add(placeholder);Children.Add(stats);Children.Add(hint);
+        MouseDown+=(_,e)=>{drag=e.GetPosition(this);CaptureMouse();};
+        MouseMove+=(_,e)=>{if(drag is {} p){var cur=e.GetPosition(this);Yaw+=(float)(cur.X-p.X)*0.012f;drag=cur;Redraw();}};
+        MouseUp+=(_,_)=>{drag=null;ReleaseMouseCapture();};
+        SizeChanged+=(_,_)=>Redraw();
     }
-    protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);drag=e.Location;Capture=true;}
-    protected override void OnMouseMove(MouseEventArgs e){base.OnMouseMove(e);if(drag is Point p){Yaw+=(e.X-p.X)*0.012f;drag=e.Location;Invalidate();}}
-    protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);drag=null;Capture=false;}
+
+    public void Invalidate()=>Redraw();
+
+    void Redraw()
+    {
+        var w=Math.Max(1,(int)ActualWidth);var h=Math.Max(1,(int)ActualHeight);
+        if(Model is null){image.Source=null;placeholder.Visibility=System.Windows.Visibility.Visible;stats.Text="";hint.Text="";return;}
+        placeholder.Visibility=System.Windows.Visibility.Collapsed;
+        using var bitmap=Renderer.Render(Model.Body,Model.Palette,w,h,Yaw,Wire,Bones,HeadOnly,Pose,background:Renderer.ViewBackground,gridLine:Renderer.ViewGrid);
+        image.Source=ToBitmapSource(bitmap);
+        stats.Text=$"LBA{Model.Body.Game}  •  {Model.Body.Vertices.Count} points  •  {Model.Body.Faces.Count} polygons  •  {Model.Body.Bones.Count} bones";
+        hint.Text=Pose==null?"Drag to rotate  |  Neutral pose  |  Palette colours":"Drag to rotate  |  Animated pose  |  Palette colours";
+    }
+
+    // GetHbitmap() allocates a native GDI bitmap handle that CreateBitmapSourceFromHBitmap does NOT take
+    // ownership of -- DeleteObject it explicitly, or every redraw (a mouse-drag rotate fires many of
+    // these a second) leaks a GDI handle until the process runs out of them.
+    static System.Windows.Media.Imaging.BitmapSource ToBitmapSource(Bitmap bitmap)
+    {
+        var handle=bitmap.GetHbitmap();
+        try
+        {
+            var source=System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(handle,IntPtr.Zero,System.Windows.Int32Rect.Empty,System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+            source.Freeze();
+            return source;
+        }
+        finally{DeleteObject(handle);}
+    }
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr hObject);
 }
 
