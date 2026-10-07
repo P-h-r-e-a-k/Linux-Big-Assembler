@@ -108,6 +108,35 @@ internal sealed class IslandFile
     public byte[] ObjectTexture { get; }
     public byte[] ObjectTail { get; private set; } = Array.Empty<byte>();
     public SortedDictionary<int, IslandCube> Cubes { get; } = new();
+    // More texture pages (256 x 256 each) -- ground pages 1 on, object pages 1 on -- in the entries after the last cube's records: a
+    // header (PagesMagic, how many of each), then the ground pages, then the object pages (the engine's LOADISLE.CPP). A retail island
+    // has none. With them (POLAR.ILE), a ground triangle's texture index has its page in the top bits (GroundPageShift) and its
+    // definition in the cube's list in the rest (TERRAIN.CPP GroundTexDef), and a decor's Body its object page in bits DecorPageShift..
+    // (DECORS.CPP).
+    public List<byte[]> GroundPages { get; } = new();
+    public List<byte[]> ObjectPages { get; } = new();
+    public const int GroundPageShift = 10, MaxGroundPages = 8, MaxObjectPages = 16, DecorPageShift = 18, PagesMagic = 0x45474150;
+    private bool parsedPages;
+
+    // An object texture page (0: ObjectTexture), and a decor's.
+    public byte[] ObjectPage(int page) => page > 0 && page <= ObjectPages.Count ? ObjectPages[page - 1] : ObjectTexture;
+    public static int ObjectPageOf(IslandDecor decor) => (decor.Body >> DecorPageShift) & 15;
+
+    // A ground triangle's texture as its page and its definition in the cube's list. With more ground pages a definition has an eleventh
+    // bit, the triangle's Wide (the engine's Dummy: 2026-10-06, Polar Island at twice LBA1's size had cubes of road needing more than
+    // 1,024 -- the index's other ten bits -- and the page takes the index's top three).
+    public (int Page, int Definition) GroundTextureOf(IslandPolygon polygon) =>
+        GroundPages.Count > 0 ? (polygon.TextureIndex >> GroundPageShift, (polygon.TextureIndex & ((1 << GroundPageShift) - 1)) | (polygon.Wide ? 1 << GroundPageShift : 0))
+            : (0, polygon.TextureIndex);
+    // ... and a triangle given one (a definition of a cube's list, on a page)
+    public IslandPolygon WithGroundTexture(IslandPolygon polygon, int page, int definition) =>
+        GroundPages.Count > 0 ? polygon.With(textureIndex: (page << GroundPageShift) | (definition & ((1 << GroundPageShift) - 1)), wide: definition >> GroundPageShift != 0)
+            : polygon.With(textureIndex: definition);
+    // how many texture definitions a cube may have
+    public int MaxGroundDefinitions => GroundPages.Count > 0 ? 2 << GroundPageShift : 0x2000;
+
+    // A ground texture page (0: GroundTexture).
+    public byte[] GroundPage(int page) => page > 0 && page <= GroundPages.Count ? GroundPages[page - 1] : GroundTexture;
 
     private IslandFile(string path, HqrFile archive, byte[] map, byte[] ground, byte[] objects)
     {
@@ -132,7 +161,11 @@ internal sealed class IslandFile
         };
         file.originalPayloads[0] = mapRecord; file.originalPayloads[1] = ground; file.originalPayloads[2] = objects;
 
-        for (var id = 1; id < 128; id++)
+        // (an island with more texture pages has them after its cubes' records, which then end at the highest cube its map names)
+        var mapped = file.Map.Max();
+        var paged = mapped > 0 && FirstCubeRecord + RecordsPerCube * mapped < hqr.Count && !hqr.IsEmpty(FirstCubeRecord + RecordsPerCube * mapped)
+            && hqr.Read(FirstCubeRecord + RecordsPerCube * mapped) is { Length: 16 } pagesHeader && BinaryPrimitives.ReadInt32LittleEndian(pagesHeader) == PagesMagic;
+        for (var id = 1; id < (paged ? mapped + 1 : 128); id++)
         {
             var start = FirstCubeRecord + RecordsPerCube * (id - 1);
             if (start + RecIntensity >= hqr.Count) break;
@@ -202,6 +235,20 @@ internal sealed class IslandFile
             }
             else cube.HasIntensity = false;
             file.Cubes[id] = cube;
+        }
+        // (the more texture pages: their header after the last cube's records, then them)
+        var first = FirstCubeRecord + RecordsPerCube * file.Map.Max();
+        if (first < hqr.Count && !hqr.IsEmpty(first) && hqr.Read(first) is { Length: 16 } header && BinaryPrimitives.ReadInt32LittleEndian(header) == PagesMagic)
+        {
+            int groundPages = Math.Clamp(BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(4)), 0, MaxGroundPages - 1);
+            int objectPages = Math.Clamp(BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(8)), 0, MaxObjectPages - 1);
+            for (var k = 0; k < groundPages + objectPages && first + 1 + k < hqr.Count; k++)
+            {
+                var page = hqr.Read(first + 1 + k);
+                if (page.Length != 256 * 256) break;
+                (k < groundPages ? file.GroundPages : file.ObjectPages).Add(page);
+            }
+            file.parsedPages = true;
         }
         return file;
     }
@@ -335,6 +382,26 @@ internal sealed class IslandFile
 
             if (cube.HasIntensity) Put(start + RecIntensity, Concat(cube.Intensity, cube.IntensityTail));
         }
+        // the more texture pages, after the last cube's records: their header, then them (and nothing after them); an island that had
+        // them and has them no more loses the entries
+        var firstPage = FirstCubeRecord + RecordsPerCube * Map.Max();
+        if (GroundPages.Count + ObjectPages.Count > 0)
+        {
+            var header = new byte[16];
+            BinaryPrimitives.WriteInt32LittleEndian(header, PagesMagic);
+            BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(4), GroundPages.Count);
+            BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(8), ObjectPages.Count);
+            var entries = GroundPages.Concat(ObjectPages).Prepend(header).ToList();
+            for (var k = 0; k < entries.Count; k++)
+            {
+                var slot = firstPage + k;
+                while (file.Count < slot) file.Slots.Add(new HqrFile.Slot());
+                if (file.Count == slot) file.Add(entries[k]); else file.SetEntry(slot, HqrWriter.StoredEntry(entries[k]));
+            }
+            while (file.Count > firstPage + entries.Count) file.RemoveAt(file.Count - 1);
+        }
+        else if (parsedPages)
+            while (file.Count > firstPage) file.RemoveAt(file.Count - 1);
         return file.ToBytes();
     }
 

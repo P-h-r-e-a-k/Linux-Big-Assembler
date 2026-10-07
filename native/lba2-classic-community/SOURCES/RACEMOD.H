@@ -45,6 +45,7 @@ void RaceMod_Frame(void);
 
 // TRUE while the player's car stands on the grid, before the count-down's GO, and for a moment after a hit (RaceMod_CarHit).
 S32 RaceMod_Held(void);
+S32 RaceMod_FadeFromWhite(void);
 
 // The display (gear, speed, lap times, checkpoints, race position), drawn over the scene while the hero drives.
 void RaceMod_Draw(void);
@@ -85,6 +86,11 @@ S32 RaceMod_StatueShown(S32 risen);
 // While racing, a car that goes into the lava or the sea is put back on the road behind where it was (rescue=0: as in the game, it
 // burns or drowns Twinsen). GereCodesJeu asks: non-zero, and Twinsen is not to die there.
 S32 RaceMod_Rescue(void);
+// Once a frame from the main loop, before the scene is drawn: a sprint's story -- its intro, its end followed up (the dream's waking up or
+// the race again), the wake line (RACEMOD.CPP sprint=, wake=). A new game's first scene: a set's dream=, else `scene`.
+void RaceMod_Story(void);
+S32 RaceMod_NewGameScene(S32 scene);
+
 // While racing, a hit on Twinsen in his car (a land mine) stops the car dead and holds it for a moment, and costs him no life:
 // non-zero when it is such a hit.
 S32 RaceMod_CarHit(void);

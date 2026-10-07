@@ -457,7 +457,11 @@ S32 Triangle_Texture_Solid(U32 typePoly, void *poly) {
     // store on a textured polygon at all. Falling back to a flat, untextured (Solid) fill with that colour is
     // what makes these bodies render as anything at all instead of silently drawing nothing (chroma-key
     // sampling this placeholder slot always reads 0, which the chroma-key test treats as "transparent").
-    if (textureInfo == 0xFFFF0000) {
+    // ONLY in the body preview (g_previewFlattenTransparent, set around its own render): in the game the same value is a real
+    // handle -- the whole page, its UVs anywhere on it -- and the islands' objects use it: Citadel Island's shop door has the shop's
+    // sack drawn over its window by two of these (POLY_TEXTURE_SOLID_INC, OBL body 60), which the fallback turned into two flat
+    // blue-grey panes in the game (the user, 2026-10-07: right in the retail game, wrong in LBA Assembler's Play).
+    if (textureInfo == 0xFFFF0000 && g_previewFlattenTransparent) {
         return Fill_Poly(0 /* POLY_SOLID */, poly3->Couleur & 0xFF, 3, ListFillPoly);
     }
     RepMask = textureInfo >> 16;
@@ -488,8 +492,8 @@ S32 Quad_Texture_Solid(U32 typePoly, void *poly) {
     ListFillPoly[3].Pt_MapV = poly4->V4;
 
     U32 textureInfo = PtrTextures[poly4->HandleText];
-    // See Triangle_Texture_Solid's own matching comment -- same placeholder-handle fallback.
-    if (textureInfo == 0xFFFF0000) {
+    // See Triangle_Texture_Solid's own matching comment -- same placeholder-handle fallback, the body preview's only.
+    if (textureInfo == 0xFFFF0000 && g_previewFlattenTransparent) {
         return Fill_Poly(0 /* POLY_SOLID */, poly4->Couleur & 0xFF, 4, ListFillPoly);
     }
     RepMask = textureInfo >> 16;

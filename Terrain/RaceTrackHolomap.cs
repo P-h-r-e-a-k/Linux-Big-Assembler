@@ -17,8 +17,10 @@ internal static class RaceTrackHolomap
 
     // The picture (and camera) entries of an island: its own, and for Citadel Island the fine-weather one (HOLOPLAN: island 12's slot);
     // Celebration Island with the statue has a picture of its own too (island 13's slot), which the race-track mode shows.
+    // (Polar Island, island 12, has its picture after the retail ones: Polar.PolarHolomap)
     public static int[] Pictures(RaceTrackIsland island) =>
-        island.IslandByte == 0 ? new[] { FirstMap, FirstMap + 2 * 12 }
+        island.IslandByte == LBAAssembler.Terrain.Polar.PolarIsland.IslandByte ? new[] { LBAAssembler.Terrain.Polar.PolarHolomap.PictureEntry }
+        : island.IslandByte == 0 ? new[] { FirstMap, FirstMap + 2 * 12 }
         : island.Statue ? new[] { FirstMap + 2 * 13 }
         : new[] { FirstMap + 2 * island.IslandByte };
 

@@ -52,8 +52,14 @@ internal static class Program
             "buildtrack" => RaceTrackCommand.Run(args),
             "herostart" => RaceTrackCommand.HeroStart(args),
             "racecarfile" => RaceTrackCommand.RaceCarFile(args),
+            "scaleisland" => RaceTrackCommand.ScaleIsland(args),
+            "palettechart" => RaceTrackCommand.PaletteChart(args),
+            "hqrentry" => RaceTrackCommand.HqrEntry(args),
             "buildtwice" => RaceTrackCommand.BuildTwice(args),
             "buildtogether" => RaceTrackCommand.BuildTogether(args),
+            "buildhere" => RaceTrackCommand.BuildHere(args),
+            // trackrestore <game folder>: the race track window's "Put the original files back"
+            "trackrestore" => Echo(LBAAssembler.Terrain.RaceTrackService.Restore(args[1])),
             "sendell" => SendellIsland.Run(args),
             "loopanim" => LoopAnimCommand.Run(args),
             "sceneinfo" => SceneInfoCommand.Run(args),
@@ -71,6 +77,50 @@ internal static class Program
             "scenenames" => RaceTrackCommand.SceneNames(args),
             "footprints" => IslandFootprintStudy.Run(args),
             "islandrender" => IslandRenderCommand.Run(args),
+            "trackmaps" => TrackMapsCommand.Run(args),
+            "castcars" => RaceTrackCommand.CastCars(args),
+            "polarstats" => PolarStudy.Stats(args),
+            "polarzones" => PolarStudy.Zones(args),
+            "polarlayout" => PolarStudy.Layout(args),
+            "polarmountain" => PolarStudy.Mountain(args),
+            "polarblocks" => PolarStudy.Blocks(args),
+            "polarcodes" => PolarStudy.Codes(args),
+            "polarshow" => PolarStudy.Show(args),
+            "polarbrick" => PolarStudy.Brick(args),
+            "polarterrain" => PolarStudy.Terrain(args),
+            "polarinstall" => PolarStudy.Install(args),
+            "polarsea" => PolarStudy.Sea(args),
+            "polarobl" => PolarStudy.Obl(args),
+            "polarobjects" => PolarStudy.Objects(args),
+            "polaratlas" => PolarStudy.AtlasPicture(args),
+            "polarfoot" => PolarStudy.Foot(args),
+            "polarsheet" => PolarStudy.Sheet(args),
+            "polartall" => PolarStudy.Tall(args),
+            "decordiff" => PolarStudy.DecorDiff(args),
+            "defsuse" => PolarStudy.DefsUse(args),
+            "entityanims" => PolarStudy.EntityAnims(args),
+            "gametext" => PolarStudy.Lba2Text(args),
+            "polaradd" => PolarStudy.Add(args),
+            "polarremove" => PolarStudy.Remove(args),
+            "polarsame" => PolarStudy.Same(args),
+            "polarcubes" => PolarStudy.Cubes(args),
+            "polartiles" => PolarStudy.Tiles(args),
+            "polarpalette" => PolarStudy.Palette(args),
+            "polarwater" => PolarStudy.Water(args),
+            "polarview" => PolarStudy.View(args),
+            "polarprobe" => PolarStudy.Probe(args),
+            "polarregion" => PolarStudy.Region(args),
+            "polardark" => PolarStudy.Dark(args),
+            "polarseams" => PolarStudy.Seams(args),
+            "polarseams2" => PolarStudy.Seams2(args),
+            "polaredges" => PolarStudy.Edges(args),
+            "polarexits" => PolarStudy.Exits(args),
+            "polarfit" => PolarStudy.Fit(args),
+            "polarmap" => PolarStudy.Map(args),
+            "polarjoined" => PolarStudy.Joined(args),
+            "polarcolumns" => PolarStudy.ColumnsCsv(args),
+            // bodynames <game folder> [first] [count]: every BODY.HQR entry's name as the actor attributes window shows it (Lba2BodyNames)
+            "bodynames" => BodyNamesCommand.Run(args),
             "islandtexture" => IslandTextureCommand.Run(args),
             "islandfreetex" => IslandFreeTextureCommand.Run(args),
             "islandheights" => IslandHeightsCommand.Run(args),
@@ -85,6 +135,8 @@ internal static class Program
             "trackleftovers" => TrackLeftoverProbe.Run(args),
             "zonedump" => ZoneDumpCommand.Run(args),
             "lba2text" => Lba2TextCommand.Run(args),
+            "lba2sprite" => Lba2SpriteCommand.Run(args),
+            "demo96" => Demo96Command.Run(args),
             "holopos" => HoloPosCommand.Run(args),
             "lba2scriptgrep" => ScriptGrepCommand.Run(args),
             "gloves" => GlovesCommand.Run(args),
@@ -147,6 +199,12 @@ internal static class Program
             "dummybody" => DummyBodyStudy.Run(args),
             "actordump" => ActorDump.Run(args),
             "scriptgrep" => ScriptGrep.Run(args),
+            "scriptgrep2" => ScriptGrep2.Run(args),
+            "buildingprobe" => BuildingProbe.Run(args),
+            "heroarmor" => HeroArmor.Run(args),
+            "bodyfaces" => BodyFaces.Run(args),
+            "decorlist" => DecorList.Run(args),
+            "bodyroundtrip" => BodyRoundTrip.Run(args),
             "doortrace" => DoorTrace.Run(args),
             "scenezones" => SceneZoneDump.Run(args),
             "doorwalk" => DoorWalk.Run(args),
@@ -170,6 +228,12 @@ internal static class Program
             "testedits" => TestEditsSessionTest.Run(args),
             _ => Usage(),
         };
+    }
+
+    private static int Echo(string line)
+    {
+        Console.WriteLine(line);
+        return 0;
     }
 
     private static int Usage()
@@ -364,6 +428,18 @@ internal static class Show
         var syms = new SceneSymbols(rec);
         if (kind == "track") Console.Write(TrackText.Decompile(rec.Track(a).ToArray(), $"scene {scene}, actor {actor} - track script"));
         else Console.Write(LifeText.Decompile(rec.Life(a).ToArray(), actor, syms, $"scene {scene}, actor {actor} - life script"));
+        return 0;
+    }
+}
+
+internal static class BodyNamesCommand
+{
+    public static int Run(string[] args)
+    {
+        var result = LBAAssembler.Lba2BodyNames.For(args[1]);
+        int first = args.Length > 2 ? int.Parse(args[2]) : 0, count = args.Length > 3 ? int.Parse(args[3]) : result.Names.Count;
+        for (var i = first; i < Math.Min(result.Names.Count, first + count); i++) Console.WriteLine($"{i}: {result.Names[i] ?? "(no name)"}");
+        Console.WriteLine($"{result.Names.Count} bodies, {result.Names.Count(n => n is null)} without a name; warning: {result.Warning ?? "none"}");
         return 0;
     }
 }

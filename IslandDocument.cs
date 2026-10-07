@@ -19,6 +19,7 @@ internal sealed class IslandDocument
     private readonly Dictionary<int, short[]> heights;
     private readonly Dictionary<int, uint[]> groundPolygons;
     private readonly Dictionary<int, ushort[]> textureDefinitions;
+    private readonly List<byte[]> groundPages = new();
     private readonly Dictionary<int, byte[]> intensities;
     private readonly Dictionary<int, Decor[]> decors;
 
@@ -76,13 +77,25 @@ internal sealed class IslandDocument
     public short HeightAt(int cubeId, int x, int y) => heights.TryGetValue(cubeId, out var heightMap) ? heightMap[y * 65 + x] : (short)0;
     // the two triangles of a cell are interleaved in the file ([z * 128 + x * 2 + half]), as the engine reads them
     public uint PolygonAt(int cubeId, int x, int z, int half = 0) => groundPolygons.TryGetValue(cubeId, out var polygons) ? polygons[z * 128 + x * 2 + half] : 0;
-    public ushort[]? TextureAt(int cubeId, int index) => textureDefinitions.TryGetValue(cubeId, out var textures) && index * 6 + 5 < textures.Length ? textures[(index * 6)..(index * 6 + 6)] : null;
+    // (an island with more ground pages -- POLAR.ILE -- has a triangle's page in its texture index's top bits: TextureAt takes the
+    // definition, PageOf the page, which ColorAt / ColorAtSmooth sample -- Terrain.IslandFile.GroundTextureOf)
+    // (`key`: the triangle's bits 18 on, TextureKey -- its texture index and, below it, the Wide bit, a definition's eleventh with more
+    // ground pages)
+    public static int TextureKey(uint polygon) => (int)((polygon >> 18) & 0x3FFF);
+    public ushort[]? TextureAt(int cubeId, int key)
+    {
+        var index = key >> 1;
+        if (groundPages.Count > 0) index = (index & ((1 << Terrain.IslandFile.GroundPageShift) - 1)) | ((key & 1) << Terrain.IslandFile.GroundPageShift);
+        return textureDefinitions.TryGetValue(cubeId, out var textures) && index * 6 + 5 < textures.Length ? textures[(index * 6)..(index * 6 + 6)] : null;
+    }
+    public int PageOf(int key) => groundPages.Count > 0 ? (key >> 1) >> Terrain.IslandFile.GroundPageShift : 0;
+    private byte[] Page(int page) => page > 0 && page <= groundPages.Count ? groundPages[page - 1] : GroundTexture;
     public byte IntensityAt(int cubeId, int x, int y) => intensities.TryGetValue(cubeId, out var values) ? (byte)(values[y * 65 + x] & 15) : (byte)15;
-    public Color ColorAt(double u, double v, int lightLevel)
+    public Color ColorAt(double u, double v, int lightLevel, int page = 0)
     {
         var sixBitPalette = Palette.Take(768).Max() <= 63;
         var factor = 0.48 + Math.Clamp(lightLevel, 0, 15) / 15.0 * 0.72;
-        return SampleTexel((int)Math.Round(u), (int)Math.Round(v), sixBitPalette, factor);
+        return SampleTexel((int)Math.Round(u), (int)Math.Round(v), sixBitPalette, factor, page);
     }
 
     // Bilinear-filtered ground texture sample. The ground texture atlas is
@@ -95,7 +108,7 @@ internal sealed class IslandDocument
     // gradient. Blending in RGB space after the palette lookup (not in index
     // space, where adjacent indices aren't necessarily similar colors) is
     // what actually smooths that dithering back into the intended shade.
-    public Color ColorAtSmooth(double u, double v, int lightLevel)
+    public Color ColorAtSmooth(double u, double v, int lightLevel, int page = 0)
     {
         var sixBitPalette = Palette.Take(768).Max() <= 63;
         var factor = 0.48 + Math.Clamp(lightLevel, 0, 15) / 15.0 * 0.72;
@@ -103,10 +116,10 @@ internal sealed class IslandDocument
         var y0 = (int)Math.Floor(v);
         var fx = u - x0;
         var fy = v - y0;
-        var c00 = SampleTexel(x0, y0, sixBitPalette, factor);
-        var c10 = SampleTexel(x0 + 1, y0, sixBitPalette, factor);
-        var c01 = SampleTexel(x0, y0 + 1, sixBitPalette, factor);
-        var c11 = SampleTexel(x0 + 1, y0 + 1, sixBitPalette, factor);
+        var c00 = SampleTexel(x0, y0, sixBitPalette, factor, page);
+        var c10 = SampleTexel(x0 + 1, y0, sixBitPalette, factor, page);
+        var c01 = SampleTexel(x0, y0 + 1, sixBitPalette, factor, page);
+        var c11 = SampleTexel(x0 + 1, y0 + 1, sixBitPalette, factor, page);
         var topR = Lerp(c00.R, c10.R, fx); var topG = Lerp(c00.G, c10.G, fx); var topB = Lerp(c00.B, c10.B, fx);
         var botR = Lerp(c01.R, c11.R, fx); var botG = Lerp(c01.G, c11.G, fx); var botB = Lerp(c01.B, c11.B, fx);
         return Color.FromRgb(Lerp(topR, botR, fy), Lerp(topG, botG, fy), Lerp(topB, botB, fy));
@@ -114,11 +127,11 @@ internal sealed class IslandDocument
 
     private static byte Lerp(byte a, byte b, double t) => (byte)Math.Round(a + (b - a) * t);
 
-    private Color SampleTexel(int x, int y, bool sixBitPalette, double factor)
+    private Color SampleTexel(int x, int y, bool sixBitPalette, double factor, int page = 0)
     {
         x = Math.Clamp(x, 0, 255);
         y = Math.Clamp(y, 0, 255);
-        var sourceIndex = GroundTexture[y * 256 + x];
+        var sourceIndex = Page(page)[y * 256 + x];
         var paletteIndex = sourceIndex * 3;
         return Color.FromRgb(
             ShadeColor(Palette[paletteIndex], sixBitPalette, factor),
@@ -141,7 +154,12 @@ internal sealed class IslandDocument
         var textureDefinitions = new Dictionary<int, ushort[]>();
         var intensities = new Dictionary<int, byte[]>();
         var decors = new Dictionary<int, Decor[]>();
-        for (var cubeId = 1; cubeId < 128; cubeId++)
+        // (an island with more texture pages has them after its cubes' records, which then end at the highest cube its map names:
+        // IslandFile.PagesMagic)
+        var mapped = map.Take(MapSize * MapSize).Max();
+        var lastCube = mapped > 0 && 3 + 6 * mapped < archive.Slots && archive.IsValid(3 + 6 * mapped) && archive.Read(3 + 6 * mapped) is { Length: 16 } header
+            && BinaryPrimitives.ReadInt32LittleEndian(header) == Terrain.IslandFile.PagesMagic ? mapped : 127;
+        for (var cubeId = 1; cubeId <= lastCube; cubeId++)
         {
             var recordIndex = 7 + (cubeId - 1) * 6;
             // (past the island's records the "slots" are bytes of its first record: a nuke's rewrite of it made one look like a cube)
@@ -191,7 +209,20 @@ internal sealed class IslandDocument
                 if (intensityRecord.Length >= 65 * 65) intensities[cubeId] = intensityRecord[..(65 * 65)];
             }
         }
-        return new IslandDocument(path, map, ground, objects, heights, groundPolygons, textureDefinitions, intensities, decors, palette is { Length: >= 768 } ? palette : DefaultPalette(), shadeTable, shadeLevel);
+        var document = new IslandDocument(path, map, ground, objects, heights, groundPolygons, textureDefinitions, intensities, decors, palette is { Length: >= 768 } ? palette : DefaultPalette(), shadeTable, shadeLevel);
+        // (the more ground pages, after the page header)
+        if (lastCube < 127)
+        {
+            var pagesHeader = archive.Read(3 + 6 * lastCube);
+            var count = Math.Clamp(BinaryPrimitives.ReadInt32LittleEndian(pagesHeader.AsSpan(4)), 0, Terrain.IslandFile.MaxGroundPages - 1);
+            for (var k = 0; k < count && archive.IsValid(4 + 6 * lastCube + k); k++)
+            {
+                var page = archive.Read(4 + 6 * lastCube + k);
+                if (page.Length != 256 * 256) break;
+                document.groundPages.Add(page);
+            }
+        }
+        return document;
     }
 
     private static byte[] DefaultPalette() => Enumerable.Repeat((byte)0, 768).ToArray();

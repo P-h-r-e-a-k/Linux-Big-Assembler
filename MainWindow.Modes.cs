@@ -97,7 +97,7 @@ public partial class MainWindow
         // While test edits are active that folder is the scratch mirror (EditorSettings.TestModeActive), not the
         // real one -- called out here too, not just in the status line, since the title stays on screen no matter
         // which tab or dialog has focus.
-        var testPrefix = TestEditsActive ? "[Testing -- not saved to the real game folder]  " : "";
+        var testPrefix = TestEditsActive ? "[Testing -- not saved to the real game folder]  " : Demo96Active ? "[The 1996 LBA2 demo]  " : "";
         Title = $"LBA Assembler  -  {testPrefix}{(currentGame == GameKind.Lba1 ? EditorSettings.Current.Lba1Directory : gameRoot)}";
         BuildViewBar.Visibility = TerrainEditable ? Visibility.Visible : Visibility.Collapsed;
         var wantTerrain = editMode == EditMode.Build && buildTerrainView && TerrainEditable && ShowTerrainEditor();
@@ -324,7 +324,19 @@ public partial class MainWindow
         finally { actorsInViewListSyncing = false; }
     }
 
-    private void ActorsInViewList_DoubleClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void ActorsInViewList_DoubleClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => OpenSelectedActorInView();
+
+    // (the same without a mouse: the header's open button -- which UI Automation can press -- and Enter on the list)
+    private void ActorsInViewOpen_Click(object? sender, RoutedEventArgs e) => OpenSelectedActorInView();
+
+    private void ActorsInViewList_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        OpenSelectedActorInView();
+        e.Handled = true;
+    }
+
+    private void OpenSelectedActorInView()
     {
         if (ActorsInViewList.SelectedItem is not ListBoxItem { Tag: int index }) return;
         if (currentGame == GameKind.Lba1) OpenLba1ActorWindow(index);

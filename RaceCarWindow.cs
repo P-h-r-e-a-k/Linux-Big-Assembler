@@ -13,6 +13,8 @@ internal sealed class RaceCarWindow : Window
     private readonly RaceCarSetup setup = EditorSettings.Current.RaceCar.Clone();
     private readonly ComboBox preset = new() { MinWidth = 320 };
     private readonly ComboBox gears = new() { Width = 70 };
+    // the car Twinsen drives: his buggy, or one of the opponents' cars the folder has (RaceCarSetup.DriveAs)
+    private readonly ComboBox driveAs = new() { MinWidth = 320 };
     private readonly StackPanel gearRows = new();
     private readonly List<(Control Row, Slider Slider)> gearSliders = new();
     private readonly CheckBox automatic = new() { Content = "Automatic gearbox (the gears change by themselves)" };
@@ -24,7 +26,7 @@ internal sealed class RaceCarWindow : Window
     private readonly CheckBox newGame = new() { Content = "Play the story from a new game, every track raced where and when the game is", ToolTip = "Twinsen starts in his house. Citadel Island's storm track is raced in the rain, its town circuit once the storm is over and Twinsen has slept; each other island's track on its island." };
     private readonly CheckBox fightBack = new() { Content = "They push harder when they fall behind you" };
     private readonly CheckBox penguinsWalk = new() { Content = "Penguins walk the track until a car comes near (off: they go off a second after they are dropped)", Margin = new Thickness(18, 2, 0, 0) };
-    private readonly CheckBox powerUps = new() { Content = "Power-ups in the mushrooms along the track", ToolTip = "Rows of small brown mushrooms across the road, each with a power-up inside: Gazogem fuel, the protection spell, the lightning spell, a nitro penguin (it goes off at whatever it runs into), the super jet-pack (the game drives, at twice the speed), the jet-pack (the game drives, at one and a half times it) or oil (whoever drives over it skids). A car takes one from a row; the cars at the back get the jet-packs and lightning, the ones in front penguins and oil. They grow back. Yours go into the item box at the top left (two slots, a roulette picks each): Shift uses the selected one, Q selects the other." };
+    private readonly CheckBox powerUps = new() { Content = "Power-ups in the mushrooms along the track", ToolTip = "Rows of small brown mushrooms across the road, each with a power-up inside: Gazogem fuel, the protection spell, the lightning spell, a nitro penguin (it goes off at whatever it runs into), the super jet-pack (the car turns into the jet-pack and the game drives it at twice the speed, through or past any car in its way) or oil (whoever drives over it skids). A car takes one from a row; the cars at the back get the super jet-pack and lightning, the ones in front penguins and oil. They grow back. Yours go into the item box at the top left (two slots, a roulette picks each): Shift uses the selected one, Q selects the other." };
     private readonly CheckBox qualifying = new() { Content = "Drive a qualifying lap first: the times set the grid" };
     private readonly CheckBox showCheckpoints = new() { Content = "Show the checkpoints as red lines across the road (for testing)", ToolTip = "One checkpoint in the middle of every corner, reaching a little past the road's edges: a lap counts once you have crossed them all, so cutting a corner doesn't pay, and running wide or overtaking on the edge still counts." };
     private readonly CheckBox fineWeather = new() { Content = "Stop the rain on Citadel Island (the weather after the lighthouse, when the aliens land)", ToolTip = "No rain or thunder, the brighter island with its own light and sky. Only the weather changes: the story stays where it is." };
@@ -34,6 +36,9 @@ internal sealed class RaceCarWindow : Window
     private readonly bool? trackWeather;
     private readonly CheckBox startAtLine = new() { Content = "Start beside the car on the start/finish straight, with the editor's markings hidden" };
     private readonly List<Action> refresh = new();
+    private readonly TabControl tabs = new() { Margin = new Thickness(0, 0, 0, 0) };
+    // the tab last shown, for the next time the window opens (this session)
+    private static int lastTab;
     private bool updating;
 
     public RaceCarWindow(bool forPlay, string? gameDirectory = null, Terrain.RaceTrackService.TrackInfo? track = null)
@@ -48,32 +53,50 @@ internal sealed class RaceCarWindow : Window
                 : "Citadel Island in the rain: its storm track is raced";
             fineWeather.ToolTip = "This folder has a Citadel Island track in each weather: Play races the one of the island file open in the editor (CITADEL.ILE the storm track, CITABAU.ILE the town circuit), in its own weather.";
         }
-        Width = 560; SizeToContent = SizeToContent.Height; MinWidth = 480;
+        Width = 640; SizeToContent = SizeToContent.Height; MinWidth = 520;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         CanResize = false;
         this.SetResourceReference(BackgroundProperty, "ThemeWindowBrush");
         this.SetResourceReference(ForegroundProperty, "ThemeTextBrush");
 
+        // (2026-10-06: in tabs -- it had grown taller than the screen as one column)
         var root = new StackPanel { Margin = new Thickness(16) };
-        root.Children.Add(Text("How the buggy drives when you play a game folder that has a race track built. X shifts up a gear and Z down (unless the gearbox " +
-                               "is automatic); each gear has its own top speed, and a low gear pulls harder than a high one. Speeds are as the game's display shows " +
-                               "them, a cell taken as a metre: the original buggy tops out at 27 km/h. A lap counts once you have crossed every checkpoint (one " +
-                               "in the middle of each corner) and the start line again; the opponents (each track's own drivers in the cars made after them, or the original track's racer, Baldino and the motorbike Rabbibunny) line up with you on the grid and start on the count-down. " +
-                               "Other game folders play the game as it is."));
+        root.Children.Add(Text("How the buggy drives when you play a game folder that has a race track built; other game folders play the game as it is.",
+                               new Thickness(0, 0, 0, 8)));
+        var car = Page(); var gearbox = Page(); var race = Page(); var play = Page();
 
-        root.Children.Add(Section("Start from"));
+        // ---- the car: which one, a preset, its handling
+        car.Children.Add(Section("Your car", first: true));
+        car.Children.Add(Text("Drive the track in Twinsen's buggy, or in any of the opponents' cars the folder has -- to try a track in it. " +
+                              "It handles as this setup makes the car.", new Thickness(0, 0, 0, 4)));
+        foreach (var (generic, name) in DrivableCars(gameDirectory)) driveAs.Items.Add(new ComboBoxItem { Content = name, Tag = generic });
+        driveAs.SelectionChanged += (_, _) => { if (!updating && driveAs.SelectedItem is ComboBoxItem { Tag: int generic }) setup.DriveAs = generic; };
+        car.Children.Add(driveAs);
+
+        car.Children.Add(Section("Start from"));
         foreach (var p in RaceCarSetup.Presets) preset.Items.Add(new ComboBoxItem { Content = p.Name, Tag = p });
         preset.Items.Add(new ComboBoxItem { Content = "Custom" });
         preset.SelectionChanged += (_, _) => PresetChosen();
-        root.Children.Add(preset);
+        car.Children.Add(preset);
 
-        root.Children.Add(Section("Gearbox"));
+        car.Children.Add(Section("Handling (the original buggy is 100 %)"));
+        car.Children.Add(SliderRow("Acceleration", 25, 300, 5, " %", () => setup.AccelerationPercent, v => setup.AccelerationPercent = (int)v).Row);
+        car.Children.Add(SliderRow("Braking", 25, 300, 5, " %", () => setup.BrakingPercent, v => setup.BrakingPercent = (int)v).Row);
+        car.Children.Add(SliderRow("Rolling to a stop (off the throttle)", 0, 300, 5, " %", () => setup.CoastingPercent, v => setup.CoastingPercent = (int)v).Row);
+        car.Children.Add(SliderRow("Steering", 50, 200, 5, " %", () => setup.SteeringPercent, v => setup.SteeringPercent = (int)v).Row);
+        car.Children.Add(SliderRow("Top speed backwards", 5, 40, 1, " km/h", () => setup.ReverseKmh, v => setup.ReverseKmh = (int)v).Row);
+
+        // ---- the gearbox
+        gearbox.Children.Add(Section("Gearbox", first: true));
+        gearbox.Children.Add(Text("X shifts up a gear and Z down, unless the gearbox is automatic. Each gear has its own top speed, and a low gear pulls " +
+                                  "harder than a high one. Speeds are as the game's display shows them, a cell taken as a metre: the original buggy " +
+                                  "tops out at 27 km/h.", new Thickness(0, 0, 0, 6)));
         for (var g = 1; g <= RaceCarSetup.MaxGears; g++) gears.Items.Add(g);
         gears.SelectionChanged += (_, _) => { if (updating || gears.SelectedItem is not int count) return; setup.Gears = count; ShowGearRows(); Edited(); };
         var gearCount = new StackPanel { Orientation = Orientation.Horizontal };
         gearCount.Children.Add(Text("Gears:", new Thickness(0, 0, 8, 0)));
         gearCount.Children.Add(gears);
-        root.Children.Add(gearCount);
+        gearbox.Children.Add(gearCount);
         for (var g = 0; g < RaceCarSetup.MaxGears; g++)
         {
             var gear = g;
@@ -85,26 +108,20 @@ internal sealed class RaceCarWindow : Window
             gearSliders.Add((row, slider));
             gearRows.Children.Add(row);
         }
-        root.Children.Add(gearRows);
+        gearbox.Children.Add(gearRows);
         automatic.Checked += (_, _) => { setup.Automatic = true; Edited(); };
         automatic.Unchecked += (_, _) => { setup.Automatic = false; Edited(); };
         automatic.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(automatic);
+        gearbox.Children.Add(automatic);
 
-        root.Children.Add(Section("Handling (the original buggy is 100 %)"));
-        root.Children.Add(SliderRow("Acceleration", 25, 300, 5, " %", () => setup.AccelerationPercent, v => setup.AccelerationPercent = (int)v).Row);
-        root.Children.Add(SliderRow("Braking", 25, 300, 5, " %", () => setup.BrakingPercent, v => setup.BrakingPercent = (int)v).Row);
-        root.Children.Add(SliderRow("Rolling to a stop (off the throttle)", 0, 300, 5, " %", () => setup.CoastingPercent, v => setup.CoastingPercent = (int)v).Row);
-        root.Children.Add(SliderRow("Steering", 50, 200, 5, " %", () => setup.SteeringPercent, v => setup.SteeringPercent = (int)v).Row);
-        root.Children.Add(SliderRow("Top speed backwards", 5, 40, 1, " km/h", () => setup.ReverseKmh, v => setup.ReverseKmh = (int)v).Row);
-
-        root.Children.Add(Section("Race"));
-        root.Children.Add(Text("The opponents drive this car, set up as above, on racing lines of their own: 100 % skill drives it perfectly, " +
-                               "faster than you can; a little less gives a close race. The race starts with a count-down from the grid; with " +
-                               "qualifying, your first timed lap decides where you start.", new Thickness(0, 0, 0, 4)));
+        // ---- the opponents and the race
+        race.Children.Add(Section("Opponents", first: true));
+        race.Children.Add(Text("The opponents -- each track's own drivers in the cars made after them, or the original track's racer, Baldino and the motorbike " +
+                               "Rabbibunny -- drive this car, set up as on the other tabs, on racing lines of their own: 100 % skill drives it perfectly, faster than " +
+                               "you can; a little less gives a close race.", new Thickness(0, 0, 0, 4)));
         opponent.Checked += (_, _) => setup.Opponent = true;
         opponent.Unchecked += (_, _) => setup.Opponent = false;
-        root.Children.Add(opponent);
+        race.Children.Add(opponent);
         // (the drivers of the track Play races: each one's own box)
         var raced = gameDirectory is null ? null : track ?? Terrain.RaceTrackService.ReadInfo(gameDirectory);
         foreach (var name in DriverNames(raced is null ? null : Terrain.RaceTrackService.Raced(raced)))
@@ -115,50 +132,67 @@ internal sealed class RaceCarWindow : Window
             box.SetResourceReference(ForegroundProperty, "ThemeTextBrush");
             drivers.Children.Add(box);
         }
-        if (drivers.Children.Count > 0) root.Children.Add(drivers);
-        root.Children.Add(SliderRow("The one to beat's skill", 50, 120, 1, " %", () => setup.MainSkill, v => setup.MainSkill = (int)v).Row);
-        root.Children.Add(Text($"Each track has one opponent you have to beat; the others' skills are drawn at random each race, from {Terrain.RaceCarEngineFile.RandomBelow} points under this to {Terrain.RaceCarEngineFile.RandomAbove} over it.", new Thickness(0, 0, 0, 4)));
+        if (drivers.Children.Count > 0) race.Children.Add(drivers);
+        race.Children.Add(SliderRow("The one to beat's skill", 50, 120, 1, " %", () => setup.MainSkill, v => setup.MainSkill = (int)v).Row);
+        race.Children.Add(Text($"Each track has one opponent you have to beat; the others' skills are drawn at random each race, from {Terrain.RaceCarEngineFile.RandomBelow} points under this to {Terrain.RaceCarEngineFile.RandomAbove} over it.", new Thickness(0, 0, 0, 4)));
         fightBack.Checked += (_, _) => setup.OpponentsFightBack = true;
         fightBack.Unchecked += (_, _) => setup.OpponentsFightBack = false;
         fightBack.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(fightBack);
+        race.Children.Add(fightBack);
+
+        race.Children.Add(Section("The race"));
+        race.Children.Add(Text("The race starts with a count-down from the grid. A lap counts once you have crossed every checkpoint (one in the middle of " +
+                               "each corner) and the start line again.", new Thickness(0, 0, 0, 4)));
+        qualifying.Checked += (_, _) => setup.Qualifying = true;
+        qualifying.Unchecked += (_, _) => setup.Qualifying = false;
+        race.Children.Add(qualifying);
         powerUps.Checked += (_, _) => setup.PowerUps = true;
         powerUps.Unchecked += (_, _) => setup.PowerUps = false;
         powerUps.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(powerUps);
+        race.Children.Add(powerUps);
         penguinsWalk.Checked += (_, _) => setup.PenguinsWalk = true;
         penguinsWalk.Unchecked += (_, _) => setup.PenguinsWalk = false;
-        root.Children.Add(penguinsWalk);
-        qualifying.Checked += (_, _) => setup.Qualifying = true;
-        qualifying.Unchecked += (_, _) => setup.Qualifying = false;
-        qualifying.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(qualifying);
-        fineWeather.Checked += (_, _) => { if (trackWeather is null) setup.FineWeather = true; };
-        fineWeather.Unchecked += (_, _) => { if (trackWeather is null) setup.FineWeather = false; };
-        fineWeather.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(fineWeather);
+        race.Children.Add(penguinsWalk);
+
+        // ---- how Play starts, and what is on screen
+        play.Children.Add(Section("Starting", first: true));
         startAtLine.Checked += (_, _) => setup.StartAtLine = true;
         startAtLine.Unchecked += (_, _) => setup.StartAtLine = false;
-        startAtLine.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(startAtLine);
+        play.Children.Add(startAtLine);
         newGame.Checked += (_, _) => setup.NewGame = true;
         newGame.Unchecked += (_, _) => setup.NewGame = false;
         newGame.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(newGame);
+        play.Children.Add(newGame);
+        fineWeather.Checked += (_, _) => { if (trackWeather is null) setup.FineWeather = true; };
+        fineWeather.Unchecked += (_, _) => { if (trackWeather is null) setup.FineWeather = false; };
+        fineWeather.Margin = new Thickness(0, 4, 0, 0);
+        play.Children.Add(fineWeather);
 
-        root.Children.Add(Section("On screen"));
+        play.Children.Add(Section("On screen"));
         display.Checked += (_, _) => setup.ShowDisplay = true;
         display.Unchecked += (_, _) => setup.ShowDisplay = false;
         askBeforePlay.Checked += (_, _) => setup.AskBeforePlay = true;
         askBeforePlay.Unchecked += (_, _) => setup.AskBeforePlay = false;
-        root.Children.Add(display);
+        play.Children.Add(display);
         showCheckpoints.Checked += (_, _) => setup.ShowCheckpoints = true;
         showCheckpoints.Unchecked += (_, _) => setup.ShowCheckpoints = false;
         showCheckpoints.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(showCheckpoints);
+        play.Children.Add(showCheckpoints);
         askBeforePlay.Margin = new Thickness(0, 4, 0, 0);
-        root.Children.Add(askBeforePlay);
+        play.Children.Add(askBeforePlay);
         foreach (var c in new Control[] { automatic, display, showCheckpoints, askBeforePlay, opponent, fightBack, powerUps, penguinsWalk, qualifying, fineWeather, startAtLine, newGame }) c.SetResourceReference(ForegroundProperty, "ThemeTextBrush");
+
+        foreach (var (header, page) in new[] { ("Car", car), ("Gearbox", gearbox), ("Opponents", race), ("Play", play) })
+            tabs.Items.Add(new TabItem
+            {
+                Header = header,
+                Content = new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
+            });
+        tabs.SelectedIndex = Math.Clamp(lastTab, 0, tabs.Items.Count - 1);
+        tabs.SelectionChanged += (_, e) => { if (ReferenceEquals(e.OriginalSource, tabs)) lastTab = tabs.SelectedIndex; };
+        root.Children.Add(tabs);
+        // (every tab as tall as the tallest, so the window keeps its size from tab to tab -- as tall as the screen allows, and scrolled past that)
+        Loaded += (_, _) => EvenTabs();
 
         var ok = new Button { Content = forPlay ? "Play" : "Save", Padding = new Thickness(18, 5, 18, 5), IsDefault = true, Margin = new Thickness(0, 0, 10, 0) };
         var cancel = new Button { Content = "Cancel", Padding = new Thickness(14, 5, 14, 5), IsCancel = true };
@@ -186,10 +220,32 @@ internal sealed class RaceCarWindow : Window
         qualifying.IsChecked = setup.Qualifying;
         fineWeather.IsChecked = trackWeather ?? setup.FineWeather;
         startAtLine.IsChecked = setup.StartAtLine;
+        driveAs.SelectedItem = driveAs.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is int g && g == setup.DriveAs) ?? driveAs.Items.OfType<ComboBoxItem>().FirstOrDefault();
         foreach (var r in refresh) r();
         ShowGearRows();
         preset.SelectedIndex = MatchingPreset();
         updating = false;
+    }
+
+    // The cars Twinsen can drive (RaceCarSetup.DriveAs): his buggy, and the racer entity's cars the folder's entity table has -- the
+    // retail racer's, Baldino's rocket car and the cars made after the characters (Terrain.RaceTrackCharacterCars) -- by name.
+    private static List<(int Generic, string Name)> DrivableCars(string? gameDirectory)
+    {
+        var list = new List<(int, string)> { (-1, "Twinsen's buggy") };
+        // (a folder built since 2026-10-05: every car by its number, the cast's too -- RACECARS.JSON)
+        if (gameDirectory is not null && Terrain.RaceTrackCharacterCars.Catalogue(gameDirectory) is { Count: > 0 } listed)
+        {
+            list.AddRange(listed.Select(e => (e.Number, $"{e.Number}: {e.Name} ({e.Driver})")));
+            return list;
+        }
+        var racer = gameDirectory is null ? null : Lba2EntityTable.Load(gameDirectory)?.Entities.FirstOrDefault(e => e.Id == Terrain.RaceTrackScenes.RacerEntity);
+        if (racer is null) return list;
+        var has = racer.Bodies.Select(b => b.Generic).ToHashSet();
+        var names = new Dictionary<int, string> { [0] = "The racer's car (the original track's racer)", [1] = "Baldino's rocket car" };
+        foreach (var c in Terrain.RaceTrackCharacterCars.All) names.TryAdd(c.Generic, $"{c.Name} ({c.Driver})");
+        foreach (var (generic, name) in names.OrderBy(n => n.Key))
+            if (has.Contains(generic)) list.Add((generic, $"{generic}: {name}"));
+        return list;
     }
 
     // The drivers of a track that have a car (a time to beat has none): its line-up, or (a track built before the line-ups) the retail
@@ -284,9 +340,35 @@ internal sealed class RaceCarWindow : Window
         return t;
     }
 
-    private TextBlock Section(string text)
+    // A tab's page.
+    private static StackPanel Page() => new() { Margin = new Thickness(10, 8, 10, 10) };
+
+    // Every tab's page as tall as the tallest (each measured at the width the shown one has), up to what fits on the screen with the rest
+    // of the window round it; a page taller than that scrolls.
+    private void EvenTabs()
     {
-        var t = new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 4) };
+        if (tabs.SelectedContent is not ScrollViewer shown) return;
+        var width = shown.ActualWidth;
+        double most = 0;
+        // (the gearbox's page with every gear's row: choosing more gears doesn't make it scroll)
+        foreach (var (row, _) in gearSliders) row.Visibility = Visibility.Visible;
+        foreach (var item in tabs.Items.OfType<TabItem>())
+            if (item.Content is ScrollViewer { Content: Control page })
+            {
+                page.Measure(new Size(width, double.PositiveInfinity));
+                most = Math.Max(most, page.DesiredSize.Height);
+            }
+        ShowGearRows();
+        // (Avalonia has no SystemParameters, and reports the work area in physical pixels: the same conversion RaceTrackWindow does)
+        var workArea = (Screens?.Primary ?? Screens?.All.FirstOrDefault()) is { } screen ? screen.WorkingArea.Height / screen.Scaling : 1080;
+        var room = workArea - (this.ActualHeight - shown.ActualHeight) - 24;
+        foreach (var item in tabs.Items.OfType<TabItem>())
+            if (item.Content is ScrollViewer viewer) viewer.Height = Math.Max(160, Math.Min(Math.Ceiling(most) + 2, room));
+    }
+
+    private TextBlock Section(string text, bool first = false)
+    {
+        var t = new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, first ? 0 : 12, 0, 4) };
         t.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
         return t;
     }

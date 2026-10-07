@@ -259,31 +259,59 @@ internal static partial class RaceTrackCharacterCars
 
     // ---------------------------------------------------------------------------------------------------------------- Island of the Wannies
 
-    // The old Wannie in one of the family's firefly tarts: a round tart, its crust crimped all round, the fireflies still flying over it.
+    // The old Wannie in a slice of the family's firefly tart, as the game's own slice of tart is (OBJFIX.HQR 25, the inventory's "Slice of
+    // Tart"): a wedge, its point forward -- pastry under a pink layer and the filling's dark edge, the red filling on top -- the crust
+    // standing up along its wide end at the back, and three cream domes on the filling. (Before 2026-10-06 it was the whole round tart.)
     public static Body BuildTart(Body wannie, Body racer)
     {
         var m = new CarMesh(Tart.Name);
         Roots(m);
-        var hull = Lens(m, 270, 10, 470, 105, 90, new[] { 445f, 370, 245, 100, -100, -245, -370, -445 });
-        hull.Skin(m, (_, k) => k is 0 or 9 ? Gold : k is 1 or 8 ? Gold - 2 : Cream);
-        hull.Nose(m, 472, Cream);
-        hull.Tail(m, -472, Cream);
-        for (var i = 0; i < 14; i++)
+        // (soft-lit: the light keeps each layer inside its few colours -- the pink at the end of the red ramp, the pastry's tan)
+        m.Light = SoftLight;
+        const float Point = 560, Back = -470, HalfBack = 460;
+        static float HalfAt(float z) => MathF.Max(18, HalfBack * (Point - z) / (Point - Back));
+        // the layers' heights from the pastry's underside to the filling's top, and the side's bands between them
+        var levels = new[] { 180f, 226f, 270f, 298f };
+        var bands = new[] { Wood + 5, Pink, Red - 2 };
+        var zs = new[] { 548f, 430, 300, 160, 20, -140, -300, -470 };
+        int n = zs.Length, l = levels.Length;
+        var right = new int[n, l]; var left = new int[n, l]; var top = new int[n, 4];
+        for (var i = 0; i < n; i++)
         {
-            var a = (i + 0.5f) * MathF.Tau / 14;
-            m.Ball(2, new(455 * MathF.Sin(a), hull.Cy + 38, 455 * MathF.Cos(a)), 46, 42);
+            var hw = HalfAt(zs[i]);
+            for (var j = 0; j < l; j++) { right[i, j] = m.P(2, new(hw, levels[j], zs[i])); left[i, j] = m.P(2, new(-hw, levels[j], zs[i])); }
+            top[i, 0] = left[i, l - 1]; top[i, 3] = right[i, l - 1];
+            top[i, 1] = m.P(2, new(-hw / 3, levels[^1], zs[i])); top[i, 2] = m.P(2, new(hw / 3, levels[^1], zs[i]));
         }
-        foreach (var (x, z, h) in new[] { (-220f, 250f, 170f), (180, 300, 240), (-60, 360, 120), (260, -120, 200), (-270, -160, 150), (90, -330, 230), (-120, -300, 110) })
+        for (var i = 0; i + 1 < n; i++)
         {
-            var foot = hull.OnTop(x, z); var fly = foot + new Vector3(15, h, -10);
-            m.Rod(2, foot, fly, Dark + 4);
-            m.Ball(2, fly, 20, Yellow);
+            var mid = (zs[i] + zs[i + 1]) / 2;
+            for (var j = 0; j + 1 < l; j++)
+            {
+                var inside = new Vector3(0, (levels[j] + levels[j + 1]) / 2, mid);
+                m.Out(new[] { right[i, j], right[i + 1, j], right[i + 1, j + 1], right[i, j + 1] }, bands[j], inside);
+                m.Out(new[] { left[i, j], left[i + 1, j], left[i + 1, j + 1], left[i, j + 1] }, bands[j], inside);
+            }
+            for (var c = 0; c < 3; c++) m.Up(new[] { top[i, c], top[i, c + 1], top[i + 1, c + 1], top[i + 1, c] }, Red + 4);
+            m.Out(new[] { right[i, 0], left[i, 0], left[i + 1, 0], right[i + 1, 0] }, Wood + 2, new Vector3(0, 400, mid));
         }
+        // the point's end and the wide end, closed
+        for (var j = 0; j + 1 < l; j++)
+        {
+            m.Out(new[] { left[0, j], right[0, j], right[0, j + 1], left[0, j + 1] }, bands[j], new Vector3(0, levels[j], Point - 100));
+            m.Out(new[] { left[n - 1, j], right[n - 1, j], right[n - 1, j + 1], left[n - 1, j + 1] }, bands[j], new Vector3(0, levels[j], Back + 100));
+        }
+        // the crust along the wide end, standing up behind the filling
+        m.Box(2, new Vector3(0, 290, Back - 25), new Vector3(2 * HalfBack + 30, 220, 80), Wood + 4, Wood + 7);
+        // the cream domes on the filling: one towards the point, two by the crust
+        foreach (var (x, z, r) in new[] { (0f, 330f, 72), (-255, -330, 84), (255, -330, 84) })
+            m.Ball(2, new(x, levels[^1] + 18, z), r, CreamFlat);
+        var hull = new Hull(m, 238, 4, 8, 0.5f, (Point, 18, levels[^1] - 238, 238 - levels[0]), (Back, HalfBack, levels[^1] - 238, 238 - levels[0]));
         return Finish(m, hull, wannie, racer,
             new Driver(new Vector3(0, 775, -40), 0.62f, (7, new[] { 8, 9, 10 }), (12, new[] { 13 }), new[] { 15 }, Reach: 250, GripHeight: 60, GripX: 120),
-            new Cabin(20, 235, 195, Rim: Cream, Wheel: Wood, WheelLine: 22),
+            new Cabin(-150, 200, 170, Rim: Red - 2, Wheel: Wood, WheelLine: 22),
             new WheelLook(Wood, 24, Brown, 1, Cream, 1, GoldFlat),
-            new Axle(new Vector3(210, 225, 300), new Vector3(430, 125, 300), 125, 85), new Axle(new Vector3(210, 225, -300), new Vector3(430, 125, -300), 125, 85));
+            new Axle(new Vector3(95, 225, 280), new Vector3(290, 125, 280), 125, 85), new Axle(new Vector3(360, 225, -285), new Vector3(495, 125, -285), 125, 85));
     }
 
     // The Wannie miner on the mine's bulldozer: yellow, its blade out in front, an exhaust stack puffing, a bar over his head.

@@ -29,6 +29,9 @@ public partial class App : Application
         ThemeManager.Apply(ThemeManager.Parse(EditorSettings.Current.Theme));
         // Point the native engine's own log at the same file (it stays silent without this).
         Environment.SetEnvironmentVariable("LBA2_EDITOR_DEBUG_LOG", DebugLog.LogFile);
+        // ... and its native crash log (RENDERER_API.CPP: a native fault's code, address and stack) beside it, unless a test names its own
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("LBA2_RENDERER_CRASHLOG")))
+            Environment.SetEnvironmentVariable("LBA2_RENDERER_CRASHLOG", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(DebugLog.LogFile) ?? AppContext.BaseDirectory, "native-crash.log"));
         DebugLog.Log($"App: startup (version {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version})");
         Dispatcher.UIThread.UnhandledException += (_, args) =>
         {

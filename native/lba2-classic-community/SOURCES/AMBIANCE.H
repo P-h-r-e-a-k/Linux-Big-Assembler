@@ -100,6 +100,7 @@ extern void FadeToBlack(U8 *ptrpal);
 extern void WhiteFade(void);
 /*--------------------------------------------------------------------------*/
 extern void FadeWhiteToPal(U8 *ptrpal);
+extern void FadeWhiteToPalAndSamples(U8 *ptrpal);
 /*--------------------------------------------------------------------------*/
 extern void FadeToPal(U8 *ptrpal);
 /*--------------------------------------------------------------------------*/

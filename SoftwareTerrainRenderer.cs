@@ -93,7 +93,7 @@ internal static class SoftwareTerrainRenderer
 
     private static void RasterTriangle(IslandDocument island, byte[] pixels, float[] depth, int width, int height, Vec3 camera, Vec3 right, Vec3 up, Vec3 forward, double focal, int cubeId, int cubeX, int cubeY, int cellX, int cellZ, uint polygon, int[] corners)
     {
-        var texture = island.TextureAt(cubeId, (int)((polygon >> 19) & 0x1FFF));
+        var texture = island.TextureAt(cubeId, IslandDocument.TextureKey(polygon));
         var textured = ((polygon >> 4) & 3) != 0 && texture is not null;
         var local = new[] { new Point(0, 0), new Point(0, 1), new Point(1, 1), new Point(1, 0) };
         var projected = new ProjectedPoint[3];
@@ -130,7 +130,7 @@ internal static class SoftwareTerrainRenderer
             var u = projected[0].U * w0 + projected[1].U * w1 + projected[2].U * w2;
             var v = projected[0].V * w0 + projected[1].V * w1 + projected[2].V * w2;
             var light = (int)Math.Clamp(Math.Round(projected[0].Light * w0 + projected[1].Light * w1 + projected[2].Light * w2), 0, 15);
-            var color = textured ? island.ColorAt(u, v, light) : FlatColor((int)(polygon & 15), light);
+            var color = textured ? island.ColorAt(u, v, light, island.PageOf(IslandDocument.TextureKey(polygon))) : FlatColor((int)(polygon & 15), light);
             pixels[offset * 4] = color.B; pixels[offset * 4 + 1] = color.G; pixels[offset * 4 + 2] = color.R; pixels[offset * 4 + 3] = 255;
         }
 

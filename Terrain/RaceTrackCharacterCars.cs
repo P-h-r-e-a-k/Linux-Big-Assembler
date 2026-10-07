@@ -34,7 +34,7 @@ internal static partial class RaceTrackCharacterCars
     public static readonly Car Emperor = new("The Emperor's car", "the Emperor", EmperorBody, 3, BuildEmperor, Otringal);
     public static readonly Car Zoe = new("Zoe's car", "Zoe", ZoeBody, 4, BuildZoe, Citadel);
     // (a property: the cars of the other file are not made yet when this file's fields are)
-    public static Car[] All => new[] { Queen, Emperor, Zoe, WeatherWizard, Raph, Dean, Spaceman, Johnny, DarkMonk, Wannie, OldFranco, Survivor }.Concat(More).Concat(Named).Concat(CelebrationCars).ToArray();
+    public static Car[] All => new[] { Queen, Emperor, Zoe, WeatherWizard, Raph, Dean, Spaceman, Johnny, DarkMonk, Wannie, OldFranco, Survivor }.Concat(More).Concat(Named).Concat(CelebrationCars).Concat(HalCars).ToArray();
 
     // Palette ramp starts (the engine adds the light), and the colours drawn as they are (spheres, lines, unlit polygons).
     private const int Blue = 192, Orange = 82, Gold = 102, Grey = 48, Red = 66;

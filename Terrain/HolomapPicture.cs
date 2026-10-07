@@ -13,7 +13,10 @@ internal static class HolomapPicture
 
     // `islandPalette`: the island's own (768 bytes, 0..255 each); `gamePalette`: RESS.HQR entry 0's; `camera`: the 9-int record;
     // `background`: 640 x 480 in the game's palette, drawn over. Sea cells (game code 1, height 0) are left to the background.
-    public static byte[] Draw(IslandFile island, byte[] islandPalette, byte[] gamePalette, byte[] camera, byte[] background)
+    // `solids`: boxes to draw as well, in world units, each a flat colour (8-bit RGB) on its top and darker on its sides -- what the
+    // ground alone doesn't show (Polar Island's rocky peak, built of objects).
+    public static byte[] Draw(IslandFile island, byte[] islandPalette, byte[] gamePalette, byte[] camera, byte[] background,
+        IEnumerable<(double X0, double Z0, double X1, double Z1, double Y0, double Y1, (double R, double G, double B) Colour)>? solids = null)
     {
         var cam = new RaceTrackHolomap.Camera(camera);
         var pixels = (byte[])background.Clone();
@@ -49,8 +52,9 @@ internal static class HolomapPicture
                 var polygon = new IslandPolygon(cube.Polygon(x, z, half));
                 if (polygon.CodeJeu == 1 && cube.Height(x, z) == 0 && cube.Height(x + 1, z + 1) == 0) continue;
                 if (polygon.TexFlag == 0) continue;
-                var index = polygon.TextureIndex;
+                var (page, index) = island.GroundTextureOf(polygon);
                 if (index * 6 + 6 > cube.TextureDefs.Length) continue;
+                var texture = island.GroundPage(page);
                 var diagonal = new IslandPolygon(cube.Polygon(x, z, 0)).Diagonal;
                 var corners = HalfCorners[(diagonal ? 2 : 0) + half];
                 var p = new (double X, double Y, double Depth)[3];
@@ -72,11 +76,38 @@ internal static class HolomapPicture
                     depth[i] = (float)d;
                     var tu = (int)Math.Clamp(w0 * u[0] + w1 * u[1] + w2 * u[2], 0, 255);
                     var tv = (int)Math.Clamp(w0 * v[0] + w1 * v[1] + w2 * v[2], 0, 255);
-                    var c = island.GroundTexture[tv * 256 + tu];
+                    var c = texture[tv * 256 + tu];
+                    // (a texture over a flat colour -- the engine's incrust, the race track's kerbs: its colour 0 is see-through)
+                    if (c == 0 && polygon.PolyFlag != 0) c = (byte)((polygon.Bank << 4) + 11);
                     // (the engine's light ramps run a colour from dark to bright: brightness 0..15 taken as 0.3..1.25 of the atlas colour)
                     var shade = 0.3 + 0.95 * (w0 * light[0] + w1 * light[1] + w2 * light[2]);
                     pixels[i] = ToGame(islandPalette[c * 3] * shade, islandPalette[c * 3 + 1] * shade, islandPalette[c * 3 + 2] * shade);
                 });
+            }
+        }
+        foreach (var (x0, z0, x1, z1, y0, y1, (r, g, b)) in solids ?? Enumerable.Empty<(double, double, double, double, double, double, (double, double, double))>())
+        {
+            // its top and four sides, each two triangles
+            var faces = new (double X, double Y, double Z)[][]
+            {
+                new[] { (x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1) },
+                new[] { (x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0) },
+                new[] { (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1) },
+                new[] { (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0) },
+                new[] { (x1, y0, z0), (x1, y0, z1), (x1, y1, z1), (x1, y1, z0) },
+            };
+            for (var f = 0; f < faces.Length; f++)
+            {
+                var shade = f == 0 ? 1.0 : f <= 2 ? 0.7 : 0.55;
+                var colour = ToGame(r * shade, g * shade, b * shade);
+                var q = faces[f].Select(v => cam.Project(v.X, v.Y, v.Z)).ToArray();
+                if (q.Any(v => v is null)) continue;
+                foreach (var (a, b2, c) in new[] { (0, 1, 2), (0, 2, 3) })
+                    Fill(q[a]!.Value, q[b2]!.Value, q[c]!.Value, (i, d, _, _, _) =>
+                    {
+                        if (d >= depth[i]) return;
+                        depth[i] = (float)d; pixels[i] = colour;
+                    });
             }
         }
         return pixels;

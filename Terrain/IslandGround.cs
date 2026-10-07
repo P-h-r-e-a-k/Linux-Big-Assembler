@@ -15,9 +15,13 @@ internal readonly record struct IslandPolygon(uint Raw)
     // the cell is cut along the 1-3 diagonal instead of 0-2 (read from the cell's first triangle)
     public bool Diagonal => ((Raw >> 16) & 1) != 0;
     public bool Col => ((Raw >> 17) & 1) != 0;
+    // (the engine's Dummy bit, unused by the retail islands: on an island with more ground pages the eleventh bit of the triangle's
+    // texture definition -- IslandFile.GroundTextureOf)
+    public bool Wide => ((Raw >> 18) & 1) != 0;
     public int TextureIndex => (int)((Raw >> 19) & 0x1FFF);
 
-    public IslandPolygon With(int? bank = null, int? texFlag = null, int? polyFlag = null, int? sampleStep = null, int? codeJeu = null, bool? diagonal = null, bool? col = null, int? textureIndex = null)
+    public IslandPolygon With(int? bank = null, int? texFlag = null, int? polyFlag = null, int? sampleStep = null, int? codeJeu = null, bool? diagonal = null, bool? col = null, int? textureIndex = null,
+        bool? wide = null)
     {
         var r = Raw;
         void Put(int shift, int bits, int value) { var mask = ((1u << bits) - 1) << shift; r = (r & ~mask) | (((uint)value << shift) & mask); }
@@ -29,6 +33,7 @@ internal readonly record struct IslandPolygon(uint Raw)
         if (diagonal is { } d) Put(16, 1, d ? 1 : 0);
         if (col is { } k) Put(17, 1, k ? 1 : 0);
         if (textureIndex is { } i) Put(19, 13, i);
+        if (wide is { } w) Put(18, 1, w ? 1 : 0);
         return new IslandPolygon(r);
     }
 
@@ -100,7 +105,11 @@ internal static class IslandGround
             {
                 var polygon = new IslandPolygon(cube.Polygon(x, z, half));
                 if (fields.HasFlag(PolygonFields.Texture))
-                    polygon = polygon.With(bank: sample.Polygon.Bank, texFlag: sample.Polygon.TexFlag, polyFlag: sample.Polygon.PolyFlag, sampleStep: sample.Polygon.SampleStep, textureIndex: textureIndex >= 0 ? textureIndex : polygon.TextureIndex);
+                {
+                    polygon = polygon.With(bank: sample.Polygon.Bank, texFlag: sample.Polygon.TexFlag, polyFlag: sample.Polygon.PolyFlag, sampleStep: sample.Polygon.SampleStep);
+                    // (on the sample's page, with more ground pages)
+                    if (textureIndex >= 0) polygon = island.WithGroundTexture(polygon, island.GroundTextureOf(sample.Polygon).Page, textureIndex);
+                }
                 if (fields.HasFlag(PolygonFields.GameCode)) polygon = polygon.With(codeJeu: sample.Polygon.CodeJeu);
                 if (fields.HasFlag(PolygonFields.Diagonal)) polygon = polygon.With(diagonal: sample.Polygon.Diagonal);
                 cube.SetPolygon(x, z, half, polygon.Raw);
@@ -147,7 +156,7 @@ internal static class IslandGround
             {
                 var polygon = new IslandPolygon(cube.Polygon(lx, lz, half));
                 var index = TextureIndexFor(cube, TileDefinition(x, y, width, height, diagonal, half));
-                cube.SetPolygon(lx, lz, half, polygon.With(texFlag: polygon.TexFlag == 0 ? 3 : polygon.TexFlag, textureIndex: index).Raw);
+                cube.SetPolygon(lx, lz, half, island.WithGroundTexture(polygon.With(texFlag: polygon.TexFlag == 0 ? 3 : polygon.TexFlag), 0, index).Raw);
             }
             n++;
         }

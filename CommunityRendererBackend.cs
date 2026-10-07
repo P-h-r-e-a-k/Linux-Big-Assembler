@@ -155,7 +155,8 @@ internal sealed class CommunityRendererBackend
     // drawSky asserts the sky flag for this frame, and the sea flag is always turned back on: the
     // minimap render (RenderIslandTopDown) leaves sea off, and setting either flag from outside
     // this lock could land in the middle of a minimap render and put sea back over its land.
-    public Bitmap? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0, bool drawSky = true, bool drawActors = true)
+    public Bitmap? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0, bool drawSky = true, bool drawActors = true,
+        (int X0, int Z0, int X1, int Z1)? cubeArea = null)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
@@ -187,7 +188,9 @@ internal sealed class CommunityRendererBackend
             // visibly run out before the horizon does; the extra cube loads
             // cost real time (roughly (2*radius+1)^2 vs. 1 per frame), so
             // callers should only ask for it at distances that need it.
-            var renderOk = wideRadiusCubes > 0 ? RendererLibrary.RenderFrameWide(wideRadiusCubes) : RendererLibrary.RenderFrame();
+            // (cubeArea: those cubes whichever the camera is over -- the editor's whole island and the sea round it)
+            var renderOk = cubeArea is { } area ? RendererLibrary.RenderFrameArea(area.X0, area.Z0, area.X1, area.Z1)
+                : wideRadiusCubes > 0 ? RendererLibrary.RenderFrameWide(wideRadiusCubes) : RendererLibrary.RenderFrame();
             if (renderOk == 0) { directFailure = "native render returned failure"; return null; }
             afterRenderBeforeUnlock?.Invoke();
             var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);

@@ -11,6 +11,10 @@ namespace LBAAssembler.Terrain;
 internal static class RaceTrackSmallCars
 {
     public const int First = 100;
+    // Twinsen's own car (2026-10-04): the buggy behaviour's entity (C_BUGGY, 12) -- its body while he drives, GEN_BODY_TUNIQUE (1) -- gets
+    // the same, its generic body HeroSmall; the race-track mode switches him to it when an opponent's lightning has him shrunk
+    // (twinsen_small=).
+    public const int HeroEntity = 12, HeroBody = 1, HeroSmall = First + HeroBody;
 
     public static int SmallOf(int body) => First + body;
 
@@ -29,9 +33,16 @@ internal static class RaceTrackSmallCars
             file = HqrWriter.AppendEntry(file, HqrWriter.StoredEntry(Halved(bodies.Read(index))));
             table = RaceTrackBaldinoCar.WithBody(table, RaceTrackBaldinoCar.RacerEntity, SmallOf(generic), next++);
         }
+        var hero = BodiesOf(table, HeroEntity).Where(b => b.Generic == HeroBody).Select(b => (int?)b.Index).FirstOrDefault();
+        if (hero is { } heroIndex)
+        {
+            file = HqrWriter.AppendEntry(file, HqrWriter.StoredEntry(Halved(bodies.Read(heroIndex))));
+            table = RaceTrackBaldinoCar.WithBody(table, HeroEntity, HeroSmall, next++);
+        }
         File.WriteAllBytes(bodyPath, file);
         File.WriteAllBytes(ressPath, HqrWriter.ReplaceEntry(File.ReadAllBytes(ressPath), 44, HqrWriter.StoredEntry(table)));
-        return $"the race cars at half their size (the lightning spell): {own.Count} bodies of the racer's entity ({RaceTrackBaldinoCar.RacerEntity}), its bodies {First}-{First + own.Max(o => o.Generic)}";
+        return $"the race cars at half their size (the lightning spell): {own.Count} bodies of the racer's entity ({RaceTrackBaldinoCar.RacerEntity}), its bodies {First}-{First + own.Max(o => o.Generic)}" +
+               (hero is not null ? $"; Twinsen's buggy too, entity {HeroEntity}'s body {HeroSmall}" : "; Twinsen's buggy's body not found");
     }
 
     // An entity's bodies in the entity table (RESS.HQR 44): its generic body numbers and their BODY.HQR entries.
@@ -61,6 +72,20 @@ internal static class RaceTrackSmallCars
         for (var i = 0; i < points; i++, p += 8) { Half16(p); Half16(p + 2); Half16(p + 4); }
         int spheres = I(80), q = I(84);
         for (var i = 0; i < spheres; i++, q += 8) BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(q + 6), (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(q + 6)) / 2));
+        return b;
+    }
+
+    // The same at any size (the super jet-pack the car turns into: RaceTrackSuperJet).
+    public static byte[] Scaled(byte[] body, double factor)
+    {
+        var b = (byte[])body.Clone();
+        int I(int at) => BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(at));
+        void Scale16(int at) => BinaryPrimitives.WriteInt16LittleEndian(b.AsSpan(at), (short)Math.Round(BinaryPrimitives.ReadInt16LittleEndian(b.AsSpan(at)) * factor));
+        for (var at = 8; at < 32; at += 4) BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(at), (int)Math.Round(I(at) * factor));
+        int points = I(40), p = I(44);
+        for (var i = 0; i < points; i++, p += 8) { Scale16(p); Scale16(p + 2); Scale16(p + 4); }
+        int spheres = I(80), q = I(84);
+        for (var i = 0; i < spheres; i++, q += 8) BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(q + 6), (ushort)Math.Round(BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(q + 6)) * factor));
         return b;
     }
 }

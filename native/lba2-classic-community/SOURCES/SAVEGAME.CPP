@@ -747,6 +747,8 @@ S32 LoadGame(void) {
 
     CameraCenter(0);
     SetTimerHR(savetimerrefhr);
+    // (a race-track mod's power-ups belong to the moment they were taken: RACEMOD.CPP)
+    { extern void RaceMod_GameLoaded(void); RaceMod_GameLoaded(); }
 
     /* Put the hero's animation on the clock the rest of the scene is on.
      *
@@ -1506,6 +1508,20 @@ static S32 LoadContexteReadObjectsAtStride(S32 use_wire32) {
      * GenBody (U8) cannot exceed that ceiling and aren't useful here. */
     for (n = 0; n < NbObjets; n++) {
         if (ListObjet[n].IndexFile3D < -1 || ListObjet[n].IndexFile3D > 100000)
+            return 0;
+    }
+    /* The native (legacy) stride must also leave the hero's animation state whole. Twinsen (object 0) is always an animated body:
+     * 1..30 groups (CurrentFrame[30]), at least one frame, and his frame numbers inside the animation. The IndexFile3D range alone
+     * passes a wire save read at the wider stride when the scene has few objects, the later ones mostly zeros. An example is a
+     * scene of POLAR.ILE, with Twinsen and the engine's Zoe placeholder only. Object 0's Obj then takes its pointer-sized fields
+     * and its tail from the next object's first bytes, the save is taken for a legacy one, and NextOfsFrame's garbage crashes
+     * ObjectSetInterDep. Read at the wrong stride these fields are something else (zeros, there), so the wire stride is tried, as
+     * for any other misread. Only for the native attempt: what the wire read accepts is unchanged. */
+    if (!use_wire32 && NbObjets > 0) {
+        const T_OBJ_3D *hero = &ListObjet[0].Obj;
+        if (hero->NbGroups < 1 || hero->NbGroups > 30 || hero->NbFrames < 1 || hero->NbFrames > 4096
+            || hero->LastFrame < 0 || (U32)hero->LastFrame >= hero->NbFrames
+            || hero->NextFrame < 0 || (U32)hero->NextFrame >= hero->NbFrames)
             return 0;
     }
     return 1;

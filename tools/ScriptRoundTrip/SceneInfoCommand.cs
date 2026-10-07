@@ -16,6 +16,10 @@ internal static class SceneInfoCommand
             Console.WriteLine($"scene {number}: island {m.Island}, cube ({m.CubeX},{m.CubeY}), mode {m.CubeMode}, {m.Actors.Count} actors, {m.Zones.Count} zones, {m.TrackPoints.Count} track points");
             foreach (var z in m.Zones)
                 Console.WriteLine($"  zone type {z.Type} num {z.Num}: x {z.X0}..{z.X1} y {z.Y0}..{z.Y1} z {z.Z0}..{z.Z1} info {string.Join(",", z.Info)}");
+            // (SCENEINFO_POINTS=1: the track points and where each actor stands too)
+            if (Environment.GetEnvironmentVariable("SCENEINFO_POINTS") != "1") continue;
+            for (var i = 0; i < m.TrackPoints.Count; i++) Console.WriteLine($"  point {i}: {m.TrackPoints[i].X}, {m.TrackPoints[i].Y}, {m.TrackPoints[i].Z}");
+            for (var i = 0; i < m.Actors.Count; i++) Console.WriteLine($"  actor {i}: entity {m.Actors[i].Entity} at {m.Actors[i].X}, {m.Actors[i].Y}, {m.Actors[i].Z} beta {m.Actors[i].Beta}");
         }
         return 0;
     }

@@ -51,6 +51,7 @@
     <Compile Include="..\..\Lba1\Lba1PinkElf.cs" Link="Lba1\Lba1PinkElf.cs" />
     <Compile Include="..\..\Lba1\Lba1DialogueText.cs" Link="Lba1\Lba1DialogueText.cs" />
     <Compile Include="..\..\BodyStudio\Body.cs" Link="BodyStudio\Body.cs" />
+    <Compile Include="..\..\Demo96\**\*.cs" Link="Demo96\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Lba1\Lba1SecretRoomExtras.cs" Link="Lba1\Lba1SecretRoomExtras.cs" />
     <Compile Include="..\..\Lba1\Lba1SurpriseChanges.cs" Link="Lba1\Lba1SurpriseChanges.cs" />
     <Compile Include="..\..\Lba1\Lba1Fishermen.cs" Link="Lba1\Lba1Fishermen.cs" />
@@ -58,6 +59,7 @@
     <Compile Include="..\..\Lba1\Lba1Game.cs" Link="Lba1\Lba1Game.cs" />
     <Compile Include="..\..\HqdDescriptions.cs" Link="HqdDescriptions.cs" />
     <Compile Include="..\..\HqdWriter.cs" Link="HqdWriter.cs" />
+    <Compile Include="..\..\Lba2BodyNames.cs" Link="Lba2BodyNames.cs" />
     <Compile Include="..\..\SceneMenuNames.cs" Link="SceneMenuNames.cs" />
     <Compile Include="..\..\Lba1\Lba1BlankScene.cs" Link="Lba1\Lba1BlankScene.cs" />
     <Compile Include="..\..\Lba2Engine.cs" Link="Lba2Engine.cs" />
@@ -73,6 +75,8 @@
     <EmbeddedResource Include="..\..\docs\racetrack\sendell_track_plan.json" LogicalName="RaceTrackPlan.Sendell.json" />
     <EmbeddedResource Include="..\..\docs\racetrack\moon_track_plan.json" LogicalName="RaceTrackPlan.Moon.json" />
     <EmbeddedResource Include="..\..\docs\racetrack\emerald_track_plan.json" LogicalName="RaceTrackPlan.Emerald.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\knartas_track_plan.json" LogicalName="RaceTrackPlan.Knartas.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\polar_track_plan.json" LogicalName="RaceTrackPlan.Polar.json" />
     <Compile Include="..\..\LiveDataRoot.cs" Link="LiveDataRoot.cs" />
     <Compile Include="..\..\AudioLevels.cs" Link="AudioLevels.cs" />
     <Compile Include="..\..\RaceCarSetup.cs" Link="RaceCarSetup.cs" />

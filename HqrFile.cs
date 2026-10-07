@@ -88,7 +88,8 @@ internal sealed class HqrFile
 
     public bool IsEmpty(int index) => Slots[index].Extent is null && Slots[index].AliasOf < 0;
 
-    private byte[] ExtentOf(int index)
+    // An entry as stored (its header and its data, compressed or not), as SetEntry takes it: to copy an entry from one file to another.
+    public byte[] ExtentOf(int index)
     {
         var slot = Slots[index];
         if (slot.AliasOf >= 0) slot = Slots[slot.AliasOf];

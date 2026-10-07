@@ -198,7 +198,10 @@ const char *ListFileText[] = {"sys",
                               "008",
                               "009",
                               "010",
-                              "011"};
+                              "011",
+                              /* island 12, past the retail twelve: POLAR.ILE, LBA1's Polar Island (the LBA Assembler's port). No
+                                 EN_012.VOX ships; its text is in entries appended to TEXT.HQR (TextEntry). */
+                              "012"};
 // flag de cadre shade
 
 S32 FlagMessageShade = TRUE;
@@ -1225,6 +1228,15 @@ S32 TestSpeak() {
 //----------------------------------------------------------------------------
 #endif
 /*-------------------------------------------------------------------------*/
+/* TEXT.HQR's entry for a text file's ids (+1: its texts) in the current language. The retail files (SYS CRE GAM and the twelve
+   islands', MAX_TEXT_LANG to a language) are the retail block; an island past them (island 12, file MAX_TEXT_LANG) has its entries
+   after that block, a pair for each language. */
+static S32 TextEntry(S32 file) {
+    if (file < MAX_TEXT_LANG)
+        return (Language * MAX_TEXT_LANG * 2) + (file * 2);
+    return (NB_LANGUAGES * MAX_TEXT_LANG * 2) + (((file - MAX_TEXT_LANG) * NB_LANGUAGES + Language) * 2);
+}
+/*-------------------------------------------------------------------------*/
 void InitDial(S32 file) {
     NormalWinDial(); //     By Security
 
@@ -1233,12 +1245,9 @@ void InitDial(S32 file) {
     LastFileInit = file;
 
     GetResPath(FileText, ADELINE_MAX_PATH, TEXT_HQR_NAME);
-    MaxText = (U16)(Load_HQR(FileText, BufOrder,
-                             (Language * MAX_TEXT_LANG * 2) + (file * 2) + 0) /
-                    2);
+    MaxText = (U16)(Load_HQR(FileText, BufOrder, TextEntry(file) + 0) / 2);
 
-    Load_HQR(FileText, BufText,
-             (Language * MAX_TEXT_LANG * 2) + (file * 2) + 1);
+    Load_HQR(FileText, BufText, TextEntry(file) + 1);
 
 #ifdef CDROM
     if (FlagSpeak)
@@ -1557,6 +1566,14 @@ S32 GetText(S32 text) {
     FlagDial = *PtText++; //  attribut pour GereFlagDial()
 
     SizeText = offset1 - offset0 - 1; // -1 pour virer octet d'attribut
+
+    // (a race-track mod's text with the time to beat in it: RACEMOD.CPP RaceMod_Text)
+    {
+        extern S32 RaceMod_Text(S32 text, U8 **pt, S32 *size);
+        U8 *pt = PtText;
+        S32 size = SizeText;
+        if (RaceMod_Text(text, &pt, &size)) { PtText = pt; SizeText = size; }
+    }
 
     return (1L);
 }

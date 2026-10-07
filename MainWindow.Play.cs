@@ -258,10 +258,12 @@ public partial class MainWindow
         options.ListenPort = Lba2BreakpointsPort;
         options.FallbackMusic = ResolveLba2MusicFallback(scene);
         // (a race started on its line races that track alone; the game played as a game -- a new game, or the scene as it is -- every track,
-        // where and when the game is, with the story)
+        // where and when the game is, with the story. A dreamt race -- Polar Island's -- always the lot: won, Twinsen wakes up into the game,
+        // and the island he wakes on has its tracks -- 2026-10-06: after the dream Citadel Island's storm track had no race-track mode, its
+        // mushrooms out of sight, and now its raised road no floor)
         options.NewGame = newGame;
         newGame = false;
-        var story = options.NewGame || !EditorSettings.Current.RaceCar.StartAtLine;
+        var story = options.NewGame || !EditorSettings.Current.RaceCar.StartAtLine || raceToPlay?.Dream is not null;
         options.RaceCarFile = Terrain.RaceTrackService.CarFileWriter(gameRoot, raceToPlay, story);
         raceOverlayHidden = options.RaceCarFile is not null && (EditorSettings.Current.RaceCar.StartAtLine || options.NewGame);
         if (raceOverlayHidden) { options.ZoneMask = 0; options.Paths = false; }

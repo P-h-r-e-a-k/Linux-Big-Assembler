@@ -13,6 +13,8 @@
  *══════════════════════════════════════════════════════════════════════════*/
 
 #include "C_EXTERN.H"
+#include "FOLLOWCAM.H"
+#include "RACEMOD.H"
 
 extern T_OBJET *APtObj; // dans OBJECT.CPP
 
@@ -420,7 +422,15 @@ void CameraCenter(S32 flagbeta) {
                         AlphaCam, BetaCam, GammaCam,
                         VueDistance);
 
-        if (!CameraZone AND flagbeta != 3) {
+        /* (Not for a race-track mod's camera that follows the car: the classic search
+         * lifts the eye over any decor's box it stands in -- a hut the road drives
+         * through, a gantry over the road -- and steepens AlphaCam to look down from
+         * there, and the follow camera, which takes its pitch from AlphaCam, then kept
+         * looking straight down until the player re-centred it: it happened at each
+         * cube edge the lap crosses, where the scene change re-centres the camera
+         * (the Island of the Francos' village, 2026-10-07). The follow camera keeps
+         * its own clearance over the ground and the raised road.) */
+        if (!CameraZone AND flagbeta != 3 AND !(FollowCamera AND RaceMod_Active())) {
             if (SearchCameraPos(ptr3d->X, ptr3d->Y, ptr3d->Z, ptr3d->Beta, 1)) {
                 FlagCameraForcee = TRUE;
 

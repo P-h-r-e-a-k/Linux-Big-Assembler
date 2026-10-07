@@ -214,15 +214,22 @@ internal static class IslandMesher
     private static void AddTerrain(ExportScene scene, IslandSource source, ISet<int>? cubeIds, Func<int, int, bool>? cellFilter)
     {
         var island = source.Island; var palette = source.Palette;
+        // (an island with more ground pages -- POLAR.ILE -- has them one under another in the texture, a page's v moved down to it)
+        var pages = 1 + island.GroundPages.Count;
         var ground = scene.Material("ground", () =>
         {
-            var rgba = new byte[256 * 256 * 4];
-            for (var i = 0; i < 256 * 256; i++)
+            var rgba = new byte[256 * 256 * pages * 4];
+            for (var page = 0; page < pages; page++)
             {
-                var (r, g, b) = Palettes.Colour(palette, island.GroundTexture[i]);
-                rgba[i * 4] = r; rgba[i * 4 + 1] = g; rgba[i * 4 + 2] = b; rgba[i * 4 + 3] = 255;
+                var texels = island.GroundPage(page);
+                for (var i = 0; i < 256 * 256; i++)
+                {
+                    var (r, g, b) = Palettes.Colour(palette, texels[i]);
+                    var o = (page * 256 * 256 + i) * 4;
+                    rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 255;
+                }
             }
-            return new ExportMaterial { Name = "ground", Texture = new TextureImage { Name = "ground", Width = 256, Height = 256, Rgba = rgba, Repeat = false } };
+            return new ExportMaterial { Name = "ground", Texture = new TextureImage { Name = "ground", Width = 256, Height = 256 * pages, Rgba = rgba, Repeat = false } };
         });
 
         foreach (var (cx, cz, cube) in IslandOps.CubeCells(island))
@@ -240,7 +247,8 @@ internal static class IslandMesher
                         var poly = polygons[half];
                         if (poly.TexFlag == 0 && poly.PolyFlag == 0) continue;      // nothing drawn: the sea shows through
                         var corners = Corners[(diagonal ? 2 : 0) + half];
-                        var textured = poly.TexFlag != 0 && poly.TextureIndex * 6 + 6 <= cube.TextureDefs.Length;
+                        var (page, definition) = island.GroundTextureOf(poly);
+                        var textured = poly.TexFlag != 0 && definition * 6 + 6 <= cube.TextureDefs.Length;
                         int material;
                         if (textured) material = ground;
                         else
@@ -256,8 +264,8 @@ internal static class IslandMesher
                             p[k] = new Vector3((cx * IslandCube.Cells + vx) * IslandFile.CellSize, cube.Height(vx, vz), (cz * IslandCube.Cells + vz) * IslandFile.CellSize);
                             if (textured)
                             {
-                                var def = cube.TextureDefs.AsSpan(poly.TextureIndex * 6, 6);
-                                uv[k] = new Vector2(def[k * 2] / 65536f, def[k * 2 + 1] / 65536f);
+                                var def = cube.TextureDefs.AsSpan(definition * 6, 6);
+                                uv[k] = new Vector2(def[k * 2] / 65536f, (page + def[k * 2 + 1] / 65536f) / pages);
                             }
                             var light = cube.HasIntensity ? cube.Light(vx, vz) : 15;
                             shade[k] = new Vector3(Math.Min(1f, 0.48f + light / 15f * 0.72f));

@@ -254,7 +254,12 @@ public partial class MainWindow : Window
 
         var hqrCount = HqrArchive.CountEntries(scenePath);
         sceneSlotsListed = hqrCount;
+        // (the 1996 demo, converted: its scenes named after the retail scenes they became -- MainWindow.Demo96)
+        var demoMap = Demo96.Demo96Converter.SceneMap(gameRoot);
         var descriptions = HqdDescriptions.Load("SCENE2.HQD", hqrCount);
+        // (the folder's own SCENE.HQD names the scenes the editor added -- Polar Island's: HqdWriter -- over the game's descriptions)
+        var folderNames = File.Exists(Path.Combine(gameRoot, HqdWriter.SidecarName("SCENE.HQR")))
+            ? File.ReadAllLines(Path.Combine(gameRoot, HqdWriter.SidecarName("SCENE.HQR")), System.Text.Encoding.Latin1).Skip(1).ToArray() : Array.Empty<string>();
         var archive = HqrArchive.Open(scenePath);
 
         var entries = new List<SceneEntry>();
@@ -263,8 +268,10 @@ public partial class MainWindow : Window
             if (!archive.IsValid(hqrIndex)) continue;
             var numscene = hqrIndex - 1;
             // (the descriptions say "White Leaf Desert"; LBA2 itself calls that island Desert Island)
-            var name = (hqrIndex < descriptions.Names.Count ? descriptions.Names[hqrIndex] : null)?.Replace("White Leaf Desert", "Desert Island");
             var isInterior = IsInteriorScene(archive, hqrIndex);
+            var name = (demoMap is not null ? Demo96SceneName(demoMap, numscene, descriptions.Names, ResolveSceneIsland(archive, hqrIndex), isInterior)
+                : hqrIndex < folderNames.Length && folderNames[hqrIndex].Length > 0 ? folderNames[hqrIndex]
+                : hqrIndex < descriptions.Names.Count ? descriptions.Names[hqrIndex] : null)?.Replace("White Leaf Desert", "Desert Island");
             var option = new FilterableComboBox.Option(numscene, name is null ? $"{numscene}" : $"{numscene}: {name}");
             var header = archive.Read(hqrIndex);
             entries.Add(new SceneEntry(ResolveSceneIsland(archive, hqrIndex), isInterior, option, header.Length > 2 ? header[1] : 0, header.Length > 2 ? header[2] : 0));
@@ -296,7 +303,7 @@ public partial class MainWindow : Window
     {
         "CITADEL", "SENDELL", "DESERT", "EMERAUDE", "OTRINGAL",
         "CELEBRAT", "PLATFORM", "MOSQUIBE", "KNARTAS", "ILOTCX",
-        "ASCENCE", "SOUSCELB",
+        "ASCENCE", "SOUSCELB", "POLAR",
     };
 
     private static string? ResolveSceneIsland(HqrArchive archive, int hqrIndex)
@@ -366,7 +373,8 @@ public partial class MainWindow : Window
             targetX = 8 * 32768 + 16384;
             targetZ = 9 * 32768 + 16384;
             targetY = 10000;
-            if (!IsWorldPositionOnIsland(targetX, targetZ) && FindFirstPresentCube() is (int cubeX, int cubeY))
+            // (else the present cube nearest the middle of the island's cubes: the first one in the map can be a corner of open sea)
+            if (!IsWorldPositionOnIsland(targetX, targetZ) && FindCentralPresentCube() is (int cubeX, int cubeY))
             {
                 targetX = cubeX * 32768 + 16384;
                 targetZ = cubeY * 32768 + 16384;
@@ -377,8 +385,11 @@ public partial class MainWindow : Window
             // it, so a fixed full-grid range left most of each scrollbar's
             // travel mapped to open sea the camera can never actually reach --
             // dragging to the visible end of the track landed on an invalid
-            // cube and snapped back well short of the real edge.
-            var (presentMinX, presentMinY, presentMaxX, presentMaxY) = currentIsland.PresentCubeBounds;
+            // cube and snapped back well short of the real edge. (Since
+            // 2026-10-07 a cube of the sea the view draws round them too -- the
+            // view's middle may be moved out over it, IsWorldPositionInView --
+            // so that the island's edges can be brought to the middle.)
+            var (presentMinX, presentMinY, presentMaxX, presentMaxY) = IslandArea(PanRing) ?? currentIsland.PresentCubeBounds;
             PanHorizontalScrollBar.Minimum = presentMinX * 32768;
             PanHorizontalScrollBar.Maximum = (presentMaxX + 1) * 32768 - 1;
             PanVerticalScrollBar.Minimum = presentMinY * 32768;
@@ -438,6 +449,8 @@ public partial class MainWindow : Window
         // island 1 (Sendell's Well, cut from the retail game: a SENDELL.ILE made for it), and the old copy of the Emerald Moon
         else if (name == "SENDELL") paletteIndex = 28;
         else if (name == "MOON") paletteIndex = 30;
+        // island 12, Polar Island (Terrain/Polar): its own slot once installed, else the palette its ground was made in
+        else if (name == "POLAR") paletteIndex = Terrain.IslandMapRenderer.PolarPaletteEntryFor(gameRoot);
         lastExteriorPaletteIndex = paletteIndex;
         return LoadPaletteEntry(paletteIndex);
     }
@@ -1682,7 +1695,7 @@ public partial class MainWindow : Window
             return;
         }
         // (a build rewrites the outside scenes of the island it is on; any island's, as the dialog picks the island)
-        if (Terrain.RaceTrackIsland.All.FirstOrDefault(i => scriptSession.EditedScenes.Any(s => s >= i.FirstScene && s <= i.LastScene)) is { } edited)
+        if (Terrain.RaceTrackIsland.All.FirstOrDefault(i => scriptSession.EditedScenes.Any(i.HasScene)) is { } edited)
         {
             MessageBox.Show(this, $"Some of {edited.Name}'s outside scenes ({edited.FirstScene}-{edited.LastScene}) have unsaved script edits. Save or discard them first.", "Race track", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -2488,6 +2501,57 @@ public partial class MainWindow : Window
         return (currentIsland.CubeAt(cubeX, cubeZ) & 0x7F) != 0;
     }
 
+    // The cubes the native view draws (RenderFrameArea): the island's own -- all those with land -- and a ring of sea two cubes wide round
+    // them, and the camera's cube whatever it is; the whole 16 x 16 map's edge at the most.
+    private (int X0, int Z0, int X1, int Z1) IslandCubeArea(int cameraCubeX, int cameraCubeZ)
+    {
+        if (IslandArea() is not { } area) return (Math.Max(0, cameraCubeX - 2), Math.Max(0, cameraCubeZ - 2), Math.Min(15, cameraCubeX + 2), Math.Min(15, cameraCubeZ + 2));
+        return (Math.Min(area.X0, cameraCubeX), Math.Min(area.Z0, cameraCubeZ), Math.Max(area.X1, cameraCubeX), Math.Max(area.Z1, cameraCubeZ));
+    }
+
+    // The island's cubes -- all those with land -- and a ring of sea `ring` cubes wide round them (the whole 16 x 16 map's edge at the
+    // most); null with no island, or one with no cubes. (The view draws a ring of 2; its middle may go 1 cube out, PanRing.)
+    private (int X0, int Z0, int X1, int Z1)? IslandArea(int ring = 2)
+    {
+        if (currentIsland is null) return null;
+        int x0 = 16, z0 = 16, x1 = -1, z1 = -1;
+        for (var y = 0; y < 16; y++)
+            for (var x = 0; x < 16; x++)
+                if ((currentIsland.CubeAt(x, y) & 0x7F) != 0) { x0 = Math.Min(x0, x); z0 = Math.Min(z0, y); x1 = Math.Max(x1, x); z1 = Math.Max(z1, y); }
+        if (x1 < 0) return null;
+        return (Math.Max(0, x0 - ring), Math.Max(0, z0 - ring), Math.Min(15, x1 + ring), Math.Min(15, z1 + ring));
+    }
+
+    // How far past the island's cubes the view's middle may go: a cube -- the view looks at a point 10,000 up (targetY), so the ground in
+    // the middle of the view lies past it, some 20,000 at the usual tilt, and an island's edge on the camera's side needs the point that far
+    // out over the sea; further, at the drawn sea's own edge (IslandArea's ring of 2), the view was mostly empty sky.
+    private const int PanRing = 1;
+
+    // Where the view may be moved to (its middle): anywhere over the island's cubes and a cube of the sea drawn round them (PanRing), so that any
+    // part of the island -- its far edges too -- can be brought to the middle of the view and zoomed in on (the user, 2026-10-07: "allow the
+    // entire thing to be moved within the editor so we can bring any part of an island into the centre of the viewport"). Until then the
+    // middle had to stay over a cube with land (IsWorldPositionOnIsland): the renderer could not place its camera over the open sea.
+    private bool IsWorldPositionInView(double worldX, double worldZ)
+    {
+        if (currentIsland is null) return true;
+        if (IslandArea(PanRing) is not { } area) return IsWorldPositionOnIsland(worldX, worldZ);
+        var cubeX = (int)Math.Floor(worldX / 32768.0);
+        var cubeZ = (int)Math.Floor(worldZ / 32768.0);
+        return cubeX >= area.X0 && cubeX <= area.X1 && cubeZ >= area.Z0 && cubeZ <= area.Z1;
+    }
+
+    private (int, int)? FindCentralPresentCube()
+    {
+        if (currentIsland is null) return null;
+        var present = new List<(int X, int Y)>();
+        for (var y = 0; y < 16; y++)
+            for (var x = 0; x < 16; x++)
+                if ((currentIsland.CubeAt(x, y) & 0x7F) != 0) present.Add((x, y));
+        if (present.Count == 0) return null;
+        double mx = present.Average(c => c.X), my = present.Average(c => c.Y);
+        return present.MinBy(c => (c.X - mx) * (c.X - mx) + (c.Y - my) * (c.Y - my));
+    }
+
     private (int, int)? FindFirstPresentCube()
     {
         if (currentIsland is null) return null;
@@ -2504,8 +2568,8 @@ public partial class MainWindow : Window
     {
         var newX = targetX + dx;
         var newZ = targetZ + dz;
-        if (IsWorldPositionOnIsland(newX, targetZ)) targetX = newX;
-        if (IsWorldPositionOnIsland(targetX, newZ)) targetZ = newZ;
+        if (IsWorldPositionInView(newX, targetZ)) targetX = newX;
+        if (IsWorldPositionInView(targetX, newZ)) targetZ = newZ;
         UpdateMinimapMarker();
         SyncPanScrollBars();
     }
@@ -2525,7 +2589,7 @@ public partial class MainWindow : Window
     {
         if (interiorSceneActive) { interiorCenter = new Point(e.NewValue + ViewportHost.ActualWidth / interiorZoom / 2, interiorCenter.Y); ApplyInteriorView(); return; }
         if (currentIsland is null) return;
-        if (IsWorldPositionOnIsland(e.NewValue, targetZ)) targetX = e.NewValue;
+        if (IsWorldPositionInView(e.NewValue, targetZ)) targetX = e.NewValue;
         else PanHorizontalScrollBar.Value = targetX;
         UpdateMinimapMarker();
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
@@ -2535,7 +2599,7 @@ public partial class MainWindow : Window
     {
         if (interiorSceneActive) { interiorCenter = new Point(interiorCenter.X, e.NewValue + ViewportHost.ActualHeight / interiorZoom / 2); ApplyInteriorView(); return; }
         if (currentIsland is null) return;
-        if (IsWorldPositionOnIsland(targetX, e.NewValue)) targetZ = e.NewValue;
+        if (IsWorldPositionInView(targetX, e.NewValue)) targetZ = e.NewValue;
         else PanVerticalScrollBar.Value = targetZ;
         UpdateMinimapMarker();
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
@@ -2714,7 +2778,7 @@ public partial class MainWindow : Window
         if (interiorSceneActive || currentIsland is null || MinimapImage.Source is null) return;
         var worldX = (minimapCropOffsetXPixels + point.X) * MinimapWorldUnitsPerPixel;
         var worldZ = (minimapCropOffsetYPixels + point.Y) * MinimapWorldUnitsPerPixel;
-        if (!IsWorldPositionOnIsland(worldX, worldZ)) return;
+        if (!IsWorldPositionInView(worldX, worldZ)) return;
         targetX = worldX;
         targetZ = worldZ;
         UpdateMinimapMarker();
@@ -3052,6 +3116,11 @@ public partial class MainWindow : Window
             var wideRadius = 2;
             var currentCubeX = (int)Math.Floor(targetX / 32768.0);
             var currentCubeY = (int)Math.Floor(targetZ / 32768.0);
+            // (2026-10-07, the user: moving the view moved the island over the sea and could leave part of it off -- the square of 2 cubes
+            // round the camera's cube is all the renderer drew, the sea with it: the Island of the Francos made twice its size is four cubes
+            // across. Now the whole island's cubes and a ring of sea two cubes wide round them, whatever the camera is over.)
+            var area = IslandCubeArea(currentCubeX, currentCubeY);
+            bool InArea(int cx, int cz) => cx >= area.X0 && cx <= area.X1 && cz >= area.Z0 && cz <= area.Z1;
             List<(int, double, double, double, double)>? projected = null;
             List<(int ActorIndex, List<Point> ScreenPoints)>? projectedRoutes = null;
             HashSet<int>? projectedInvisible = null;
@@ -3060,6 +3129,7 @@ public partial class MainWindow : Window
             int camX = (int)targetX, camY = (int)targetY, camZ = (int)targetZ, camDistance = nativeDistance;
             var bitmap = nativeRenderer.RenderIslandDirect(islandName, palette, camX, camY, camZ, nativeAlpha, nativeBeta, nativeGamma, camDistance,
                 wideRadiusCubes: wideRadius,
+                cubeArea: area,
                 drawSky: desiredSkyEnabled,
                 drawActors: !hideAllActors,
                 afterRenderBeforeUnlock: () =>
@@ -3076,7 +3146,7 @@ public partial class MainWindow : Window
                     for (var i = 0; i < count; i++)
                     {
                         if (!library.GetActor(i, out var x, out var y, out var z, out var waypointCount)) continue;
-                        if (Math.Abs((int)Math.Floor(x / 32768.0) - currentCubeX) > wideRadius || Math.Abs((int)Math.Floor(z / 32768.0) - currentCubeY) > wideRadius) continue;
+                        if (!InArea((int)Math.Floor(x / 32768.0), (int)Math.Floor(z / 32768.0))) continue;
                         if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
 
                         // Click target centred on the body's vertical middle
@@ -3119,7 +3189,7 @@ public partial class MainWindow : Window
                             // as un-pinned as an actor would be -- truncate the
                             // route there rather than drawing a segment into
                             // empty space.
-                            if (Math.Abs((int)Math.Floor(wx / 32768.0) - currentCubeX) > wideRadius || Math.Abs((int)Math.Floor(wz / 32768.0) - currentCubeY) > wideRadius) break;
+                            if (!InArea((int)Math.Floor(wx / 32768.0), (int)Math.Floor(wz / 32768.0))) break;
                             if (!library.ProjectPoint(wx, wy, wz, out var wsx, out var wsy)) continue;
                             points.Add(new Point(wsx, wsy));
                         }
@@ -3154,7 +3224,7 @@ public partial class MainWindow : Window
                         if (!library.GetZone(zi, out var zx0, out var zy0, out var zz0, out var zx1, out var zy1, out var zz1, out var ztype, out var znum)) continue;
                         var zcubeX = (int)Math.Floor((zx0 + zx1) / 2 / 32768.0);
                         var zcubeZ = (int)Math.Floor((zz0 + zz1) / 2 / 32768.0);
-                        if (Math.Abs(zcubeX - currentCubeX) > wideRadius || Math.Abs(zcubeZ - currentCubeY) > wideRadius) continue;
+                        if (!InArea(zcubeX, zcubeZ)) continue;
                         var world = ZoneStyle.Corners(zx0, zy0, zz0, zx1, zy1, zz1);
                         var corners = new Point[8];
                         var visible = true;
@@ -3325,8 +3395,13 @@ public partial class MainWindow : Window
     // frame is actually on screen, not just laid out), covers both without the complexity of trying to
     // find one exact root cause for what's fundamentally a racy OS mechanism.
     // Windows only: X11 and Wayland have no equivalent foreground lock, and a window manager there decides focus by its own
-    // policy, which an application is not meant to override. Wired from Avalonia's Opened (there is no ContentRendered).
-    private void Window_Loaded(object? sender, RoutedEventArgs e) { if (OperatingSystem.IsWindows()) ForceForegroundRetrying(this); }
+    // policy, which an application is not meant to override. Avalonia has no ContentRendered, so the command-line Demo96 file
+    // upstream opens from there is opened here instead, once the window is up.
+    private void Window_Loaded(object? sender, RoutedEventArgs e)
+    {
+        if (OperatingSystem.IsWindows()) ForceForegroundRetrying(this);
+        OpenDemo96FromCommandLine();
+    }
 
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
@@ -3421,7 +3496,7 @@ public partial class MainWindow : Window
             return;
         }
         // TryPan/tilt below assumes the outdoor island's own coordinate space
-        // (IsWorldPositionOnIsland, SyncPanScrollBars writing targetX/Z) --
+        // (IsWorldPositionInView, SyncPanScrollBars writing targetX/Z) --
         // arrow-key panning isn't wired up for interior scenes (only the
         // scrollbars are, via RenderInteriorPan), and letting this run
         // anyway would silently overwrite the pan scrollbars' interior-mode

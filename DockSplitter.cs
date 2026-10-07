@@ -26,6 +26,8 @@ internal sealed class DockSplitter : Thumb
         // handle brings its own one-Border template rather than relying on whatever the active theme gives a Thumb.
         Template = new FuncControlTemplate<DockSplitter>((splitter, _) => new Border { [!Border.BackgroundProperty] = splitter[!BackgroundProperty] });
         this.SetResourceReference(BackgroundProperty, "ThemeBorderBrush");
+        // (named for UI Automation: an unnamed thumb is all it saw)
+        Avalonia.Automation.AutomationProperties.SetName(this, resizesWidth ? "Resize width" : "Resize height");
         if (resizesWidth) { Width = 4; Cursor = Cursors.SizeWE; HorizontalAlignment = HorizontalAlignment.Stretch; }
         else { Height = 4; Cursor = Cursors.SizeNS; VerticalAlignment = VerticalAlignment.Stretch; }
         DragDelta += OnDragDelta;

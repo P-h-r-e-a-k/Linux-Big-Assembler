@@ -14,7 +14,8 @@ internal sealed record RaceTrackTheme(
     (int Bank, int Pos) RedCurb,
     (int Bank, int Pos) Arrow,
     (int Bank, int Pos) Sand,
-    (int Bank, int Pos)? FlatHatch = null)   // the hatching as a flat colour, where the island has no room for its tile
+    (int Bank, int Pos)? FlatHatch = null,   // the hatching as a flat colour, where the island has no room for its tile
+    byte[]? Palette = null)                 // the island's palette (768 bytes), to match a flat colour to a tile by
 {
     // What the Desert island's own ground has, where the retail race track is painted from.
     public static readonly RaceTrackTheme Retail = new((96, 0, 32, 32), (180, 155), (192, 48, 16, 16), (0, 128, 32, 32), (4, 5), (5, 5), (2, 12));
@@ -29,7 +30,7 @@ internal static class RaceTrackTextures
     public static (RaceTrackTheme Theme, string Log) Import(IslandFile island, RaceTrackIsland where, string gameDirectory, string? ileFile = null)
     {
         var file = ileFile ?? where.IleFile;
-        if (file == RaceTrackIsland.Desert.IleFile) return (RaceTrackTheme.Retail, "");
+        if (file == RaceTrackIsland.Desert.IleFile) return (RaceTrackTheme.Retail with { Palette = IslandMapRenderer.LoadPalette(gameDirectory, "DESERT") }, "");
 
         // (the original, kept beside it by a build: the Desert island's own track, built before this one in the same build, has changed the file)
         var desertPath = Path.Combine(gameDirectory, RaceTrackIsland.Desert.IleFile);
@@ -89,10 +90,45 @@ internal static class RaceTrackTextures
         }
 
         var theme = new RaceTrackTheme(asphalt, (white.X + 3, white.Y + 3), hatch, rock,
-            Near(RaceTrackTheme.Retail.RedCurb), Near(RaceTrackTheme.Retail.Arrow), Near(RaceTrackTheme.Retail.Sand));
+            Near(RaceTrackTheme.Retail.RedCurb), Near(RaceTrackTheme.Retail.Arrow), Near(RaceTrackTheme.Retail.Sand), Palette: to);
         var log = $"the road's look on {where.Name} ({file}): the Desert track's tiles copied into its spare texture space ({string.Join(", ", placed)}), " +
                   $"their colours matched in its own palette; the red curb is colour {theme.RedCurb.Bank * 16 + theme.RedCurb.Pos}, the arrows {theme.Arrow.Bank * 16 + theme.Arrow.Pos}";
         return (theme, log);
+    }
+
+    // The kerb texture (RaceTrackBuilder.PaintRoad's smooth kerbs): a block of the page drawn as the road's edge is crossed, mapped onto
+    // each triangle along the kerb by the road's own coordinates -- along it in x, KerbTexels a cell, the red and white blocks KerbBlock
+    // cells long (red from 0); across it in y, from a cell inside the asphalt's edge (asphalt) over the kerb (KerbTexels rows) to a cell
+    // past it (colour 0: the triangle's own flat colour, the verge, shows there). The kerb's red is the colour the flat red kerb shows at
+    // the ground's usual light (its ramp's 9th: Desert island's 73), its white the white curb's pixel, the asphalt the asphalt tile's
+    // pixels at this scale. Null where the page has no free block for it.
+    public const int KerbTexels = 10, KerbWide = 48, KerbTall = 32;
+    public const double KerbBlock = 1.6;
+    public static (int X, int Y)? KerbTexture(IslandFile island, RaceTrackTheme theme)
+    {
+        var free = FreeBlocks(island);
+        // (the road's own tiles, copied into the page for this build, are not read by any polygon yet)
+        void Taken((int X, int Y, int W, int H) t)
+        {
+            for (var by = t.Y / 8; by <= Math.Min(31, (t.Y + t.H - 1) / 8); by++)
+            for (var bx = t.X / 8; bx <= Math.Min(31, (t.X + t.W - 1) / 8); bx++) free[bx, by] = false;
+        }
+        Taken(theme.Asphalt); Taken(theme.Hatch); Taken(theme.Rock); Taken((theme.WhiteCurb.X - 3, theme.WhiteCurb.Y - 3, 8, 8));
+        if (Place(free, KerbWide, KerbTall) is not { } at) return null;
+        var page = island.GroundTexture;
+        var red = (byte)(theme.RedCurb.Bank * 16 + 9);
+        var white = page[theme.WhiteCurb.Y * 256 + theme.WhiteCurb.X];
+        var a = theme.Asphalt;
+        for (var y = 0; y < KerbTall; y++)
+        for (var x = 0; x < KerbWide; x++)
+        {
+            byte c;
+            if (y < KerbTexels) c = page[(a.Y + y * a.H / KerbTexels % a.H) * 256 + a.X + x * a.W / KerbTexels % a.W];
+            else if (y < 2 * KerbTexels) c = (int)Math.Floor(x / (KerbBlock * KerbTexels)) % 2 == 0 ? red : white;
+            else c = 0;
+            page[(at.Y + y) * 256 + at.X + x] = c;
+        }
+        return at;
     }
 
     // Whether the page has free blocks for all four of the road's tiles.
@@ -175,22 +211,37 @@ internal static class RaceTrackTextures
         }
         var arrow = Near(RaceTrackTheme.Retail.Arrow);
         var theme = new RaceTrackTheme((asphalt.X, asphalt.Y, size, size), white, (0, 0, 0, 0), (rock.Item1, rock.Item2, 32, 32),
-            Near(RaceTrackTheme.Retail.RedCurb), arrow, Near(RaceTrackTheme.Retail.Sand), arrow);
+            Near(RaceTrackTheme.Retail.RedCurb), arrow, Near(RaceTrackTheme.Retail.Sand), arrow, to);
         return (theme, $"the road's look on {where.Name} ({file}): its ground texture has no spare space, so the road is painted with its own tiles -- " +
                        $"the asphalt from its darkest even patch at ({asphalt.X},{asphalt.Y}), white from the pixel at ({white.X},{white.Y}), its own cliff at ({rock.Item1},{rock.Item2}) " +
                        $"for the shoulders and walls, the hatching as the arrows' flat colour");
     }
 
     // The 8 x 8 blocks of the island's texture page no cube's polygon reads: every texture definition gives the (u, v) corners of a
-    // triangle, 256 to a pixel.
+    // triangle, 256 to a pixel. (An island with more ground pages -- POLAR.ILE: IslandFile.GroundPages -- has the definitions of all of
+    // them in its cubes' lists; only those the first page's triangles read count, the page the road's are on.)
     private static bool[,] FreeBlocks(IslandFile island)
     {
         var used = new bool[256, 256];
         foreach (var cube in island.Cubes.Values)
         {
             var t = cube.TextureDefs;
+            HashSet<int>? read = null;
+            if (island.GroundPages.Count > 0)
+            {
+                read = new HashSet<int>();
+                if (cube.HasPolygons)
+                    for (var z = 0; z < IslandCube.Cells; z++)
+                    for (var x = 0; x < IslandCube.Cells; x++)
+                    for (var half = 0; half < 2; half++)
+                    {
+                        var p = new IslandPolygon(cube.Polygon(x, z, half));
+                        if (p.TexFlag != 0 && island.GroundTextureOf(p) is (0, var definition)) read.Add(definition * 6);
+                    }
+            }
             for (var i = 0; i + 5 < t.Length; i += 6)
             {
+                if (read is not null && !read.Contains(i)) continue;
                 int u0 = 65535, v0 = 65535, u1 = 0, v1 = 0;
                 for (var k = 0; k < 3; k++)
                 {

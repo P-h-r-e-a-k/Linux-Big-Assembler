@@ -1,13 +1,16 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace LBAAssembler;
 
@@ -175,6 +178,14 @@ internal sealed class DockGroup : Grid
         if (content.Parent is Panel oldParent) oldParent.Children.Remove(content);   // e.g. MainWindow.axaml's hidden content pool
         var item = new DockItem(key, title, content, canClose, canFloat) { Owner = this };
         items.Add(item);
+        // (UI Automation: the group's buttons named, and found by the first item's key -- DockPin_Zones, DockFloat_Zones)
+        if (items.Count == 1)
+        {
+            AutomationProperties.SetName(pinButton, "Auto-hide");
+            AutomationProperties.SetAutomationId(pinButton, $"DockPin_{key}");
+            AutomationProperties.SetName(floatButton, "Float");
+            AutomationProperties.SetAutomationId(floatButton, $"DockFloat_{key}");
+        }
         RebuildHeader();
         if (active is null) Activate(key);
         return item;
@@ -235,6 +246,8 @@ internal sealed class DockGroup : Grid
         active = item;
         Detach(item.Content);
         body.Content = item.Content;
+        AutomationProperties.SetName(body, item.Title);
+        AutomationProperties.SetAutomationId(body, $"DockBody_{item.Key}");
         RebuildHeader();
         ActiveItemChanged?.Invoke(this, item);
     }
@@ -344,7 +357,14 @@ internal sealed class DockGroup : Grid
         floatButton.Visibility = (active?.CanFloat ?? false) ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private Border BuildTab(DockItem item)
+    // A tab: a button drawn as the tab, so that UI Automation can press it (Invoke) and find it by name ("Zones") or id (DockTab_Zones) --
+    // a plain border with a mouse handler showed only as its text -- picked on the mouse going down as before, and not taking the keyboard
+    // focus (the viewport's keys stay with it).
+    // A Fluent Button paints its own chrome into PART_ContentPresenter, which would hide the tab's active/inactive
+    // colours, so the tab brings a one-Border template of its own -- the same approach DockSplitter takes, and the
+    // equivalent of the ControlTemplate the WPF build parses for this.
+    private static FuncControlTemplate<Button>? tabTemplate;
+    private Button BuildTab(DockItem item)
     {
         var isActive = item == active;
         var text = new TextBlock { Text = item.Title, FontFamily = UiFonts.Mono, FontSize = 10, VerticalAlignment = VerticalAlignment.Center };
@@ -355,24 +375,52 @@ internal sealed class DockGroup : Grid
             var close = new Button
             {
                 Content = "×", Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), Margin = new Thickness(6, 0, 0, 0),
-                Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0), Focusable = false,
             };
             close.SetResourceReference(TemplatedControl.ForegroundProperty, "ThemeTextMutedBrush");
+            AutomationProperties.SetName(close, $"Close {item.Title}");
+            AutomationProperties.SetAutomationId(close, $"DockClose_{item.Key}");
             close.Click += (_, e) => { e.Handled = true; SetVisible(item.Key, false); };
             row.Children.Add(close);
         }
-        var tab = new Border
+        tabTemplate ??= new FuncControlTemplate<Button>((button, _) => new Border
         {
-            Child = row, Padding = new Thickness(10, 4, 8, 4), Margin = new Thickness(0, 0, 2, 0), Cursor = item.IsEnabled ? Cursors.Hand : Cursors.Arrow,
-            BorderThickness = new Thickness(1, 1, 1, 0),
+            [!Border.BackgroundProperty] = button[!TemplatedControl.BackgroundProperty],
+            [!Border.BorderBrushProperty] = button[!TemplatedControl.BorderBrushProperty],
+            [!Border.BorderThicknessProperty] = button[!TemplatedControl.BorderThicknessProperty],
+            [!Border.PaddingProperty] = button[!TemplatedControl.PaddingProperty],
+            Child = new ContentPresenter { [!ContentPresenter.ContentProperty] = button[!ContentControl.ContentProperty] },
+        });
+        var tab = new Button
+        {
+            Template = tabTemplate, Content = row, Padding = new Thickness(10, 4, 8, 4), Margin = new Thickness(0, 0, 2, 0), Cursor = item.IsEnabled ? Cursors.Hand : Cursors.Arrow,
+            BorderThickness = new Thickness(1, 1, 1, 0), Focusable = false, IsEnabled = item.IsEnabled,
             // Matches IslandEditorView's own disabled-control opacity (0.45) rather than inventing a second convention.
             Opacity = item.IsEnabled ? 1.0 : 0.45,
         };
-        tab.SetResourceReference(Border.BackgroundProperty, isActive ? "ThemeWindowBrush" : "ThemeRaisedBrush");
-        tab.SetResourceReference(Border.BorderBrushProperty, "ThemeBorderBrush");
+        tab.SetResourceReference(Control.BackgroundProperty, isActive ? "ThemeWindowBrush" : "ThemeRaisedBrush");
+        tab.SetResourceReference(Control.BorderBrushProperty, "ThemeBorderBrush");
         text.SetResourceReference(TextBlock.ForegroundProperty, isActive ? "ThemeTextBrush" : "ThemeTextMutedBrush");
-        if (item.IsEnabled) tab.PointerPressed += (_, e) => { if (!e.IsLeft) return; if (pinned) ShowFlyout(item); else SetActive(item); e.Handled = true; };
-        else tab.ToolTip = $"{item.Title} isn't available in the current mode";
+        AutomationProperties.SetName(tab, item.Title);
+        AutomationProperties.SetAutomationId(tab, $"DockTab_{item.Key}");
+        AutomationProperties.SetItemStatus(tab, isActive ? "selected" : "");
+        if (item.IsEnabled)
+        {
+            void Pick() { if (pinned) ShowFlyout(item); else SetActive(item); }
+            // (a press picks it at once, as the border did -- not one on its close button; Click, which is UI Automation's
+            // Invoke, picks it too)
+            tab.PointerPressed += (_, e) => { if (!e.IsLeft || InsideOtherButton(e.Source, tab)) return; Pick(); e.Handled = true; };
+            tab.Click += (_, _) => Pick();
+        }
+        else tab.ToolTip = $"{item.Title} isn't available in the current mode";      // (Avalonia shows a disabled control's tip anyway)
         return tab;
+    }
+
+    // Whether the press landed inside a button within `outer` (a tab's own close button), which has its own job.
+    private static bool InsideOtherButton(object? source, Visual outer)
+    {
+        for (var e = source as Visual; e is not null && !ReferenceEquals(e, outer); e = e.GetVisualParent())
+            if (e is Button) return true;
+        return false;
     }
 }

@@ -57,8 +57,9 @@ public partial class MainWindow
         => area.Island >= 0 && area.Island < IslandNameByRawSceneId.Length ? IslandNameByRawSceneId[area.Island] : null;
 
     // The joined maps of an island (or of no island: the "Other" group), in the order of the list, with their numbers; none when joining is off.
+    // (none for the 1996 demo: the maps are made for the retail scenes' numbers)
     private List<(Lba1Area Area, int Index)> Lba2AreasOfIsland(string? islandFile)
-        => !lba1JoinAreas ? new() : Lba2AreaList().Select((area, index) => (Area: area, Index: index))
+        => !lba1JoinAreas || Demo96Active ? new() : Lba2AreaList().Select((area, index) => (Area: area, Index: index))
             .Where(x => string.Equals(Lba2AreaIslandFile(x.Area), islandFile, StringComparison.OrdinalIgnoreCase)).ToList();
 
     // The scene-list entry that shows `scene`: the scene itself, or the joined map it is part of.

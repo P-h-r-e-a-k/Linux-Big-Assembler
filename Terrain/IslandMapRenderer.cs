@@ -50,8 +50,25 @@ internal sealed class IslandMapRenderer
             "CITABAU" => 42, "DESERT" => 29, "EMERAUDE" => 30, "OTRINGAL" => 31, "CELEBRAT" or "CELEBRA2" => 32, "PLATFORM" => 33,
             "MOSQUIBE" => 34, "KNARTAS" => 35, "ILOTCX" => 36, "ASCENCE" => 37,
             // island 1 (Sendell's Well, cut from the retail game: a SENDELL.ILE made for it), and the old copy of the Emerald Moon
-            "SENDELL" => 28, "MOON" => 30, _ => 27,
+            "SENDELL" => 28, "MOON" => 30,
+            // island 12, Polar Island (ported from LBA1: Terrain.Polar), its own slot -- an empty one in the retail file, filled when it is
+            // installed; until then the palette its ground was made in
+            "POLAR" => PolarPaletteEntry(gameDirectory), _ => 27,
         };
+        return LoadPaletteEntry(gameDirectory, index);
+    }
+
+    public const int PolarPaletteSlot = 39;
+    public static int PolarPaletteEntryFor(string gameDirectory) => PolarPaletteEntry(gameDirectory);
+    private static int PolarPaletteEntry(string gameDirectory)
+    {
+        try { return HqrArchive.Open(Path.Combine(gameDirectory, "RESS.HQR")).Read(PolarPaletteSlot).Length >= 768 + 44 ? PolarPaletteSlot : Polar.PolarTerrain.ChosenPalette; }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { return Polar.PolarTerrain.ChosenPalette; }
+    }
+
+    // The 768-byte palette of a RESS.HQR "XPL" entry (at the offset its header gives).
+    public static byte[] LoadPaletteEntry(string gameDirectory, int index)
+    {
         try
         {
             var xpl = HqrArchive.Open(Path.Combine(gameDirectory, "RESS.HQR")).Read(index);
@@ -212,13 +229,17 @@ internal sealed class IslandMapRenderer
         var w2 = 1 - w0 - w1;
         var l = Math.Clamp(light[corners[0]] * w0 + light[corners[1]] * w1 + light[corners[2]] * w2, 0, 15);
         var factor = 0.48 + l / 15.0 * 0.72;
-        var index = poly.TextureIndex;
+        // (an island with more ground pages: the page in the index's top bits -- IslandFile.GroundTextureOf)
+        var (page, index) = island.GroundTextureOf(poly);
         if (poly.TexFlag != 0 && index * 6 + 6 <= cube.TextureDefs.Length)
         {
             var t = cube.TextureDefs.AsSpan(index * 6, 6);
             var tu = (t[0] * w0 + t[2] * w1 + t[4] * w2) / 256.0; var tv = (t[1] * w0 + t[3] * w1 + t[5] * w2) / 256.0;
             var tx = Math.Clamp((int)Math.Round(tu), 0, 255); var ty = Math.Clamp((int)Math.Round(tv), 0, 255);
-            return Shade(island.GroundTexture[ty * 256 + tx], factor);
+            var texel = island.GroundPage(page)[ty * 256 + tx];
+            // (a texture over a flat colour -- the engine's incrust, the race track's kerbs: its colour 0 is see-through)
+            if (texel == 0 && poly.PolyFlag != 0) return Shade((poly.Bank << 4) + 11, factor);
+            return Shade(texel, factor);
         }
         if (poly.PolyFlag == 0) return ((byte)(28 * factor + 10), (byte)(70 * factor + 12), (byte)(120 * factor + 20));   // nothing drawn: the sea shows through
         return Shade((poly.Bank << 4) + 11, factor);

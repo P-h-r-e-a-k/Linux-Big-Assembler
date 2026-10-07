@@ -2433,6 +2433,20 @@ static void cmd_autodrive(int argc, const char *argv[]) {
     Console_Print("autodrive: %s", atoi(argv[1]) ? "on" : "off");
 }
 
+/* raceitem <n>: Twinsen uses a race-track mod's power-up now (0 fuel, 1 protection, 2 lightning, 3 penguin, 4 super jet-pack, 5 oil);
+   raceblast [cells]: a nitro penguin goes off that far ahead of his car (RACEMOD.CPP, tests). */
+static void cmd_raceitem(int argc, const char *argv[]) {
+    extern void RaceMod_TestItem(int pu);
+    if (argc < 2) { Console_Print("Usage: raceitem <0..5>"); return; }
+    RaceMod_TestItem(atoi(argv[1]));
+    Console_Print("raceitem: %d", atoi(argv[1]));
+}
+static void cmd_raceblast(int argc, const char *argv[]) {
+    extern void RaceMod_TestBlast(double cells);
+    RaceMod_TestBlast(argc >= 2 ? atof(argv[1]) : 1.5);
+    Console_Print("raceblast");
+}
+
 static void cmd_input(int argc, const char *argv[]) {
     if (argc < 2) {
         Console_Print("Usage: input <flags> [ticks] | input seq <t:flags:dur[/...]>");
@@ -2667,6 +2681,10 @@ void Console_RegisterAll(void) {
                               "lifetrace <objN> | lifetrace off",
                               "Logs the object's comportement/track/zone each frame and every LF_ "
                               "condition it evaluates.");
+    Console_RegisterCommandEx("raceitem", cmd_raceitem, "Race-track test: Twinsen uses a power-up now", "raceitem <0..5>",
+                              "0 fuel, 1 protection, 2 lightning, 3 penguin, 4 super jet-pack, 5 oil (RACEMOD.CPP).");
+    Console_RegisterCommandEx("raceblast", cmd_raceblast, "Race-track test: a nitro penguin goes off ahead of the car", "raceblast [cells]",
+                              "As if another car dropped it; the blast's own rules decide what it does to Twinsen (RACEMOD.CPP).");
     Console_RegisterCommandEx("autodrive", cmd_autodrive, "Race-track test pilot: drive the player's car along the racing line",
                               "autodrive <0|1> [look cells]",
                               "With a race-track mod running (LBA2_RACETRACK_FILE), steers and pedals the player's "

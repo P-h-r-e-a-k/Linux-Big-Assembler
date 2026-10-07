@@ -388,6 +388,12 @@ void AffichageObjetDecorsZBuf(void) {
                                      clipzstart,
                                      ptrtri->Zrot - StartZFog));
 
+        // (an island with more object pages: the page this decor's body is textured from -- VAR_EXT.H)
+        if (NbObjPages > 1) {
+            U32 page = ((U32)ptrobj->Body >> DEC_PAGE_SHIFT) & 15;
+            ObjPtrMap = (page AND page < (U32)NbObjPages) ? ObjPageBuf + (page - 1) * 256 * 256 : ObjTexture;
+        }
+
         if (BodyDisplay(ptrobj->Xworld,
                         ptrobj->Yworld,
                         ptrobj->Zworld,
@@ -401,6 +407,7 @@ void AffichageObjetDecorsZBuf(void) {
             }
         }
     }
+    ObjPtrMap = ObjTexture; // (back to the first page: what is drawn next expects it)
 
     //	Switch_Fillers( FILL_TEXTURES_ON );
 

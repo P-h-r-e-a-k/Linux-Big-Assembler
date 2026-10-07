@@ -315,11 +315,21 @@ S32 RaceMod_NoCollide(S32 numobj);
 S32 RaceMod_ProtectionFree(void);
 S32 RaceMod_ProtectionEnding(void);
 double RaceMod_SkidSteer(void);
+// BUGGY.CPP RaceSpeed: while the super jet-pack drives the car, its steering quickened by the jet-pack's factor (1 otherwise).
+double RaceMod_JetSteer(void);
+// BUGGY.CPP MoveBuggy: Twinsen's car skidding on oil -- turned round once and run down to a standstill (its heading and speed), sliding on
+// the way it was going (the heading it moves along).
+void RaceMod_Skid(S32 *beta, S32 *speed);
+S32 RaceMod_MoveBeta(S32 beta);
 double RaceMod_SkidCoast(void);
 S32 RaceMod_Dial(S32 num);
 S32 RaceMod_Loop(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz);
 void RaceMod_FloorFor(S32 y);
 void RaceMod_FloorForNothing(void);
+// OBJECT.CPP ChangeCube's fade-in: from white, once, at a dream's end (RACEMOD.CPP wake_flight=)
+S32 RaceMod_FadeFromWhite(void);
+// EXTFUNC.CPP InitGrilleExt: Citadel Island's weather as its file is chosen (1 fine, CITABAU; 0 the storm, CITADEL) -- game variable 206
+void RaceMod_CitadelWeather(S32 fine);
 void RaceMod_Rail(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *nz);
 void RaceMod_Floor(S32 ox, S32 oy, S32 oz, S32 nx, S32 *ny, S32 nz);
 #ifdef	LBA_EDITOR
@@ -697,6 +707,13 @@ void RaceMod_Floor(S32 ox, S32 oy, S32 oz, S32 nx, S32 *ny, S32 nz);
 #define	EXTRA_FOUDRE_STEP2	(1L<<28L)	// Foudre etape 2
 #define	EXTRA_FOUDRE_STEP3	(1L<<29L)	// Foudre etape 3
 
+#define	EXTRA_MIRROR		(1L<<30L)	// the sprite drawn mirrored left to right (the race-track mode's steam jets, 2026-10-07)
+void *MirroredRawSprite(S32 num, void *bank);	// (OBJECT.CPP)
+// (in an extra's Scale, not its Flags -- they are all taken: the sprite laid on its side, its root -- the middle of its bottom, where its
+// hot spot is -- on the extra's place and its tip towards Pos + (Vx, Vy, Vz) as the screen shows that way, its thickness the Scale's;
+// an animated sprite's V is otherwise unused. The race-track mode's steam jets out of the gantries' uprights, 2026-10-07.)
+#define	EXTRA_SCALE_TURNED	(1L<<24L)
+void *TurnedRawSprite(S32 num, void *bank, S32 left);	// (OBJECT.CPP)
 #define	EXTRA_NO_SHADOW		(1L<<31L)	// Ne pas Afficher l'ombre de l'extra
 
 // En masquant le champ Flags des Extras avec EXTRA_MASK_WEAPON,

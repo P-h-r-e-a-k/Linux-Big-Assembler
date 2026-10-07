@@ -316,6 +316,7 @@ void InitGame(int argc) {
     /* init FIRST scene files */
 
     NewCube = 0;
+    { extern S32 RaceMod_NewGameScene(S32 scene); NewCube = RaceMod_NewGameScene(NewCube); }   /* a race-track mod's dream= (RACEMOD.CPP) */
     NumCube = -1;
 
     FlagTheEnd = -1;
@@ -1992,6 +1993,7 @@ restartloop:
         /* affiche tout */
 
     skip_simulation:
+        { extern void RaceMod_Story(void); RaceMod_Story(); }        /* a race-track mod's sprint: its intro, its end, the dream's waking up (RACEMOD.CPP) */
         Perftrace_PhaseBegin(PERFTRACE_PHASE_SCENE);
         AffScene(FirstTime);
         Perftrace_PhaseEnd(PERFTRACE_PHASE_SCENE);

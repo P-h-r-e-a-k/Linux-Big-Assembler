@@ -178,6 +178,40 @@ void LoadIsland() {
 
     if (!Load_HQR(islandFilePath, ObjTexture, HQR_TEX_OBJ))
         TheEndCheckFile(islandFilePath);
+
+    // the island's more texture pages, if it has them: after the last cube's records, their header, then them (VAR_EXT.H)
+    {
+        S32 nbcubes = 0, first, n, ground, objects;
+        S32 header[16];
+        for (n = 0; n < 256; n++)
+            if (IsleMapIndex[n] > nbcubes)
+                nbcubes = IsleMapIndex[n];
+        first = HQR_START_CUBE + HQR_STEP_CUBE * nbcubes;
+        NbGroundPages = NbObjPages = 1;
+        if (HQF_NbRes(islandFilePath) > first
+                AND Load_HQR(islandFilePath, header, first) == 4 * sizeof(S32)
+                    AND header[0] == ISLE_PAGES_MAGIC) {
+            ground = header[1] < 0 ? 0 : header[1] > MAX_GROUND_PAGES - 1 ? MAX_GROUND_PAGES - 1 : header[1];
+            objects = header[2] < 0 ? 0 : header[2] > MAX_OBJ_PAGES - 1 ? MAX_OBJ_PAGES - 1 : header[2];
+            if (ground > 0 AND !GroundPageBuf)
+                GroundPageBuf = (U8 *)Malloc((MAX_GROUND_PAGES - 1) * 256 * 256 + RECOVER_AREA);
+            if (ground > 0 AND GroundPageBuf) {
+                for (n = 0; n < ground; n++)
+                    if (Load_HQR(islandFilePath, GroundPageBuf + n * 256 * 256, first + 1 + n) != 256 * 256)
+                        break;
+                NbGroundPages = 1 + n;
+            }
+            if (objects > 0 AND !ObjPageBuf)
+                ObjPageBuf = (U8 *)Malloc((MAX_OBJ_PAGES - 1) * 256 * 256 + RECOVER_AREA);
+            if (objects > 0 AND ObjPageBuf) {
+                for (n = 0; n < objects; n++)
+                    if (Load_HQR(islandFilePath, ObjPageBuf + n * 256 * 256, first + 1 + ground + n) != 256 * 256)
+                        break;
+                NbObjPages = 1 + n;
+            }
+        }
+    }
+
 }
 
 /*──────────────────────────────────────────────────────────────────────────*/
