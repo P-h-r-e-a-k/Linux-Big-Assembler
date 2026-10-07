@@ -45,7 +45,11 @@ internal sealed class FilterableComboBox
         this.combo = combo;
         this.allOptions = allOptions;
         combo.PropertyChanged += (_, e) => { if (e.Property == ComboBox.TextProperty) OnTextChanged(); };
-        combo.GotFocus += (_, _) => { if (!combo.IsDropDownOpen) ResetFilter(); };      // (not an entry of the drop-down being clicked: that would lose the click)
+        // Deferred, never inline: a click on a drop-down entry closes the drop-down and moves the focus here while the combo box is
+        // still in the middle of committing that very click's selection, and replacing the list under it then either loses the pick
+        // or, when the new list is shorter, leaves the commit reading an index that no longer exists (a hard crash in Avalonia's own
+        // selection model). Posting it runs the reset after that input event is finished instead.
+        combo.GotFocus += (_, _) => Dispatcher.UIThread.Post(() => { if (!combo.IsDropDownOpen) ResetFilter(); }, DispatcherPriority.Background);
         combo.SelectionChanged += OnSelectionChanged;
         combo.LostFocus += (_, _) => Dispatcher.UIThread.Post(() => { if (!combo.IsKeyboardFocusWithin && !combo.IsDropDownOpen) FocusLeft?.Invoke(); });
     }
@@ -64,8 +68,9 @@ internal sealed class FilterableComboBox
             try { combo.ItemsSource = items; return true; }
             catch (InvalidOperationException)
             {
-                // (a change Avalonia was still in the middle of: empty the list, so the one put back below goes in from scratch)
-                try { combo.ItemsSource = null; } catch (InvalidOperationException) { }
+                // A change Avalonia was still in the middle of. The list is left exactly as it was and put back below: emptying it
+                // here (which an earlier version did) only makes it worse, because the selection index already in flight then points
+                // past the end of it.
                 retry = true;
             }
             finally { replacing = false; }
@@ -76,12 +81,18 @@ internal sealed class FilterableComboBox
 
     private void OnTextChanged()
     {
-        // Only typing filters. Avalonia also raises this when the combo box copies a selection made in code into its text (the
-        // island chosen at startup, or through the Scenes menu); filtering then would narrow the list to that one entry, and a
-        // later selection in code of anything else would find nothing to select.
-        if (suppress || !combo.IsKeyboardFocusWithin) return;
+        // Only typing filters. Avalonia also raises this when the combo box copies its selected item into its text, which it does
+        // both for a selection made in code (the island chosen at startup, or through the Scenes menu) and -- the dangerous one --
+        // from inside its own selection commit when the user picks from the drop-down (UpdateInputTextFromSelection, called while
+        // SelectionModel.EndBatchUpdate is still running). Narrowing the list there leaves that commit enumerating a selection index
+        // the shorter list no longer has, which throws deep inside Avalonia's selection model and takes the app down. The text
+        // matching the selected item is what tells the two apart: the user typing it is harmless to ignore, since the list it would
+        // filter to is the one entry already selected.
+        if (suppress) return;
         var options = allOptions();
         var text = combo.Text ?? "";
+        if (combo.SelectedItem is Option picked && string.Equals(picked.Display, text, StringComparison.Ordinal)) return;
+        if (!combo.IsKeyboardFocusWithin) return;
         var editBox = combo.EditableTextBox;
         var caret = editBox?.CaretIndex ?? text.Length;
         var filtered = string.IsNullOrWhiteSpace(text)
