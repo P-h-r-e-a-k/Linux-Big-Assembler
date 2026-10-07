@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -146,6 +147,14 @@ internal sealed class DockGroup : Grid
         if (content.Parent is Panel oldParent) oldParent.Children.Remove(content);   // e.g. MainWindow.xaml's hidden content pool
         var item = new DockItem(key, title, content, canClose, canFloat) { Owner = this };
         items.Add(item);
+        // (UI Automation: the group's buttons named, and found by the first item's key -- DockPin_Zones, DockFloat_Zones)
+        if (items.Count == 1)
+        {
+            AutomationProperties.SetName(pinButton, "Auto-hide");
+            AutomationProperties.SetAutomationId(pinButton, $"DockPin_{key}");
+            AutomationProperties.SetName(floatButton, "Float");
+            AutomationProperties.SetAutomationId(floatButton, $"DockFloat_{key}");
+        }
         RebuildHeader();
         if (active is null) Activate(key);
         return item;
@@ -206,6 +215,8 @@ internal sealed class DockGroup : Grid
         active = item;
         Detach(item.Content);
         body.Content = item.Content;
+        AutomationProperties.SetName(body, item.Title);
+        AutomationProperties.SetAutomationId(body, $"DockBody_{item.Key}");
         RebuildHeader();
         ActiveItemChanged?.Invoke(this, item);
     }
@@ -308,7 +319,11 @@ internal sealed class DockGroup : Grid
         floatButton.Visibility = (active?.CanFloat ?? false) ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private Border BuildTab(DockItem item)
+    // A tab: a button drawn as the tab, so that UI Automation can press it (Invoke) and find it by name ("Zones") or id (DockTab_Zones) --
+    // a plain border with a mouse handler showed only as its text -- picked on the mouse going down as before, and not taking the keyboard
+    // focus (the viewport's keys stay with it).
+    private static Style? tabStyle;
+    private Button BuildTab(DockItem item)
     {
         var isActive = item == active;
         var text = new TextBlock { Text = item.Title, FontFamily = new FontFamily("Consolas"), FontSize = 10, VerticalAlignment = VerticalAlignment.Center };
@@ -319,24 +334,53 @@ internal sealed class DockGroup : Grid
             var close = new Button
             {
                 Content = "×", Width = 16, Height = 16, Padding = new Thickness(0), Margin = new Thickness(6, 0, 0, 0),
-                Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0), Focusable = false,
             };
             close.SetResourceReference(Control.ForegroundProperty, "ThemeTextMutedBrush");
+            AutomationProperties.SetName(close, $"Close {item.Title}");
+            AutomationProperties.SetAutomationId(close, $"DockClose_{item.Key}");
             close.Click += (_, e) => { e.Handled = true; SetVisible(item.Key, false); };
             row.Children.Add(close);
         }
-        var tab = new Border
+        tabStyle ??= (Style)System.Windows.Markup.XamlReader.Parse(
+            "<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'><Setter Property='Template'><Setter.Value>" +
+            "<ControlTemplate TargetType='Button'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' " +
+            "BorderThickness='{TemplateBinding BorderThickness}' Padding='{TemplateBinding Padding}'><ContentPresenter/></Border></ControlTemplate>" +
+            "</Setter.Value></Setter></Style>");
+        var tab = new Button
         {
-            Child = row, Padding = new Thickness(10, 4, 8, 4), Margin = new Thickness(0, 0, 2, 0), Cursor = item.IsEnabled ? Cursors.Hand : Cursors.Arrow,
-            BorderThickness = new Thickness(1, 1, 1, 0),
+            Style = tabStyle, Content = row, Padding = new Thickness(10, 4, 8, 4), Margin = new Thickness(0, 0, 2, 0), Cursor = item.IsEnabled ? Cursors.Hand : Cursors.Arrow,
+            BorderThickness = new Thickness(1, 1, 1, 0), Focusable = false, IsEnabled = item.IsEnabled,
             // Matches IslandEditorView's own disabled-control opacity (0.45) rather than inventing a second convention.
             Opacity = item.IsEnabled ? 1.0 : 0.45,
         };
-        tab.SetResourceReference(Border.BackgroundProperty, isActive ? "ThemeWindowBrush" : "ThemeRaisedBrush");
-        tab.SetResourceReference(Border.BorderBrushProperty, "ThemeBorderBrush");
+        tab.SetResourceReference(Control.BackgroundProperty, isActive ? "ThemeWindowBrush" : "ThemeRaisedBrush");
+        tab.SetResourceReference(Control.BorderBrushProperty, "ThemeBorderBrush");
         text.SetResourceReference(TextBlock.ForegroundProperty, isActive ? "ThemeTextBrush" : "ThemeTextMutedBrush");
-        if (item.IsEnabled) tab.MouseLeftButtonDown += (_, e) => { if (pinned) ShowFlyout(item); else SetActive(item); e.Handled = true; };
-        else tab.ToolTip = $"{item.Title} isn't available in the current mode";
+        AutomationProperties.SetName(tab, item.Title);
+        AutomationProperties.SetAutomationId(tab, $"DockTab_{item.Key}");
+        AutomationProperties.SetItemStatus(tab, isActive ? "selected" : "");
+        if (item.IsEnabled)
+        {
+            void Pick() { if (pinned) ShowFlyout(item); else SetActive(item); }
+            // (a mouse press picks it at once, as the border did -- not one on its close button; Click, which is UI Automation's Invoke,
+            // picks it too)
+            tab.PreviewMouseLeftButtonDown += (_, e) => { if (e.OriginalSource is DependencyObject o && InsideOtherButton(o, tab)) return; Pick(); e.Handled = true; };
+            tab.Click += (_, _) => Pick();
+        }
+        else
+        {
+            tab.ToolTip = $"{item.Title} isn't available in the current mode";
+            ToolTipService.SetShowOnDisabled(tab, true);
+        }
         return tab;
+    }
+
+    // Whether `element` is inside a button within `outer` (a tab's close button).
+    private static bool InsideOtherButton(DependencyObject element, DependencyObject outer)
+    {
+        for (var e = element; e is not null && !ReferenceEquals(e, outer); e = e is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(e) : LogicalTreeHelper.GetParent(e))
+            if (e is ButtonBase) return true;
+        return false;
     }
 }

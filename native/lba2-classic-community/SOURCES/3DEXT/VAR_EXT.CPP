@@ -56,6 +56,10 @@ S32 PalLevel;
 U8 *SkySeaTexture;
 U8 *ObjTexture;
 U8 *GroundTexture;
+U8 *GroundPageBuf = NULL;
+S32 NbGroundPages = 1;
+U8 *ObjPageBuf = NULL;
+S32 NbObjPages = 1;
 
 Struc_Point Tab_Points[8];
 //Struc_Point	MemoTab_Points[8] ;

@@ -76,7 +76,8 @@ S32 LoadScene(S32 numscene) {
 
     Island = GET_S8;
 
-    Planet = TabArrow[Island].Planet;
+    // (an island past the holomap's own -- 12, Polar Island -- has no label of its own there: it is on Twinsun)
+    Planet = Island >= 0 && Island < MAX_ISLAND ? TabArrow[Island].Planet : 0;
 
     // Sert uniquement pour la 3DExt
     CurrentCubeX = GET_S8;

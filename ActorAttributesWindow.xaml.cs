@@ -178,7 +178,7 @@ public partial class ActorAttributesWindow : Window
         Title = $"Actor {actorIndex} Attributes";
         TitleLabel.Text = $"Actor {actorIndex}";
 
-        cachedBodyOptions ??= LoadOptions("BODY2.HQD", "BODY.HQR");
+        cachedBodyOptions = BodyOptions();
         // GenAnim (like GenBody) indexes a small per-actor "generic" table
         // (SearchAnim(), FICHE.CPP), not ANIM.HQR's own much larger raw
         // animation-data archive directly -- passing no HQR file here means
@@ -249,6 +249,7 @@ public partial class ActorAttributesWindow : Window
         // window opened for a freshly-added actor" separately in C#.
         Closed += (_, _) => nativeRenderer.RendererLibrary?.RemoveActor(actorIndex);
         Closed += (_, _) => previewTimer?.Stop();
+        Closed += (_, _) => DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: closed");
         // Explicit Normal priority, not the parameterless constructor's default (Background): confirmed this
         // round that a plain Background timer can go quiet for minutes at a time under heavy external UI
         // Automation traffic against this window (its own COM/RPC property queries appear to keep outrunning
@@ -269,6 +270,26 @@ public partial class ActorAttributesWindow : Window
     // the cross-validated (body) case -- see HqrArchive.CountEntries's own
     // comment for why -- ValidIndices' bounds-check filtering also happened
     // to let exactly one bogus entry at the boundary through for BODY.HQR.
+    // Every body of the game folder's BODY.HQR by number and name (Lba2BodyNames: the retail names, the folder's own sidecar, the race cars, the
+    // rest as bodies of their kind of actor) -- read again when the folder or what names its bodies has changed since (a race track build
+    // adds hundreds of bodies; the 1996 demo and Test edits change the folder), else the list read last.
+    private static string? cachedBodyKey;
+    private static IReadOnlyList<FilterableComboBox.Option> BodyOptions()
+    {
+        var directory = EditorSettings.Current.GameDirectory ?? "";
+        string Stamp(string file)
+        {
+            try { var path = Path.Combine(directory, file); return File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks.ToString() : "-"; }
+            catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException) { return "-"; }
+        }
+        var key = string.Join("|", directory, Stamp("BODY.HQR"), Stamp(HqdWriter.SidecarName("BODY.HQR")), Stamp(Terrain.RaceTrackCharacterCars.CatalogueFile), Stamp("RESS.HQR"));
+        if (cachedBodyOptions is not null && key == cachedBodyKey) return cachedBodyOptions;
+        var result = Lba2BodyNames.For(directory);
+        cachedBodyWarning = result.Warning;
+        cachedBodyKey = key;
+        return result.Names.Select((name, i) => new FilterableComboBox.Option(i, name is not null ? $"{i}: {name}" : $"{i}")).ToList();
+    }
+
     private static IReadOnlyList<FilterableComboBox.Option> LoadOptions(string hqdFileName, string? hqrFileName)
     {
         var hqrCount = 0;

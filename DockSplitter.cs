@@ -21,6 +21,8 @@ internal sealed class DockSplitter : Thumb
     {
         this.target = target; this.resizesWidth = resizesWidth; this.sizeSign = sizeSign;
         SetResourceReference(BackgroundProperty, "ThemeBorderBrush");
+        // (named for UI Automation: an unnamed thumb is all it saw)
+        System.Windows.Automation.AutomationProperties.SetName(this, resizesWidth ? "Resize width" : "Resize height");
         if (resizesWidth) { Width = 4; Cursor = System.Windows.Input.Cursors.SizeWE; HorizontalAlignment = HorizontalAlignment.Stretch; }
         else { Height = 4; Cursor = System.Windows.Input.Cursors.SizeNS; VerticalAlignment = VerticalAlignment.Stretch; }
         DragDelta += OnDragDelta;

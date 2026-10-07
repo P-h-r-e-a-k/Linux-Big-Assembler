@@ -373,6 +373,26 @@ internal static class DoorTrace
 }
 
 // scriptgrep <folder> <text>: every life script (all scenes) containing the text, as scene/actor.
+// scriptgrep2 <LBA2 folder> <text>: every LBA2 life and track script line (all scenes) containing the text, as scene/actor.
+internal static class ScriptGrep2
+{
+    public static int Run(string[] args)
+    {
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, args[1]);
+        for (var s = 0; s < store.SceneCount; s++)
+        {
+            if (!store.SceneExists(s)) continue;
+            LBAAssembler.LbaScript.SceneScripts scripts; LBAAssembler.Scenes.SceneModel model;
+            try { var record = store.LoadRecord(s); scripts = LBAAssembler.LbaScript.SceneScripts.Load(record, s); model = store.Load(s); } catch { continue; }
+            for (var a = 0; a < model.Actors.Count; a++)
+                foreach (var kind in new[] { LBAAssembler.LbaScript.ScriptKind.Life, LBAAssembler.LbaScript.ScriptKind.Track })
+                    foreach (var line in scripts.GetText(a, kind).Split('\n').Where(l => l.Contains(args[2])))
+                        Console.WriteLine($"scene {s} actor {a} {kind}: {line.Trim()}");
+        }
+        return 0;
+    }
+}
+
 internal static class ScriptGrep
 {
     public static int Run(string[] args)

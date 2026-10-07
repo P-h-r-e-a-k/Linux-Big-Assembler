@@ -29,7 +29,8 @@ internal static class RaceCarEngineFile
         var track = info is null ? null : RaceTrackService.Raced(info);
         string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
         var text = new StringBuilder("# LBA Assembler race car setup (read by the engine's race-track mode, RACEMOD.CPP)\n");
-        text.Append(car.CarKeys());
+        // (a dreamt sprint: the car's gears scaled to its own top speed -- Twinsen's car is a lot faster in his dream)
+        text.Append(car.CarKeys(track?.Dream?.TopKmh));
         // (a line's height, when it has one: a lap that passes over itself crosses the line's place at other heights too)
         static string Height(RaceTrackService.StartLineInfo line) => line.Y is { } y ? $" {y}" : "";
         if (track?.StartLine is { } l) text.Append($"startline={l.CubeX} {l.CubeZ} {l.X0} {l.Z0} {l.X1} {l.Z1} {l.DirX} {l.DirZ}{Height(l)}\n");
@@ -47,6 +48,12 @@ internal static class RaceCarEngineFile
         // an island drawn from a file the game never loads (the old moon's MOON.ILE, as island 3), and the lap's vertical loops
         if (info is not null && RaceTrackIsland.ByName(info.Island) is { RaceFile: { } raceFile } fileIsland) text.Append($"island_file={fileIsland.IslandByte} {raceFile}\n");
         foreach (var loop in track?.Loops ?? new()) text.Append($"loop={string.Join(' ', loop)}\n");
+        // (the Island of the Francos: every car on Gazogem fuel all race, none from a mushroom)
+        if (info is not null && RaceTrackIsland.ByName(info.Island) is { FuelAlways: true }) text.Append("fuel_always=1\n");
+        // the pipes over the road: their steam and the oil they drip onto it
+        foreach (var steam in track?.Steam ?? new()) text.Append($"steam={string.Join(' ', steam)}\n");
+        foreach (var drip in track?.Drips ?? new()) text.Append($"drip={string.Join(' ', drip)}\n");
+        foreach (var jet in track?.Jets ?? new()) text.Append($"jet={string.Join(' ', jet)}\n");
         // where the camera stands while the car flies a drop
         foreach (var dropCam in track?.JumpCameras ?? new()) text.Append($"jumpcam={string.Join(' ', dropCam)}\n");
         // the jumps the engine carries the car over (places in the raised road's file), and the island's scenes by cube for the cube
@@ -56,9 +63,24 @@ internal static class RaceCarEngineFile
         // the grid spots, and whether a qualifying lap sets the order the cars line up in (RACEMOD.CPP)
         foreach (var g in track?.Grid ?? new()) text.Append($"grid={string.Join(' ', g)}\n");
         foreach (var g in track?.Pits ?? new()) text.Append($"pit={string.Join(' ', g)}\n");
-        if (track?.Grid is { Count: > 0 }) text.Append($"qualifying={(car.Qualifying ? 1 : 0)}\n");
+        if (track?.Grid is { Count: > 0 }) text.Append($"qualifying={(car.Qualifying && track.Dream is null ? 1 : 0)}\n");
+        // a dreamt sprint (Polar Island's): start line to finish line once, its intro, and a win's waking up (a loss runs it again)
+        if (track?.Dream is { } dream)
+        {
+            var f = dream.Finish;
+            text.Append($"sprint=1\nrace_laps=1\nfinishline={f.CubeX} {f.CubeZ} {f.X0} {f.Z0} {f.X1} {f.Z1} {f.DirX} {f.DirZ}{Height(f)}\n");
+            text.Append($"intro={dream.IntroText}\nlose={dream.LoseText}\nwake={dream.WakeScene} {dream.WakeText} {dream.WakeActor}\n");
+            // (won: scene 0's opening wakes Twinsen up in his bed)
+            if (dream.WinVar >= 0) text.Append($"win={dream.WinVar} 1\n");
+            // (and the finish line a jump's lip: he wakes up in mid-flight)
+            if (dream.WakeFlight > 0) text.Append($"wake_flight={dream.WakeFlight}\n");
+            // (and awake, the car's own gears again: the dream's are scaled to its top speed)
+            var gears = Math.Clamp(car.Gears, 1, RaceCarSetup.MaxGears);
+            text.Append($"after_gears={string.Join(' ', Enumerable.Range(0, gears).Select(g => RaceCarSetup.KmhToUnits(Math.Clamp(car.TopKmh(g), 3, 150))))}\n");
+        }
         // (in the story the weather is the game's own: the set picks the track that goes with it)
-        if (!story && RaceTrackService.FineWeather(info, car.FineWeather)) text.Append("weather=fine\n");
+        // (and not for a dreamt race, which picks up the story: Twinsen wakes up in the game's own weather)
+        if (!story && track?.Dream is null && RaceTrackService.FineWeather(info, car.FineWeather)) text.Append("weather=fine\n");
         if (track?.StoryArrow is >= 0 and var arrow) text.Append($"holo_arrow={arrow}\n");
         var opponents = car.Opponents(track);
         for (var i = 0; i < opponents.Count && pathFiles is not null && i < pathFiles.Count; i++)
@@ -92,16 +114,34 @@ internal static class RaceCarEngineFile
         {
             text.Append("powerups=1\n");
             text.Append($"penguin_mode={(car.PenguinsWalk ? "walk" : "fuse")}\n");
-            foreach (var m in mushrooms) text.Append($"mushroom={m[0]} {m[1]}\n");
+            // (and the height each stands at on the road: built out of sight since 2026-10-05, older builds stand them there)
+            foreach (var m in mushrooms) text.Append($"mushroom={string.Join(' ', m)}\n");
             foreach (var pg in track.Penguins ?? new()) text.Append($"penguin={pg[0]} {pg[1]}\n");
             foreach (var oil in track.Oil ?? new()) text.Append($"oil={oil[0]} {oil[1]}\n");
             // (the oil's drum, which the item box shows)
             if (track.OilIcon is { } icon) text.Append($"oil_icon={icon}\n");
+            // (the super jet-pack the car turns into while it drives it)
+            if (track.SuperJetModel is { } jetModel) text.Append($"superjet_model={jetModel}\n");
+            // (Twinsen's buggy at half its size, for an opponent's lightning)
+            if (track.TwinsenSmall is { } small) text.Append($"twinsen_small={small}\n");
         }
         if (ghost >= 0) text.Append($"beat={ghost + 1}{(storm ? $" {RaceTrackStory.BeatVar} 1" : "")}\n");
         // the story's gates and the town circuit's race: Mr. Paul lets no one race without racing gloves; the aliens' track is ready the day
         // after the storm, once Twinsen has slept; three laps, and a win is Mr. Paul's ferry ticket
-        if (storm) text.Append($"gate={RaceTrackStory.GlovesSlot} 1 Mr. Paul: racing gloves first!\n");
+        if (storm) text.Append($"gate={RaceTrackStory.GlovesSlot} 1 Mr. Paul: driving gloves first!\n");
+        // the storm track's story: Raph laps it in his car -- the town circuit's copies of it, out of sight in the storm -- until Twinsen comes
+        // to talk to him, then it stands parked by the start line; and his line that tells the time to beat has it in
+        if (storm && ghost >= 0 && info!.Story is { } st)
+        {
+            if (st.RaphTime >= 0) text.Append($"beat_text={st.RaphTime}\n");
+            var laps = info.Twin?.Drivers?.FirstOrDefault(d => d.Name == opponents[ghost].Name && !d.Ghost && d.Actors.Count > 0);
+            if (laps is not null)
+            {
+                text.Append($"parade={ghost + 1} {RaceTrackStory.RaphHere} 1\n");
+                foreach (var (scene, actor) in laps.Actors) text.Append($"parade_actor={scene} {actor}\n");
+                if (st.RaphPark is [var ps, var px, var py, var pz, var pb]) text.Append($"parade_park={ps} {px} {py} {pz} {pb}\n");
+            }
+        }
         if (town)
         {
             text.Append($"gate={RaceTrackStory.DayVar} {RaceTrackStory.Rested} The new track opens tomorrow\n");
@@ -117,13 +157,15 @@ internal static class RaceCarEngineFile
         return text.ToString();
     }
 
-    // The car's handling, as the setup makes it.
-    private static string CarKeys(this RaceCarSetup car)
+    // The car's handling, as the setup makes it -- with `topKmh`, every gear's top speed scaled so the top gear's is that (Polar Island's
+    // dream race: 120 km/h).
+    private static string CarKeys(this RaceCarSetup car, int? topKmh = null)
     {
         string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
         var gears = Math.Clamp(car.Gears, 1, RaceCarSetup.MaxGears);
         var text = new StringBuilder($"gears={gears}\n");
-        for (var g = 0; g < gears; g++) text.Append($"gear{g + 1}={RaceCarSetup.KmhToUnits(Math.Clamp(car.TopKmh(g), 3, 150))}\n");
+        var scale = topKmh is { } top && car.TopKmh(gears - 1) > 0 ? (double)top / car.TopKmh(gears - 1) : 1;
+        for (var g = 0; g < gears; g++) text.Append($"gear{g + 1}={RaceCarSetup.KmhToUnits(Math.Clamp(car.TopKmh(g) * scale, 3, 150))}\n");
         text.Append($"accel={N(RaceCarSetup.OriginalAccel * Math.Clamp(car.AccelerationPercent, 10, 1000) / 100.0)}\n");
         text.Append($"brake={N(RaceCarSetup.OriginalBrake * Math.Clamp(car.BrakingPercent, 10, 1000) / 100.0)}\n");
         text.Append($"coast={N(RaceCarSetup.OriginalCoast * Math.Clamp(car.CoastingPercent, 0, 1000) / 100.0)}\n");
@@ -131,7 +173,29 @@ internal static class RaceCarEngineFile
         text.Append($"steer={(int)Math.Round(RaceCarSetup.OriginalSteer * Math.Clamp(car.SteeringPercent, 10, 1000) / 100.0)}\n");
         text.Append($"automatic={(car.Automatic ? 1 : 0)}\n");
         text.Append($"hud={(car.ShowDisplay ? 1 : 0)}\n");
+        // (driving as another car)
+        if (car.DriveAsKey is { } drive) text.Append(drive);
         return text.ToString();
+    }
+
+    // The engine's drive_as= line for driving as race car `number` (RaceCarSetup.DriveAs) in a game folder: its BODY.HQR body, the racer
+    // entity's driving animation (generic 1, as the opponents drive: RaceTrackScenes) and its shrunk body for an opponent's lightning
+    // (RaceTrackSmallCars) where the folder has one. The number is the racer entity's body for the cars made by hand, on from
+    // RaceTrackCharacterCars.CastFirst the cast's, as the folder's RACECARS.JSON lists them (a folder built before it: the entity table).
+    // Null when the folder hasn't that car (built before it was made).
+    internal static string? DriveAsLine(string gameDirectory, int number)
+    {
+        if (number < 0) return null;
+        var racer = Lba2EntityTable.Load(gameDirectory)?.Entities.FirstOrDefault(e => e.Id == RaceTrackScenes.RacerEntity);
+        if (racer is null) return null;
+        var anim = racer.Anims.Where(a => a.Generic == 1).Select(a => (int?)a.Anim).FirstOrDefault();
+        if (anim is null) return null;
+        if (RaceTrackCharacterCars.Catalogue(gameDirectory).FirstOrDefault(e => e.Number == number) is { } listed)
+            return $"# driving as car {number}, {listed.Name}\ndrive_as={listed.Body} {anim} {listed.Small}\n";
+        var body = racer.Bodies.Where(b => b.Generic == number).Select(b => (int?)b.Body).FirstOrDefault();
+        if (body is null) return null;
+        var small = racer.Bodies.Where(b => b.Generic == RaceTrackSmallCars.SmallOf(number)).Select(b => b.Body).DefaultIfEmpty(-1).First();
+        return $"# driving as the racer's car body {number}\ndrive_as={body} {anim} {small}\n";
     }
 
     // The scenes' copies of every opponent's car a track has.
@@ -246,6 +310,8 @@ internal static class RaceCarEngineFile
                 text.Append($"track={island.IslandByte} {when} {first} {last} {file}\n");
             }
             if (t.Story is { TiredText: >= 0 } s) text.Append($"tired={RaceTrackStory.DayVar} {RaceTrackStory.Tired} {s.TiredText}\n");
+            // (a dreamt sprint: a new game starts in it, where its race starts -- Polar Island's dock -- and wakes up at home once it is won)
+            if (t.Dream is not null && t.StartScene >= 0) text.Append($"dream={t.StartScene}\n");
         }
         File.WriteAllText(path, text.ToString());
     }

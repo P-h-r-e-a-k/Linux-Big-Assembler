@@ -41,6 +41,7 @@ LBA2_RENDERER_API int lba2_renderer_render_frame(void);
    or lba2_renderer_project_point() call still sees the cube the camera
    nominally targets. */
 LBA2_RENDERER_API int lba2_renderer_render_frame_wide(int radiusCubes);
+LBA2_RENDERER_API int lba2_renderer_render_frame_area(int cubeX0, int cubeZ0, int cubeX1, int cubeZ1);
 LBA2_RENDERER_API void lba2_renderer_set_camera(int alpha, int beta, int gamma, int distance);
 /* Toggles the sky/horizon layer (DrawHorizon2ZBuf + DrawSkySeaZBuf) for
    every subsequent lba2_renderer_render_frame() call. Off leaves the

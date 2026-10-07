@@ -10,6 +10,31 @@ namespace LBAAssembler.Terrain;
 // collision box is its floor, these carry nothing themselves: a decor's box is level and axis-aligned, and a sloping road made of them
 // would be a staircase the engine drops a car down step by step. The engine's race-track mode has the road as a floor of its own
 // (RACEMOD.CPP, from RACETRACK.JSON's Raised).
+// A raised road's colours (RaceTrackPlan.Themes): the deck, the curbs' two, the rails', the slab's side and underside, the piers' and the
+// arrows'. A lap's stretches can each have their own -- the Island of the Francos' three parts (the user, 2026-10-07: "make the track 3
+// distinctly themed sections"): the dock's planks with blue and white curbs on wooden piles, the refinery's steel with yellow and black
+// hazard curbs and red rails, the village's earth with green and white curbs and olive rails. Palette indices of the islands' shared
+// ramps: browns 16-31, greys 48-63, reds 64-79, golds 96-111, greens 112-143, blues 192-207.
+internal sealed record DeckTheme(string Name, int Asphalt, int Red, int White, int RailTop, int RailSide, int Side, int Under, int PierLight, int PierDark, int PierCap, int Arrow)
+{
+    public static readonly DeckTheme Standard = new("standard", RaceTrackRaisedBody.Asphalt, RaceTrackRaisedBody.Red, RaceTrackRaisedBody.White, RaceTrackRaisedBody.RailTop,
+        RaceTrackRaisedBody.RailSide, RaceTrackRaisedBody.Side, RaceTrackRaisedBody.Under, RaceTrackRaisedBody.PierLight, RaceTrackRaisedBody.PierDark, RaceTrackRaisedBody.PierCap,
+        RaceTrackRaisedBody.Arrow);
+    public static readonly DeckTheme Dock = new("dock", 23, 201, 63, 28, 25, 21, 19, 24, 20, 27, 62);
+    public static readonly DeckTheme Refinery = new("refinery", 52, 108, 49, 70, 67, 50, 49, 57, 54, 70, 245);
+    public static readonly DeckTheme Village = new("village", 104, 134, 63, 121, 118, 98, 97, 100, 97, 120, 89);
+    public static readonly DeckTheme[] All = { Standard, Dock, Refinery, Village };
+    public static DeckTheme? ByName(string? name) => All.FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase));
+}
+
+// A stretch of the lap in a DeckTheme (RaceTrackPlan.Themes): the plan's points From to To.
+internal sealed class ThemeRun
+{
+    public int From { get; set; }
+    public int To { get; set; }
+    public string Theme { get; set; } = "";
+}
+
 internal static class RaceTrackRaisedBody
 {
     // the deck's colours: the same greys, red and white as the flat deck's (RaceTrackDeckBody; the island palettes share them)
@@ -74,9 +99,13 @@ internal static class RaceTrackRaisedBody
     }
 
     public static byte[] Tile(IReadOnlyList<(Vector3 Mid, Vector3 Across)> sections, int firstBlock, double asphalt, double curb, double edge, bool arrow = false, int line = -1,
-        IReadOnlyList<double>? wider = null, double stripe = double.NaN, IReadOnlyList<bool>? striped = null, int strips = 0)
+        IReadOnlyList<double>? wider = null, double stripe = double.NaN, IReadOnlyList<bool>? striped = null, int strips = 0, DeckTheme? theme = null)
     {
         var m = new Mesh();
+        var (Asphalt, Red, White, RailTop, RailSide, Side, Under, Arrow) = theme is { } th
+            ? (th.Asphalt, th.Red, th.White, th.RailTop, th.RailSide, th.Side, th.Under, th.Arrow)
+            : (RaceTrackRaisedBody.Asphalt, RaceTrackRaisedBody.Red, RaceTrackRaisedBody.White, RaceTrackRaisedBody.RailTop, RaceTrackRaisedBody.RailSide, RaceTrackRaisedBody.Side,
+               RaceTrackRaisedBody.Under, RaceTrackRaisedBody.Arrow);
         double Wider(int j) => wider?[j] ?? 0;
         arrow = arrow && sections.Count == 5;
         if (strips < 1) strips = StripsFor(Enumerable.Range(0, sections.Count).Max(j => asphalt + Wider(j)));
@@ -186,14 +215,15 @@ internal static class RaceTrackRaisedBody
 
     // A pier: a square column `half` wide each way from the ground (the body's origin, y 0) up to `height`, and on it a beam `beam` long
     // each way across the road and `thick` high, along `across`. The column's sides are in two greys, so it reads as a solid from any side.
-    public static byte[] Pier(double height, double half, Vector3 across, double beam, double thick, double beamHalf)
-        => Pier(height, half, across, -beam, beam, thick, beamHalf);
+    public static byte[] Pier(double height, double half, Vector3 across, double beam, double thick, double beamHalf, DeckTheme? theme = null)
+        => Pier(height, half, across, -beam, beam, thick, beamHalf, theme);
 
     // ... with its beam from `lo` to `hi` along `across` from the column (a column beside the road, its beam reaching under it), and
     // leaning as `across` does (a banked road's): `height` is the beam's top over the column.
-    public static byte[] Pier(double height, double half, Vector3 across, double lo, double hi, double thick, double beamHalf)
+    public static byte[] Pier(double height, double half, Vector3 across, double lo, double hi, double thick, double beamHalf, DeckTheme? theme = null)
     {
         var m = new Mesh();
+        var (PierLight, PierDark, PierCap) = theme is { } th ? (th.PierLight, th.PierDark, th.PierCap) : (RaceTrackRaisedBody.PierLight, RaceTrackRaisedBody.PierDark, RaceTrackRaisedBody.PierCap);
         var h = (float)Math.Max(thick + 50, height); var t = (float)thick; var a = (float)half;
         // (the column is upright whatever the beam's lean)
         var level = across.Y == 0 ? across : Vector3.Normalize(new Vector3(across.X, 0, across.Z));

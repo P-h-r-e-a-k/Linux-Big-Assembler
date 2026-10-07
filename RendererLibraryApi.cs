@@ -15,6 +15,8 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetViewTargetFn(int worldX, int worldY, int worldZ);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderFrameFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderFrameWideFn(int radiusCubes);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderFrameAreaFn(int cubeX0, int cubeZ0, int cubeX1, int cubeZ1);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetViewDistanceFn(int startFog, int clipFar);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetCameraFn(int alpha, int beta, int gamma, int distance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSkyFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSeaFn(int enabled);
@@ -63,6 +65,8 @@ internal sealed class RendererLibraryApi : IDisposable
     private SetViewTargetFn? setViewTarget;
     private RenderFrameFn? renderFrame;
     private RenderFrameWideFn? renderFrameWide;
+    private RenderFrameAreaFn? renderFrameArea;
+    private SetViewDistanceFn? setViewDistance;
     private SetCameraFn? setCamera;
     private SetDrawSkyFn? setDrawSky;
     private SetDrawSeaFn? setDrawSea;
@@ -141,6 +145,8 @@ internal sealed class RendererLibraryApi : IDisposable
         setViewTarget = Get<SetViewTargetFn>("lba2_renderer_set_view_target");
         renderFrame = Get<RenderFrameFn>("lba2_renderer_render_frame"); setCamera = Get<SetCameraFn>("lba2_renderer_set_camera"); framebuffer = Get<FramebufferFn>("lba2_renderer_framebuffer");
         renderFrameWide = Get<RenderFrameWideFn>("lba2_renderer_render_frame_wide");
+        renderFrameArea = Get<RenderFrameAreaFn>("lba2_renderer_render_frame_area");
+        setViewDistance = Get<SetViewDistanceFn>("lba2_renderer_set_view_distance");
         setDrawSky = Get<SetDrawSkyFn>("lba2_renderer_set_draw_sky");
         setDrawSea = Get<SetDrawSeaFn>("lba2_renderer_set_draw_sea");
         setDrawActors = Get<SetDrawActorsFn>("lba2_renderer_set_draw_actors");
@@ -274,6 +280,11 @@ internal sealed class RendererLibraryApi : IDisposable
     // larger radii for camera distances where a single cube's terrain
     // visibly runs out before the horizon does.
     public int RenderFrameWide(int radiusCubes) => renderFrameWide?.Invoke(radiusCubes) ?? RenderFrame();
+    // The cubes (cubeX0, cubeZ0) to (cubeX1, cubeZ1) drawn whichever the camera is over: a whole island and the sea round it, the same under
+    // it wherever the view is (a DLL without it: the square of 2 round the camera's cube).
+    public int RenderFrameArea(int cubeX0, int cubeZ0, int cubeX1, int cubeZ1) => renderFrameArea?.Invoke(cubeX0, cubeZ0, cubeX1, cubeZ1) ?? RenderFrameWide(2);
+    // Where the fog starts and the view ends (world units from the camera).
+    public void SetViewDistance(int startFog, int clipFar) => setViewDistance?.Invoke(startFog, clipFar);
     public void SetCamera(int alpha, int beta, int gamma, int distance) => setCamera?.Invoke(alpha, beta, gamma, distance);
     public void SetDrawSky(bool enabled) => setDrawSky?.Invoke(enabled ? 1 : 0);
     public void SetDrawSea(bool enabled) => setDrawSea?.Invoke(enabled ? 1 : 0);

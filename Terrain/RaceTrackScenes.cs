@@ -24,7 +24,7 @@ internal static class RaceTrackScenes
     // The buggy's own script removes it until the quest that mends it is done (game variable 74 >= 3). The compare is
     //   IF VAR_GAME(74) >= 3   =   0C 0F 4A 03 03 00 ..
     // and reads >= 0 with the 3 zeroed, so the buggy is there from the start of any game. True when it was that script.
-    private static bool BuggyAlwaysThere(SceneActorModel buggy)
+    internal static bool BuggyAlwaysThere(SceneActorModel buggy)
     {
         if (buggy.Life.Length <= 6 || buggy.Life[0] != 0x0C || buggy.Life[1] != 0x0F || buggy.Life[2] != 0x4A || buggy.Life[3] != 0x03 || buggy.Life[4] != 0x03 || buggy.Life[5] != 0x00) return false;
         buggy.Life[4] = 0x00;
@@ -54,7 +54,7 @@ internal static class RaceTrackScenes
     {
         var store = new SceneStore(SceneGame.Lba2, gameDirectory);
         var list = new List<int[]>();
-        for (var scene = island.FirstScene; scene <= island.LastScene; scene++)
+        foreach (var scene in island.Scenes)
         {
             if (!store.SceneExists(scene)) continue;
             try
@@ -72,7 +72,7 @@ internal static class RaceTrackScenes
         var result = new List<EdgeCrossing>();
         if (report.LapX.Length < 2 || report.GroundAfter is not { } ground) return result;
         var sceneOf = new Dictionary<(int, int), int>();
-        for (var scene = options.Island.FirstScene; scene <= options.Island.LastScene; scene++)
+        foreach (var scene in options.Island.Scenes)
         {
             if (!store.SceneExists(scene)) continue;
             try
@@ -86,7 +86,8 @@ internal static class RaceTrackScenes
         // (where the lap is a raised road, at the road's own height -- the Emerald Moon's, 5,000 over the base's roof, 7,700 over the rim --
         // and nowhere in a carried jump's flight: the race-track mode changes the cube itself there, RACEMOD.CPP)
         var up = report.LapRaised is { } r && r.Length == n && report.LapY.Length == n ? r : null;
-        for (var i = 0; i < n; i++)
+        // (a sprint's route has two ends: its last point doesn't lead back to its first)
+        for (var i = 0; i < (report.Open ? n - 1 : n); i++)
         {
             var j = (i + 1) % n;
             double x0 = report.LapX[i], z0 = report.LapZ[i], x1 = report.LapX[j], z1 = report.LapZ[j];
@@ -290,11 +291,27 @@ internal static class RaceTrackScenes
         var penguinTemplate = Template(PenguinScene, PenguinActor);
         if (mushroomTemplate is null || penguinTemplate is null) log.Add($"no power-ups: the game's mushroom (scene {MushroomScene}) or nitro penguin (scene {PenguinScene}) could not be read");
         var biking = tracks.Any(t => t.BikerTemplate is not null);
-        var edgeZonesAdded = 0;
+        var edgeZonesAdded = 0; var doorsKept = 0;
+        // Whether any track's road surface (asphalt and curbs; a raised road's deck at its own height) covers part of a zone's box at the
+        // zone's height -- a car there stands in it. (A jump's gap has no surface.)
+        bool Paved(SceneZoneModel zone, int cubeX, int cubeZ)
+        {
+            double x0 = cubeX * 64 + zone.X0 / 512.0, x1 = cubeX * 64 + zone.X1 / 512.0, z0 = cubeZ * 64 + zone.Z0 / 512.0, z1 = cubeZ * 64 + zone.Z1 / 512.0;
+            foreach (var t in tracks)
+                foreach (var r in t.Report.Roads)
+                    for (var i = 0; i < r.Count; i++)
+                    {
+                        if (r.Void.Length > i && r.Void[i]) continue;
+                        var dx = Math.Max(Math.Max(x0 - r.X[i], 0), r.X[i] - x1); var dz = Math.Max(Math.Max(z0 - r.Z[i], 0), r.Z[i] - z1);
+                        if (dx * dx + dz * dz > r.CurbHalf * r.CurbHalf) continue;
+                        if (r.H[i] >= zone.Y0 - 256 && r.H[i] <= zone.Y1) return true;
+                    }
+            return false;
+        }
         // the island's own outside scenes: a cube change to any other scene is a door (Mosquibees Island's inside scene 104, the Queen's
         // throne, is numbered between its outside ones)
         var outside = new HashSet<int>();
-        for (var scene = options.Island.FirstScene; scene <= options.Island.LastScene; scene++)
+        foreach (var scene in options.Island.Scenes)
         {
             if (!store.SceneExists(scene)) continue;
             try { var m = store.Load(scene); if (m.Island == island && m.CubeMode == 1) outside.Add(scene); }
@@ -306,7 +323,7 @@ internal static class RaceTrackScenes
             SceneModel model;
             try { model = store.Load(scene); } catch (Exception e) when (e is InvalidDataException or ArgumentException or IOException) { continue; }
             if (model.Island != island || model.CubeMode != 1) continue;
-            if (scene < options.Island.FirstScene || scene > options.Island.LastScene)
+            if (!options.Island.HasScene(scene))
             {
                 // the demo scenes are copies the game plays as films; they are left as they are
                 log.Add($"scene {scene}: {(scene >= demoFrom ? "demo scene" : "not one of the island's own outside scenes")}, left alone");
@@ -348,7 +365,14 @@ internal static class RaceTrackScenes
             }
             removed += count;
             if (report.GroundBefore is { } groundBefore && groundAfter is not null && report.WasGround is { } wasGround)
-                Reseat(model, groundBefore, groundAfter, wasGround, scene, log);
+            {
+                // (the own file's story places: on its ground -- Citadel Island's lighthouse door, scene 46)
+                var own = options.Island.OwnGroundAt?.Where(o => o.Scene == scene).ToList();
+                var after = own is { Count: > 0 } && report.GroundAfter is { } ownGround
+                    ? (x, z) => own.Any(o => (x - o.X) * (x - o.X) + (z - o.Z) * (z - o.Z) <= o.Reach * o.Reach) ? ownGround(x, z) : groundAfter(x, z)
+                    : groundAfter;
+                Reseat(model, groundBefore, after, wasGround, scene, log);
+            }
             // The buggy's own script removes it until the quest that mends it is done (game variable 74 >= 3). The compare is
             //   IF VAR_GAME(74) >= 3   =   0C 0F 4A 03 03 00 ..
             // and reads >= 0 with the 3 zeroed, so the buggy is there from the start of any game.
@@ -435,7 +459,21 @@ internal static class RaceTrackScenes
                     : grid.Count > k + 1 ? (grid[k + 1][2], grid[k + 1][4], beta, grid[k + 1][3]) : null;
                 log.Add($"scene {scene}: Twinsen at ({model.Hero.X},{model.Hero.Y},{model.Hero.Z}) turn {beta}, buggy at ({buggy?.X},{buggy?.Y},{buggy?.Z})" +
                         (tracks.Count > 1 ? $" -- the start of {(t == tracks[0] ? options.Island.IleFile : options.Island.TwinIleFile)}'s track" : ""));
-                if (buggyIndex > 0 && StartBuggyScript(model, scene, buggyIndex, log) is { } withBuggy) model = withBuggy;
+                // (an island with a track in each weather: in the other weather the car parks where that file's ground has room for it)
+                (int X, int Y, int Z, int Beta, int When)? park = null;
+                if (tracks.Count > 1 && (t == tracks[0] ? options.Island.ParkOwn : options.Island.ParkTwin) is { } pk)
+                {
+                    if ((int)Math.Floor(pk.X / 64) != cx || (int)Math.Floor(pk.Z / 64) != cz)
+                        log.Add($"scene {scene}: the car's parking place for the other weather, cell ({pk.X}, {pk.Z}), is not in this scene's cube: left out");
+                    else
+                    {
+                        int px = (int)Math.Round((pk.X - cx * 64) * 512), pz = (int)Math.Round((pk.Z - cz * 64) * 512);
+                        var otherTrack = tracks.First(o => o != t);
+                        var py = otherTrack.Report.GroundAfter is { } og ? (int)Math.Round(og(pk.X, pk.Z)) : Ground(px, pz);
+                        park = (px, py, pz, pk.Beta, pk.When);
+                    }
+                }
+                if (buggyIndex > 0 && StartBuggyScript(model, scene, buggyIndex, log, park) is { } withBuggy) model = withBuggy;
             }
             // zones that would act on a car driving along the road: doors into buildings (cube changes to scenes that are not part of the island's
             // outside), hit, ladder, escalator, grid and rail zones; and, with RemoveTrackCameras, the fixed cameras (type 1) the car would
@@ -461,6 +499,20 @@ internal static class RaceTrackScenes
                     for (var cx = (int)Math.Floor((ox + zone.X0) / 512); cx <= (int)Math.Floor((ox + zone.X1) / 512) && !hit; cx++)
                         if (distanceToRoad(cx + 0.5, cz + 0.5) <= reach) hit = true;
                     if (!hit) continue;
+                    // A door into a building stays (2026-10-06: the user wanted every entrance kept whose building is still there). The engine
+                    // never takes the car through one (OBJECT.CPP GereZoneChangeCube: from the buggy only into an outside scene), and most
+                    // need Twinsen to walk into the building's wall too (Info5 bit 0, ZONE_TEST_BRICK) -- with the building gone it does
+                    // nothing. Only a door without that, a hole in the ground (a sewer's grate), goes where a road's surface now covers it
+                    // at its height: a walker on the road would drop through it.
+                    if (door)
+                    {
+                        var wall = zone.Info.Length > 5 && (zone.Info[5] & 1) != 0;
+                        if (wall || !Paved(zone, model.CubeX, model.CubeY)) { doorsKept++; continue; }
+                        log.Add($"scene {scene}: door zone {z} (into scene {zone.Num}, no wall to walk into) lies under the road's surface and is removed");
+                        SceneOps.DeleteZone(model, z);
+                        zonesRemoved++;
+                        continue;
+                    }
                     log.Add(camera ? $"scene {scene}: fixed camera zone {z} (number {zone.Num}) reaches the track and is removed"
                                    : $"scene {scene}: zone {z} (type {kind}, number {zone.Num}) lies on the road and is removed");
                     SceneOps.DeleteZone(model, z);
@@ -496,11 +548,16 @@ internal static class RaceTrackScenes
                         // (the scene's actors run out at the engine's hundred: the penguins and the slicks keep their room, and a row
                         // that doesn't fit is shorter)
                         if (model.Actors.Count + PenguinsPerScene + OilPerScene >= SceneValidator.MaxObjects) { mushroomsLeftOut++; continue; }
+                        // (out of sight, as the penguins and the slicks are, its height on the road kept with it: the race-track mode stands
+                        // it there. A scene can be drawn with another island file than its track's -- Celebration Island's 95 is the statue's
+                        // track's, and before the statue rises the game draws it without the raised road, as the editor draws the island's
+                        // other file with it; Citadel Island's scenes carry both weathers' tracks -- and a mushroom standing on a road that
+                        // isn't there hung in the air)
                         var mushroom = mushroomTemplate.Clone();
                         mushroom.Flags = OpponentFlags; mushroom.Move = 0; mushroom.Life = new byte[] { 0 }; mushroom.Track = new byte[] { 0 };
                         mushroom.X = (int)Math.Round((x - model.CubeX * 64) * 512); mushroom.Z = (int)Math.Round((z - model.CubeY * 64) * 512);
-                        mushroom.Y = (int)Math.Round(y); mushroom.Beta = 0;
-                        t.Mushrooms.Add(new[] { scene, SceneOps.AddActor(model, mushroom) });
+                        mushroom.Y = -20000; mushroom.Beta = 0;
+                        t.Mushrooms.Add(new[] { scene, SceneOps.AddActor(model, mushroom), (int)Math.Round(y) });
                     }
                     // (a few: the penguins dropped walk the track, several in one scene at once)
                     for (var k = 0; k < PenguinsPerScene; k++)
@@ -520,9 +577,14 @@ internal static class RaceTrackScenes
                         t.Oil.Add(new[] { scene, SceneOps.AddActor(model, oil) });
                     }
                 }
+            // (an island with a track in each weather: each jump only in its own file's -- the scenes are both's, and Citadel Island's
+            // storm jump, at the rampart's height since 2026-10-06, reached the town circuit's bridge over it in the fine weather)
             foreach (var t in tracks)
                 foreach (var jump in t.Report.Jumps)
-                    if (model.CubeX == jump.CubeX && model.CubeY == jump.CubeZ && AddJump(model, scene, jump, log) is { } jumped) model = jumped;
+                {
+                    int? weather = tracks.Count > 1 && options.Island.OwnWeather is { } own ? (t == tracks[0] ? own : 1 - own) : null;
+                    if (model.CubeX == jump.CubeX && model.CubeY == jump.CubeZ && AddJump(model, scene, jump, log, weather) is { } jumped) model = jumped;
+                }
             foreach (var t in tracks)
                 foreach (var mine in t.Report.Mines)
                     if ((int)Math.Floor(mine.X / 64) == model.CubeX && (int)Math.Floor(mine.Z / 64) == model.CubeY && AddMine(model, scene, mine, t.Report, originals, log) is { } mined) model = mined;
@@ -533,6 +595,7 @@ internal static class RaceTrackScenes
         if (edges > 0) log.Add($"the lap{(tracks.Count > 1 ? "s cross" : " crosses")} {edges / 2} cube edges; {edgeZonesAdded} crossing zones added where the island's own did not cover the road");
         if (changes.Count > 0) store.SaveMany(changes, allowErrors: true);
         log.Add($"{zonesRemoved} zones on the road removed");
+        if (doorsKept > 0) log.Add($"{doorsKept} doors into buildings near the road kept (the car is never taken through one; a building's needs its wall)");
         if (options.RemoveTrackCameras) log.Add($"{camerasRemoved} fixed camera zones along the track removed");
         foreach (var t in tracks)
         {
@@ -563,6 +626,7 @@ internal static class RaceTrackScenes
         var k = i;
         while (true)
         {
+            if (report.Open && (k - way < 0 || k - way >= n)) return null;
             var j = ((k - way) % n + n) % n;
             var step = Math.Sqrt((xs[j] - x) * (xs[j] - x) + (zs[j] - z) * (zs[j] - z));
             if (step >= left || step < 1e-9 && left <= 0)
@@ -585,7 +649,7 @@ internal static class RaceTrackScenes
     // 14, actor 5: entity 46).
     public const int MushroomScene = 45, MushroomActor = 7, PenguinScene = 14, PenguinActor = 5;
     // (the oil slicks one scene can show at once: RACEMOD.CPP keeps six on the whole lap)
-    private const int OilPerScene = 3, PenguinsPerScene = 3;
+    private const int OilPerScene = 5, PenguinsPerScene = 3;   // (oil 3 until 2026-10-07: the refinery's drips lie in slicks too)
     private const double MushroomSpacing = 40, MushroomFirst = 30, MushroomClear = 14;
     // (the gap is more than the engine's reach for taking one, RACEMOD.CPP RACE_MUSHROOM_REACH: 2 cells; a car down the middle of one takes
     // only that one)
@@ -627,6 +691,7 @@ internal static class RaceTrackScenes
         }
         for (var step = 1; step < n; step++)
         {
+            if (report.Open && (i0 + way * step < 0 || i0 + way * step >= n)) break;
             int a = ((i0 + way * (step - 1)) % n + n) % n, b = ((i0 + way * step) % n + n) % n;
             along += Math.Sqrt((xs[b] - xs[a]) * (xs[b] - xs[a]) + (zs[b] - zs[a]) * (zs[b] - zs[a]));
             if (along < next) continue;
@@ -908,19 +973,27 @@ void comportement_1()
     // buggy at the actor's own place; the island's scenes run INIT_BUGGY 0, which only shows it where it already is) -- but not
     // when Twinsen drives back into the scene on the next lap: forcing it then parked a second, solid buggy on the start line
     // for the car to crash into.
-    private static SceneModel? StartBuggyScript(SceneModel model, int scene, int buggy, List<string> log)
+    // `park`: in the other weather (game variable 206 is When: RACEMOD.CPP RaceMod_CitadelWeather), the car stands there instead (a track
+    // point of its own).
+    private static SceneModel? StartBuggyScript(SceneModel model, int scene, int buggy, List<string> log, (int X, int Y, int Z, int Beta, int When)? park = null)
     {
         try
         {
+            var parkPoint = -1;
+            if (park is { } pk) { parkPoint = model.TrackPoints.Count; model.TrackPoints.Add(new SceneTrackPoint(pk.X, pk.Y, pk.Z)); }
             var scripts = SceneScripts.Load(SceneSerializer.Write(model), scene);
             var text = scripts.GetText(buggy, ScriptKind.Life);
-            var pattern = new System.Text.RegularExpressions.Regex(@"init_buggy\(0\);\s*if \(12 == comportement_hero\(\)\)\s*\{\s*set_comportement\(comportement_2\);\s*\}\s*else\s*\{\s*set_comportement\(comportement_1\);\s*\}");
+            // (Polar Island's buggy has INIT_BUGGY 1, which makes the car the first time: Polar.PolarScenes)
+            var pattern = new System.Text.RegularExpressions.Regex(@"init_buggy\(([01])\);\s*if \(12 == comportement_hero\(\)\)\s*\{\s*set_comportement\(comportement_2\);\s*\}\s*else\s*\{\s*set_comportement\(comportement_1\);\s*\}");
             if (!pattern.IsMatch(text)) { log.Add($"scene {scene}: the buggy's script isn't the expected one; it is left to show the buggy where it is"); return null; }
-            text = pattern.Replace(text, "if (12 == comportement_hero())\n        {\n            init_buggy(0);\n            set_comportement(comportement_2);\n        }\n        else\n        {\n            init_buggy(2);\n            set_comportement(comportement_1);\n        }", 1);
+            var parked = park is { } p ? $"            if ({p.When} == var_game(206))\n            {{\n                pos_point({parkPoint});\n                beta({p.Beta});\n            }}\n" : "";
+            text = pattern.Replace(text, "if (12 == comportement_hero())\n        {\n            init_buggy($1);\n            set_comportement(comportement_2);\n        }\n        else\n        {\n" + parked +
+                "            init_buggy(2);\n            set_comportement(comportement_1);\n        }", 1);
             scripts.SetText(buggy, ScriptKind.Life, text);
             var built = scripts.Build();
             if (!built.Ok) { foreach (var e in built.Errors) log.Add($"scene {scene}: buggy script: {e}"); return null; }
-            log.Add($"scene {scene}: the buggy is put on the start line whenever the scene starts on foot (INIT_BUGGY 2), not when Twinsen drives in");
+            log.Add($"scene {scene}: the buggy is put on the start line whenever the scene starts on foot (INIT_BUGGY 2), not when Twinsen drives in" +
+                    (park is { } q ? $"; in the other weather (game variable 206 = {q.When}) it parks at ({q.X}, {q.Y}, {q.Z}) turn {q.Beta}, track point {parkPoint}" : ""));
             return SceneSerializer.Parse(SceneGame.Lba2, built.Record!);
         }
         catch (Exception error) when (error is ScriptCompileException or InvalidDataException or ArgumentException or InvalidOperationException)
@@ -937,7 +1010,8 @@ void comportement_1()
     // (movement 13). Here a small actor does what the retail hero script does, so no scene's own hero script has to be edited; the hero's
     // track script only gets the two labels -- each of a lap's jumps its own pair (90 and 91, then 92 and 93), its own zone number and
     // controller, and its own flight.
-    private static SceneModel? AddJump(SceneModel model, int scene, JumpInfo jump, List<string> log)
+    // (`weather`: the value game variable 206 has when the jump's file is shown -- RACEMOD.CPP RaceMod_CitadelWeather -- or null for any)
+    private static SceneModel? AddJump(SceneModel model, int scene, JumpInfo jump, List<string> log, int? weather = null)
     {
         var ox = jump.CubeX * 64.0; var oz = jump.CubeZ * 64.0;
         var y = (int)Math.Round(jump.Height);
@@ -969,7 +1043,7 @@ void comportement_1()
 
 void comportement_1()
 {{
-    if (12 == comportement_hero() && {jump.Zone} == zone_obj(0))
+    if (12 == comportement_hero() && {jump.Zone} == zone_obj(0){(weather is { } w ? $" && {w} == var_game(206)" : "")})
     {{
         if ({window})
         {{

@@ -39,6 +39,7 @@ public partial class MainWindow
         Lba2PlayMenuItem.IsEnabled = Lba2Configured;
         Lba2FixScriptingMenuItem.IsEnabled = Lba2Configured;
         Lba2RaceTrackMenuItem.IsEnabled = Lba2Configured;
+        Lba2PolarIslandMenuItem.IsEnabled = Lba2Configured;
         Lba1SurpriseMenuItem.IsEnabled = Lba1Configured;
         TestEditsStartMenuItem.IsEnabled = eitherConfigured && !TestEditsActive;
         TestEditsCommitMenuItem.IsEnabled = TestEditsActive;
@@ -65,7 +66,7 @@ public partial class MainWindow
     // What the game calls an island: the words most of its areas' descriptions start with ("White Leaf Desert", "Emerald Moon", ...).
     // (islands whose scenes' descriptions would give the wrong name: Celebration Island's interiors are mostly the Dark Monk's statue)
     // (and the desert: its scenes are described as "White Leaf Desert, ..." but the game itself calls the island Desert Island)
-    private static readonly Dictionary<string, string> Lba2IslandNames = new(StringComparer.OrdinalIgnoreCase) { ["CELEBRAT"] = "Celebration Island", ["DESERT"] = "Desert Island" };
+    private static readonly Dictionary<string, string> Lba2IslandNames = new(StringComparer.OrdinalIgnoreCase) { ["CELEBRAT"] = "Celebration Island", ["DESERT"] = "Desert Island", ["POLAR"] = "Polar Island" };
 
     private string? Lba2IslandName(string? islandFile)
     {

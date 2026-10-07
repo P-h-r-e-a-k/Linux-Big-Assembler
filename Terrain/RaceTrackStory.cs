@@ -54,6 +54,16 @@ internal static class RaceTrackStory
     public const int DayVar = 200, Tired = 1, Rested = 2, WonVar = 201, BeatVar = 202;
     // Celebration Island's lava lake: the souvenir seller beaten (1; 2 once he has told what he saw) and his race run (won or not), 203-204
     public const int SellerBeaten = 203, SellerRaced = 204;
+    // (205 is Polar Island's dream, 206 Citadel Island's weather: RACEMOD.CPP RaceMod_CitadelWeather.) Twinsen has driven a car on Citadel
+    // Island -- he has his car (207, set by every outside scene's controller) -- and Raph has stopped lapping to talk to him (208: his car
+    // stands parked by the start line, RACEMOD.CPP parade=)
+    public const int HasCar = 207, RaphHere = 208;
+    // the race-track mode's: 1 while a gate of the track is shut (RACEMOD.CPP RACE_GATE_VAR) -- the story's race, not one started on its line
+    public const int GateShut = 209;
+    // the game's own people at the lighthouse (scene 46), kept by the build (RaceTrackIsland.StoryEntities): Raph by its door, his fiancee,
+    // and Twinsen and Zoe on its top in the spell's last shot (BODY 175); and the behaviour of Twinsen and Zoe walking together (entity 5)
+    public const int LighthouseRaph = 19, Fiancee = 113, CoupleOnTop = 116;
+    private const int LighthouseScene = 46, TwinsenAndZoe = 5;
     public const int RaceLaps = 3;
     // the game's storm plot (51: 1 the wizard spoken to, 2 Raph spoken to, 3 Raph freed, 4 the storm over), the lighthouse keeper's
     // (56: 3 back at the lighthouse), the aliens' landing (70) and the behaviour Twinsen drives in (12)
@@ -62,7 +72,7 @@ internal static class RaceTrackStory
     private const int WizardTent = 21, Wizard = 2, TraluCave = 2, CaveRaph = 2, CaveZoe = 9, PaulHouse = 7, PaulActor = 2;
     private const int AliensScene = 42, Alien = 6, AlienGreeting = 388, ArrivalPoint = 20;
     // the gloves: the attic, its shelf actor, and the darts' display entity and its body
-    private const int Attic = 1, Shelf = 8, DartsEntity = 18, DartsBody = 31, CarScene = 49;
+    internal const int Attic = 1, Shelf = 8, DartsEntity = 18, DartsBody = 31, CarScene = 49;
     private const int CitadelTexts = 3, HolomapTexts = 2;
     private const byte LabelAttribute = 17;          // the holomap labels' own (text 501 "Downtown Pharmacy.")
     private const int ArrowRecordSize = 32;
@@ -70,7 +80,7 @@ internal static class RaceTrackStory
 
     // The story's lines (Citadel Island's texts), in English, French, German, Spanish, Italian, Portuguese: TEXT.HQR's own order. The game's
     // own names: the Weather Wizard is the Mage Météo, the Wettermagier, the Mago Meteo, the Mago Metereologo, the Mago do Tempo.
-    private enum Line { Zoe, Wizard, WizardAfter, Raph, RaphBeaten, PaulGloves, PaulReady, Aliens, Tired, Sleep, PaulTicket }
+    private enum Line { Zoe, Wizard, WizardAfter, Raph, RaphBeaten, PaulGloves, PaulReady, Aliens, Tired, Sleep, PaulTicket, RaphTime, PaulStop, ZoeJoins }
     private static readonly string[][] Lines =
     {
         new[]
@@ -102,39 +112,39 @@ internal static class RaceTrackStory
         },
         new[]
         {
-            "I'm having too much fun, it can wait. I'll tell you what: if you can beat my time on the track, then I'll come with you to the lighthouse.",
-            "Je m'amuse trop, ça peut attendre. Je te propose un marché : si tu bats mon temps sur le circuit, je viens avec toi au phare.",
-            "Ich habe gerade viel zu viel Spaß, das kann warten. Ich mache dir einen Vorschlag: Wenn du meine Zeit auf der Strecke schlägst, komme ich mit dir zum Leuchtturm.",
-            "Me lo estoy pasando demasiado bien, eso puede esperar. Te propongo una cosa: si consigues batir mi tiempo en el circuito, iré contigo al faro.",
-            "Mi sto divertendo troppo, può aspettare. Facciamo così: se riesci a battere il mio tempo sulla pista, verrò con te al faro.",
-            "Estou a divertir-me demasiado, isso pode esperar. Faço-te uma proposta: se conseguires bater o meu tempo na pista, vou contigo ao farol.",
+            "I'm having too much fun, it can wait. I'll tell you what: if you can beat my time on the track, then I'll come with you to the lighthouse. Mind you, you'll need a car and some driving gloves to take part.",
+            "Je m'amuse trop, ça peut attendre. Je te propose un marché : si tu bats mon temps sur le circuit, je viens avec toi au phare. Mais attention, il te faudra une voiture et des gants de pilote pour participer.",
+            "Ich habe gerade viel zu viel Spaß, das kann warten. Ich mache dir einen Vorschlag: Wenn du meine Zeit auf der Strecke schlägst, komme ich mit dir zum Leuchtturm. Aber um mitzumachen, brauchst du ein Auto und Fahrhandschuhe.",
+            "Me lo estoy pasando demasiado bien, eso puede esperar. Te propongo una cosa: si consigues batir mi tiempo en el circuito, iré contigo al faro. Eso sí, para participar necesitas un coche y unos guantes de conducir.",
+            "Mi sto divertendo troppo, può aspettare. Facciamo così: se riesci a battere il mio tempo sulla pista, verrò con te al faro. Però per partecipare ti servono una macchina e dei guanti da guida.",
+            "Estou a divertir-me demasiado, isso pode esperar. Faço-te uma proposta: se conseguires bater o meu tempo na pista, vou contigo ao farol. Mas para participares precisas de um carro e de luvas de condução.",
         },
         new[]
         {
-            "You beat my time, Twinsen! A deal is a deal: I'm off to the lighthouse. Bring the Weather Wizard!",
-            "Tu as battu mon temps, Twinsen ! Marché conclu : je file au phare. Amène le Mage Météo !",
-            "Du hast meine Zeit geschlagen, Twinsen! Abgemacht ist abgemacht: Ich gehe zum Leuchtturm. Bring den Wettermagier mit!",
-            "¡Has batido mi tiempo, Twinsen! Lo prometido es deuda: me voy al faro. ¡Trae al Mago Meteo!",
-            "Hai battuto il mio tempo, Twinsen! Un patto è un patto: vado al faro. Porta il Mago Metereologo!",
-            "Bateste o meu tempo, Twinsen! O prometido é devido: vou para o farol. Traz o Mago do Tempo!",
+            "You beat my time, Twinsen! A deal is a deal: I'm off to the lighthouse. See you there!",
+            "Tu as battu mon temps, Twinsen ! Marché conclu : je file au phare. On se retrouve là-bas !",
+            "Du hast meine Zeit geschlagen, Twinsen! Abgemacht ist abgemacht: Ich gehe zum Leuchtturm. Wir sehen uns dort!",
+            "¡Has batido mi tiempo, Twinsen! Lo prometido es deuda: me voy al faro. ¡Nos vemos allí!",
+            "Hai battuto il mio tempo, Twinsen! Un patto è un patto: vado al faro. Ci vediamo là!",
+            "Bateste o meu tempo, Twinsen! O prometido é devido: vou para o farol. Vemo-nos lá!",
         },
         new[]
         {
-            "Sorry Twinsen, for safety reasons you'll need some racing gloves to take part.",
-            "Désolé Twinsen, pour des raisons de sécurité il te faut des gants de course pour participer.",
-            "Tut mir leid, Twinsen, aus Sicherheitsgründen brauchst du Rennhandschuhe, um mitzumachen.",
-            "Lo siento, Twinsen, por razones de seguridad necesitas unos guantes de carreras para participar.",
-            "Mi dispiace, Twinsen, per motivi di sicurezza ti servono dei guanti da corsa per partecipare.",
-            "Desculpa, Twinsen, por razões de segurança precisas de luvas de corrida para participar.",
+            "Sorry Twinsen, for safety reasons you'll need some driving gloves to take part.",
+            "Désolé Twinsen, pour des raisons de sécurité il te faut des gants de pilote pour participer.",
+            "Tut mir leid, Twinsen, aus Sicherheitsgründen brauchst du Fahrhandschuhe, um mitzumachen.",
+            "Lo siento, Twinsen, por razones de seguridad necesitas unos guantes de conducir para participar.",
+            "Mi dispiace, Twinsen, per motivi di sicurezza ti servono dei guanti da guida per partecipare.",
+            "Desculpa, Twinsen, por razões de segurança precisas de luvas de condução para participar.",
         },
         new[]
         {
-            "Racing gloves, very good. The track is yours, Twinsen: see if you can beat Raph's time!",
-            "Des gants de course, très bien. Le circuit est à toi, Twinsen : essaie de battre le temps de Raph !",
-            "Rennhandschuhe, sehr gut. Die Strecke gehört dir, Twinsen: Versuch, Raphs Zeit zu schlagen!",
-            "Guantes de carreras, muy bien. El circuito es tuyo, Twinsen: ¡a ver si bates el tiempo de Raph!",
-            "Guanti da corsa, benissimo. La pista è tua, Twinsen: vedi se riesci a battere il tempo di Raph!",
-            "Luvas de corrida, muito bem. A pista é tua, Twinsen: vê se consegues bater o tempo do Raph!",
+            "Driving gloves, very good. The track is yours, Twinsen: see if you can beat Raph's time!",
+            "Des gants de pilote, très bien. Le circuit est à toi, Twinsen : essaie de battre le temps de Raph !",
+            "Fahrhandschuhe, sehr gut. Die Strecke gehört dir, Twinsen: Versuch, Raphs Zeit zu schlagen!",
+            "Guantes de conducir, muy bien. El circuito es tuyo, Twinsen: ¡a ver si bates el tiempo de Raph!",
+            "Guanti da guida, benissimo. La pista è tua, Twinsen: vedi se riesci a battere il tempo di Raph!",
+            "Luvas de condução, muito bem. A pista é tua, Twinsen: vê se consegues bater o tempo do Raph!",
         },
         new[]
         {
@@ -172,6 +182,34 @@ internal static class RaceTrackStory
             "Bella corsa, Twinsen! Hai vinto il premio: un biglietto per il traghetto.",
             "Boa corrida, Twinsen! Ganhaste o prémio: um bilhete de barca.",
         },
+        // (the time is the race-track mode's: its "##" becomes Raph's lap at the car setup's skill, RACEMOD.CPP beat_text=)
+        new[]
+        {
+            "A car and driving gloves: you're all set, Twinsen! My best lap is ## seconds. Beat that, and I'll come with you to the lighthouse.",
+            "Une voiture et des gants de pilote : tu es prêt, Twinsen ! Mon meilleur tour est de ## secondes. Bats-le, et je viens avec toi au phare.",
+            "Ein Auto und Fahrhandschuhe: Du bist bereit, Twinsen! Meine beste Runde dauert ## Sekunden. Schlag sie, und ich komme mit dir zum Leuchtturm.",
+            "Un coche y guantes de conducir: ¡estás listo, Twinsen! Mi mejor vuelta es de ## segundos. Supérala y te acompañaré al faro.",
+            "Una macchina e i guanti da guida: sei pronto, Twinsen! Il mio giro migliore è di ## secondi. Battilo, e verrò con te al faro.",
+            "Um carro e luvas de condução: estás pronto, Twinsen! A minha melhor volta é de ## segundos. Bate-a, e vou contigo ao farol.",
+        },
+        new[]
+        {
+            "Stop right there, Twinsen! Nobody drives on this track without driving gloves. It's for your own safety.",
+            "Halte-là, Twinsen ! Personne ne roule sur ce circuit sans gants de pilote. C'est pour ta sécurité.",
+            "Halt, Twinsen! Ohne Fahrhandschuhe fährt hier niemand auf der Strecke. Das ist zu deiner eigenen Sicherheit.",
+            "¡Alto ahí, Twinsen! Nadie conduce por este circuito sin guantes de conducir. Es por tu propia seguridad.",
+            "Fermo lì, Twinsen! Nessuno guida su questa pista senza guanti da guida. È per la tua sicurezza.",
+            "Alto aí, Twinsen! Ninguém conduz nesta pista sem luvas de condução. É para tua segurança.",
+        },
+        new[]
+        {
+            "Twinsen, you did it! Raph's on his way to the lighthouse, and the Weather Wizard is meeting us there. Come on, let's go together!",
+            "Twinsen, tu as réussi ! Raph part au phare, et le Mage Météo nous y attend. Allez, allons-y ensemble !",
+            "Twinsen, du hast es geschafft! Raph ist auf dem Weg zum Leuchtturm, und der Wettermagier wartet dort auf uns. Komm, gehen wir zusammen!",
+            "¡Twinsen, lo has conseguido! Raph va hacia el faro, y el Mago Meteo nos espera allí. ¡Vamos, vayamos juntos!",
+            "Twinsen, ce l'hai fatta! Raph sta andando al faro, e il Mago Metereologo ci aspetta là. Dai, andiamo insieme!",
+            "Twinsen, conseguiste! O Raph vai a caminho do farol, e o Mago do Tempo espera-nos lá. Anda, vamos juntos!",
+        },
     };
     // the holomap labels: the storm track's start line, the town circuit's
     private static readonly string[][] Labels =
@@ -182,12 +220,12 @@ internal static class RaceTrackStory
     // the gloves' texts: found, name, description
     private static readonly string[][] GlovesTexts =
     {
-        new[] { "You have found a pair of racing gloves.", "Racing gloves", "Your racing gloves: a firm grip on the buggy's steering wheel, lap after lap." },
-        new[] { "Tu as trouvé une paire de gants de course.", "Gants de course", "Tes gants de course : une bonne prise sur le volant du buggy, tour après tour." },
-        new[] { "Du hast ein Paar Rennhandschuhe gefunden.", "Rennhandschuhe", "Deine Rennhandschuhe: fester Griff am Lenkrad des Buggys, Runde für Runde." },
-        new[] { "Has encontrado un par de guantes de carreras.", "Guantes de carreras", "Tus guantes de carreras: buen agarre en el volante del buggy, vuelta tras vuelta." },
-        new[] { "Hai trovato un paio di guanti da corsa.", "Guanti da corsa", "I tuoi guanti da corsa: una presa salda sul volante del buggy, giro dopo giro." },
-        new[] { "Você encontrou um par de luvas de corrida.", "Luvas de corrida", "Suas luvas de corrida: firmeza no volante do buggy, volta após volta." },
+        new[] { "You have found a pair of driving gloves.", "Driving gloves", "Your driving gloves: a firm grip on the buggy's steering wheel, lap after lap." },
+        new[] { "Tu as trouvé une paire de gants de pilote.", "Gants de pilote", "Tes gants de pilote : une bonne prise sur le volant du buggy, tour après tour." },
+        new[] { "Du hast ein Paar Fahrhandschuhe gefunden.", "Fahrhandschuhe", "Deine Fahrhandschuhe: fester Griff am Lenkrad des Buggys, Runde für Runde." },
+        new[] { "Has encontrado un par de guantes de conducir.", "Guantes de conducir", "Tus guantes de conducir: buen agarre en el volante del buggy, vuelta tras vuelta." },
+        new[] { "Hai trovato un paio di guanti da guida.", "Guanti da guida", "I tuoi guanti da guida: una presa salda sul volante del buggy, giro dopo giro." },
+        new[] { "Você encontrou um par de luvas de condução.", "Luvas de condução", "Suas luvas de condução: firmeza no volante do buggy, volta após volta." },
     };
     // (where each of those texts' old words stay: ids no script or engine asks for)
     private const int Retired = 60000;
@@ -609,6 +647,7 @@ void comportement_1()
         var raph = originals.Load(TraluCave).Actors.ElementAtOrDefault(CaveRaph)?.Clone();
         var paul = originals.Load(PaulHouse).Actors.ElementAtOrDefault(PaulActor)?.Clone();
         var start = storm.StartLine[0];
+        int[]? raphPark = null;
         if (scenes.StartScene >= 0 && raph is not null && paul is not null)
             Edit(scenes.StartScene, "Raph and Mr. Paul stand by the storm track's start line", model =>
             {
@@ -620,6 +659,35 @@ void comportement_1()
                     actor.Y = (int)Math.Round(at.Y); actor.Beta = at.Beta;
                 }
                 Put(raph, r); Put(paul, p);
+                // (the start line, the lap's and the pit lane's, two cells either way: a scenaric zone of its own -- the scene's next
+                // number -- where Mr. Paul stops a car driven without gloves; he and Raph stand at its end, off the roads)
+                var startZone = model.Zones.Where(z => z.Type == 2).Select(z => z.Num).DefaultIfEmpty(0).Max() + 1;
+                var across = (storm.StartCurbs is { } curbs ? Math.Max(curbs.Left, curbs.Right) : 12) + 1;
+                var corners = new[] { (-across, -2.0), (-across, 2.0), (across, -2.0), (across, 2.0) }
+                    .Select(c => (X: start.X - start.DirZ * c.Item1 + start.DirX * c.Item2, Z: start.Z + start.DirX * c.Item1 + start.DirZ * c.Item2)).ToList();
+                int Local(double cell, int cube) => Math.Clamp((int)Math.Round((cell - cube * 64) * 512), 0, IslandFile.CubeSize - 1);
+                model.Zones.Add(new SceneZoneModel
+                {
+                    Type = 2, Num = startZone, Info = new[] { 0, 0, 0, 0, 0, 0, 0, 1 },
+                    X0 = Local(corners.Min(c => c.X), model.CubeX), X1 = Local(corners.Max(c => c.X), model.CubeX),
+                    Z0 = Local(corners.Min(c => c.Z), model.CubeY), Z1 = Local(corners.Max(c => c.Z), model.CubeY),
+                    Y0 = (int)Math.Round(start.Y) - 500, Y1 = (int)Math.Round(start.Y) + 1500,
+                });
+                // (his car's place once he has stopped lapping: beside the road a little past the start line, along it)
+                if (Beside(storm, start, -5, 1.5, sides) is { } c)
+                {
+                    var along = (int)Math.Round(Math.Atan2(start.DirX, start.DirZ) / (2 * Math.PI) * 4096);
+                    raphPark = new[] { scenes.StartScene, (int)Math.Round((c.X - model.CubeX * 64) * 512), (int)Math.Round(c.Y), (int)Math.Round((c.Z - model.CubeY * 64) * 512), ((along % 4096) + 4096) % 4096 };
+                    // (his car has him at its wheel: he talks from it -- the game's own Raph, out of sight, where it parks)
+                    raph.X = raphPark[1]; raph.Y = raphPark[2]; raph.Z = raphPark[3]; raph.Beta = raphPark[4];
+                }
+                var shown = raphPark is null ? 0 : 1;
+                // Raph laps the track in his car (the race-track mode's parade=, RaphHere 0), until Twinsen comes by on foot (within 20
+                // cells: the start line's end) -- then he has stopped, his car parked by the start line, and he talks from it (the game's own
+                // Raph is the one who speaks, out of sight where the car stands; with no room for the car, he stands by the start line, seen
+                // only once he has stopped). With a car and driving gloves (HasCar, the gloves' slot) he says his time; without, what it takes. Raph's time beaten (BeatVar 1, the race-track mode's beat=) and Twinsen out of his car: he is
+                // off to the lighthouse, and Zoe joins Twinsen -- the two of them walking together, as when the game's Raph was freed from
+                // the Tralu (behaviour 5) -- and they are there, the game's own lighthouse (scene 46: 51 and 56 at 3, the wizard at its door).
                 var raphScript = Add(model, raph, $@"void comportement_0()
 {{
     if (1 < chapter() || 2 < var_game({KeeperPlot}))
@@ -634,19 +702,51 @@ void comportement_1()
 
 void comportement_1()
 {{
-    if (1 == var_game({BeatVar}))
+    if (0 == var_game({RaphHere}))
+    {{
+        invisible(1);
+        if ({Driving} != comportement_hero() && 10000 > distance(0))
+        {{
+            set_var_game({RaphHere}, 1);
+            invisible({shown});
+            set_comportement(comportement_2);
+        }}
+    }}
+    else
+    {{
+        invisible({shown});
+        set_comportement(comportement_2);
+    }}
+}}
+
+void comportement_2()
+{{
+    if (0 == var_game({RaphHere}))
+    {{
+        set_comportement(comportement_1);
+    }}
+    if (1 == var_game({BeatVar}) && {Driving} != comportement_hero())
     {{
         message({Id(Line.RaphBeaten)});
         set_var_game({StormPlot}, 3);
         set_var_game({KeeperPlot}, 3);
         set_var_game({BeatVar}, 2);
-        suicide();
+        comportement_hero({TwinsenAndZoe});
+        message_zoe({Id(Line.ZoeJoins)});
+        change_cube({LighthouseScene});
     }}
     swif (1 == action())
     {{
         if (1500 > distance(0) && {Driving} != comportement_hero())
         {{
-            message({Id(Line.Raph)});
+            if (0 < var_game({GlovesSlot}) && 0 < var_game({HasCar}))
+            {{
+                message({Id(Line.RaphTime)});
+            }}
+            else
+            {{
+                message({Id(Line.Raph)});
+            }}
             if (2 > var_game({StormPlot}))
             {{
                 set_var_game({StormPlot}, 2);
@@ -669,6 +769,11 @@ void comportement_1()
 
 void comportement_1()
 {{
+    if ({Driving} == comportement_hero() && 0 == var_game({GlovesSlot}) && 1 == var_game({GateShut}) && {startZone} == zone_obj(0))
+    {{
+        set_dir_obj(0, MOVE_MANUAL);
+        message({Id(Line.PaulStop)});
+    }}
     swif (1 == action())
     {{
         if (1500 > distance(0) && {Driving} != comportement_hero())
@@ -743,7 +848,7 @@ void comportement_1()
         for (var scene = RaceTrackIsland.Citadel.FirstScene; scene <= RaceTrackIsland.Citadel.LastScene; scene++)
         {
             if (!store.SceneExists(scene)) continue;
-            Edit(scene, "Mr. Paul hands over his prize, a ferry ticket, after a win on the town circuit", model =>
+            Edit(scene, "Mr. Paul hands over his prize, a ferry ticket, after a win on the town circuit; Twinsen driving here means he has his car", model =>
             {
                 var prize = SceneOps.BlankActor(SceneGame.Lba2, IslandFile.CubeSize / 2, 0, IslandFile.CubeSize / 2, entity: 16);
                 prize.Life = new byte[] { 0 }; prize.Track = new byte[] { 0 };
@@ -755,6 +860,10 @@ void comportement_1()
 
 void comportement_1()
 {{
+    if ({Driving} == comportement_hero() && 0 == var_game({HasCar}))
+    {{
+        set_var_game({HasCar}, 1);
+    }}
     if (1 == var_game({WonVar}) && {Driving} != comportement_hero())
     {{
         message({Id(Line.PaulTicket)});
@@ -770,6 +879,7 @@ void comportement_1()
         store.SaveMany(models.Select(m => new SceneChange(m.Key, m.Value, null)).ToList(), allowErrors: true);
         log.Add($"the race-track mode: Mr. Paul's gloves gate the storm track (variable {GlovesSlot}), Raph's time beaten sets {BeatVar}; the town circuit opens once {DayVar} is {Rested}, " +
                 $"{RaceLaps} laps, a win sets {WonVar}; while {DayVar} is {Tired} everyone says text {Id(Line.Tired)}");
-        return (log, new RaceTrackService.StoryInfo(Id(Line.Tired), TownArrow));
+        log.Add($"Raph laps the storm track in his car until Twinsen comes to the start line on foot (variable {RaphHere}){(raphPark is null ? " -- no room for his car by the start line: it goes out of sight" : "")}; he tells his time (text {Id(Line.RaphTime)}) once Twinsen has a car (variable {HasCar}) and driving gloves; Mr. Paul puts Twinsen out of his car on the start line without them");
+        return (log, new RaceTrackService.StoryInfo(Id(Line.Tired), TownArrow, RaphTime: Id(Line.RaphTime), RaphPark: raphPark));
     }
 }

@@ -34,6 +34,16 @@ internal sealed record RaceTrackIsland(
     {
         TwinIleFile = "CITABAU.ILE", TwinOblFile = "CITABAU.OBL", TwinPlanResource = "RaceTrackPlan.Citadel.json", RacesTwin = true,
         Title = "Citadel Island: the town circuit (once the storm is over)", Roster = RaceDriver.CitadelStorm, TwinRoster = RaceDriver.CitadelTown,
+        // (the storm track's car, scene 42, when it is fine -- its start line is under CITABAU's ground -- in the yard north of Twinsen's
+        // house, flat at 250 in both files; the town circuit's, scene 49, in the storm -- its start line is CITADEL's sea -- under the
+        // carport, where the island's own car stands: that one, a decor that can't be driven, goes from both files)
+        ParkOwn = (540.5, 637.5, 1024, 1), ParkTwin = (544.125, 654.75, 1024, 0),
+        DropDecors = new[] { (8, 10, 16448, 7552) }, OwnWeather = 0,
+        // (the lighthouse, scene 46, where the storm ends: the game's own Raph by its door, his fiancee and Twinsen and Zoe on its top, whom
+        // the Weather Wizard's spell needs -- RaceTrackStory -- and the door's people and track points on the storm file's ground: the town
+        // circuit, in the fine weather's file, cut the hill there by 2,000)
+        StoryEntities = new[] { RaceTrackStory.LighthouseRaph, RaceTrackStory.Fiancee, RaceTrackStory.CoupleOnTop },
+        OwnGroundAt = new[] { (46, 481.5, 661.8, 10.0), (46, 463.0, 665.0, 3.0) },
     };
 
     public static readonly RaceTrackIsland CitadelStorm = Citadel with
@@ -106,6 +116,10 @@ internal sealed record RaceTrackIsland(
     // The game's own people the story needs, by entity, kept in the island's scenes when the build takes the others off the road (the
     // souvenir seller on Celebration Island: RaceTrackStory.ApplyCelebration).
     public int[]? StoryEntities { get; init; }
+    // For an island with a track in each weather: places whose scene's people and track points belong to the own file's story (the storm's,
+    // gone once it is over), each the scene, the island cell and a reach in cells -- the build seats them on the own file's reshaped ground,
+    // not on the ground of whichever file's road is nearer (RaceTrackScenes.Reseat).
+    public (int Scene, double X, double Z, double Reach)[]? OwnGroundAt { get; init; }
     public List<RaceDriver>? TwinRoster { get; init; }
 
     // The island's other file for other weather (EXTFUNC.CPP loads it instead once the storm is over), built with the same track -- or,
@@ -159,6 +173,40 @@ internal sealed record RaceTrackIsland(
         Title = "The Emerald Moon: over the reactor, round the base",
     };
 
+    // Polar Island (LBA1's at twice its size, made into LBA2's island 12: Terrain/Polar, POLAR.ILE and POLAR.OBL, scenes 233-253) and the
+    // dream that picks up from the end of the first game: Twinsen dreams he is racing FunFrock to Sendell. From the dock down the arm and up
+    // the island, round a hairpin at its top, back down its east side, over a jump across the main straight, up the terraces under the
+    // rocky peak along LBA1's car tracks, round the peak on a raised road and a carried jump into it -- a sprint, not a lap (the plan's
+    // Open: a start line and a finish line, the jump's lip), in Twinsen's car at 120 km/h at the most (Dream.TopKmh: the setup's gears,
+    // scaled). A win wakes him up in mid-flight (Dream.WakeFlight): Zoe shakes him awake at home, in the second game's first scene. A loss
+    // runs the race again. The island is added by the build when the folder hasn't got it (Polar.PolarIsland, from the LBA1 folder in the
+    // settings), and stays when the track is put back.
+    public static readonly RaceTrackIsland Polar = new("Polar Island", LBAAssembler.Terrain.Polar.PolarTerrain.IleFile, LBAAssembler.Terrain.Polar.PolarTerrain.OblFile,
+        LBAAssembler.Terrain.Polar.PolarIsland.IslandByte, LBAAssembler.Terrain.Polar.PolarScenes.FirstScene,
+        LBAAssembler.Terrain.Polar.PolarScenes.FirstScene + LBAAssembler.Terrain.Polar.PolarScenes.Count - 1, LBAAssembler.Terrain.Polar.PolarIsland.PaletteEntry, "RaceTrackPlan.Polar.json", null)
+    {
+        Roster = RaceDriver.Polar, Dream = true, Title = "Polar Island: the dream race to Sendell (LBA1's island, added when missing)",
+    };
+
+    // A sprint dreamt at the start of the game (Polar Island's): won, Twinsen wakes up at home (RaceTrackService.DreamInfo).
+    public bool Dream { get; init; }
+
+    // An island with a track in each weather (Citadel Island): where a start scene's car parks when the other weather's file is shown --
+    // the start line's ground in one file can be the sea, or under the ground, in the other (2026-10-06: the town circuit's car stood in
+    // the sea in the storm, where the dream's race wakes Twinsen up, and couldn't be driven). Island cells (in the start scene's own
+    // cube) and a turn, for the own file's start and the twin's, and the value of game variable 206 the engine sets for the weather the
+    // car parks in (RACEMOD.CPP RaceMod_CitadelWeather: 1 fine, 0 the storm).
+    public (double X, double Z, int Beta, int When)? ParkOwn { get; init; }
+    // The value of game variable 206 while the island's own file is shown (the twin's is the other: 0 and 1) -- Citadel Island's storm, 0.
+    // Each file's jump acts only in its own weather (RaceTrackScenes.AddJump).
+    public int? OwnWeather { get; init; }
+    public (double X, double Z, int Beta, int When)? ParkTwin { get; init; }
+
+    // Decors of the island's own that every build takes away, wherever the road is: each the cube and the origin (cube units) of the
+    // pieces placed there (RaceTrackBuilder.DropDecors) -- Citadel Island's car under Twinsen's carport, a model that can't be driven,
+    // where the build parks the real one (2026-10-06: the user found two cars by the house, the island's and the build's).
+    public (int CubeX, int CubeZ, int X, int Z)[]? DropDecors { get; init; }
+
     // The island isn't in the game: the build makes its files and its scene (Sendell's Well). They have no originals to keep, so the
     // build's backups leave them out (KeptFiles); it makes them afresh every time, and putting the folder back deletes them.
     public bool Created { get; init; }
@@ -171,12 +219,42 @@ internal sealed record RaceTrackIsland(
     // No opponents' cars in its scenes; nothing drawn on the holomap.
     public bool NoOpponents { get; init; }
     public bool NoHolomap { get; init; }
+    // An island made bigger for its track (IslandScaler): Scale times each way, everything on it with it, its new cubes' scenes numbered
+    // from MoreScenes (past 254: no holomap arrow -- the engine's CubeArrowFlags).
+    public int Scale { get; init; } = 1;
+    // Every car on Gazogem fuel all race, and no mushroom gives it (the race-track mode's fuel_always=): the Island of the Francos', where
+    // the fuel is made (the user, 2026-10-07).
+    public bool FuelAlways { get; init; }
+    public int[] MoreScenes { get; init; } = Array.Empty<int>();
+    // The island's outside scenes: FirstScene..LastScene, and MoreScenes when it is made bigger.
+    public IEnumerable<int> Scenes => Enumerable.Range(FirstScene, LastScene - FirstScene + 1).Concat(Scale > 1 ? MoreScenes : Array.Empty<int>());
+    public bool HasScene(int scene) => scene >= FirstScene && scene <= LastScene || Scale > 1 && MoreScenes.Contains(scene);
     // The scenes the build adds, as (original, copy) pairs.
     public IEnumerable<(int From, int To)> AddedScenes =>
         CopiesScenes is { } many ? Enumerable.Range(0, many.Count).Select(k => (many.First + k, FirstScene + k))
         : CopiesScene is { } one ? new[] { (one, FirstScene) } : Enumerable.Empty<(int, int)>();
 
-    public static readonly RaceTrackIsland[] All = { Desert, Citadel, CitadelStorm, Mosquibe, Celebration, CelebrationLava, Elevator, Sendell, Moon, Emerald };
+    // The Island of the Francos (KNARTAS.ILE, the game's island 8, scenes 107-109): its dock, its gazogem refinery and its village of furry
+    // dome huts, made twice its size each way for its track (Scale: IslandScaler -- 12 cubes, scenes 255-263 besides) and raced on a raised
+    // road that passes over itself, in three looks (the user, 2026-10-07: "drop all the vertical loops ... more height ... more loops, but
+    // not vertical ones ... 4 times its original size ... 3 distinctly themed sections"): the dock's -- the start up the dock's east arm, a
+    // loop out over the sea that climbs over its own way in, a jump over the inlet's mouth and the island's rocket, the south arm; the
+    // refinery's -- a loop over its south fence up onto the high road at 14,000, past its tanks and machine houses under pipes that puff
+    // steam and drip oil, the factory's steam blowing out of the road, and a leap over the cracking tower down into the village; the
+    // village's -- through its huts half way up their domes, a loop over the hills, the south shore, a leap past the refinery's fence and
+    // the climb to the top road over the rocks; then down the channel between the dock and the refinery onto the start.
+    // The plan: tools/RaceTrackPlan/knartas_design.py.
+    public static readonly RaceTrackIsland Knartas = new("Island of the Francos", "KNARTAS.ILE", "KNARTAS.OBL", 8, 107, 109, 35, "RaceTrackPlan.Knartas.json", null)
+    {
+        Roster = RaceDriver.Knartas,
+        Title = "The Island of the Francos: over the dock, the refinery and the village",
+        // (twice its size each way, its 3 cubes 12: scenes 107-109 and 255-263 -- the user, 2026-10-07)
+        Scale = 2,
+        MoreScenes = Enumerable.Range(255, 9).ToArray(),
+        FuelAlways = true,
+    };
+
+    public static readonly RaceTrackIsland[] All = { Desert, Citadel, CitadelStorm, Mosquibe, Celebration, CelebrationLava, Elevator, Sendell, Moon, Emerald, Polar, Knartas };
 
     public static RaceTrackIsland ByName(string name) => All.FirstOrDefault(i => string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase)) ?? Desert;
 

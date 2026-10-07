@@ -87,6 +87,19 @@ void ClsTerrainZBuf() {
 }
 
 /*──────────────────────────────────────────────────────────────────────────*/
+// A ground triangle's texture definition, and its page as the texture map (PtrMap): an island with more ground pages (VAR_EXT.H) has
+// the page in IndexTex's top bits; a retail island's IndexTex is the definition alone, on GroundTexture.
+static inline const T_HALF_TEX *GroundTexDef(const T_HALF_POLY *ptrh) {
+    if (NbGroundPages > 1) {
+        U32 page = ptrh->IndexTex >> GROUND_PAGE_SHIFT;
+        PtrMap = (page AND page < (U32)NbGroundPages) ? GroundPageBuf + (page - 1) * 256 * 256 : GroundTexture;
+        // (and the definition's eleventh bit the triangle's Dummy, unused by the retail islands: a cube of such an island has room for
+        // 2048 -- 2026-10-06, Polar Island at twice LBA1's size, its road's smooth kerbs)
+        return &ListTexDef[(ptrh->IndexTex & ((1 << GROUND_PAGE_SHIFT) - 1)) | (ptrh->Dummy << GROUND_PAGE_SHIFT)];
+    }
+    return &ListTexDef[ptrh->IndexTex];
+}
+
 static inline void DrawFeuillePolyZBuf(S32 xi, S32 zi, T_SOMMET_ROT *ptrs) {
     S32 color;
     T_HALF_POLY *ptrh;
@@ -191,7 +204,7 @@ if (ptrh->Sens == 0) {
             if (ptrh->TexFlag) {
                 T_HALF_TEX *ptrt;
 
-                ptrt = &ListTexDef[ptrh->IndexTex];
+                ptrt = (T_HALF_TEX *)GroundTexDef(ptrh);
 
                 Tab_Points[0].Pt_MapU = ptrt->Tx0;
                 Tab_Points[0].Pt_MapV = ptrt->Ty0;
@@ -275,7 +288,7 @@ if (ptrh->Sens == 0) {
             if (ptrh->TexFlag) {
                 T_HALF_TEX *ptrt;
 
-                ptrt = &ListTexDef[ptrh->IndexTex];
+                ptrt = (T_HALF_TEX *)GroundTexDef(ptrh);
 
                 Tab_Points[0].Pt_MapU = ptrt->Tx0;
                 Tab_Points[0].Pt_MapV = ptrt->Ty0;
@@ -358,7 +371,7 @@ if (ptrh->Sens == 0) {
             if (ptrh->TexFlag) {
                 T_HALF_TEX *ptrt;
 
-                ptrt = &ListTexDef[ptrh->IndexTex];
+                ptrt = (T_HALF_TEX *)GroundTexDef(ptrh);
 
                 Tab_Points[0].Pt_MapU = ptrt->Tx0;
                 Tab_Points[0].Pt_MapV = ptrt->Ty0;
@@ -442,7 +455,7 @@ if (ptrh->Sens == 0) {
             if (ptrh->TexFlag) {
                 T_HALF_TEX *ptrt;
 
-                ptrt = &ListTexDef[ptrh->IndexTex];
+                ptrt = (T_HALF_TEX *)GroundTexDef(ptrh);
 
                 Tab_Points[0].Pt_MapU = ptrt->Tx0;
                 Tab_Points[0].Pt_MapV = ptrt->Ty0;
@@ -800,7 +813,7 @@ static void DrawClippedTriangle(const STRUC_CLIPVERTEX *a, const STRUC_CLIPVERTE
     src[1] = *b;
     src[2] = *c;
     if (ptrh->TexFlag) {
-        const T_HALF_TEX *t = &ListTexDef[ptrh->IndexTex];
+        const T_HALF_TEX *t = GroundTexDef(ptrh);
         src[0].V_MapU = t->Tx0;
         src[0].V_MapV = t->Ty0;
         src[1].V_MapU = t->Tx1;

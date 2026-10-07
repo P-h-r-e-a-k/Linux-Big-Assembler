@@ -70,7 +70,7 @@ internal static class TopDownMapRenderer
 
     private static void RasterCellTriangle(byte[] pixels, int size, IslandDocument island, int cubeId, int cubeX, int cubeY, int cellX, int cellZ, int pixelsPerCell, uint polygon, int[] corners)
     {
-        var texture = island.TextureAt(cubeId, (int)((polygon >> 19) & 0x1FFF));
+        var texture = island.TextureAt(cubeId, IslandDocument.TextureKey(polygon));
         var textured = ((polygon >> 4) & 3) != 0 && texture is not null;
 
         Span<Vertex> verts = stackalloc Vertex[3];
@@ -110,7 +110,7 @@ internal static class TopDownMapRenderer
             {
                 var u = verts[0].U * w0 + verts[1].U * w1 + verts[2].U * w2;
                 var v = verts[0].V * w0 + verts[1].V * w1 + verts[2].V * w2;
-                color = island.ColorAtSmooth(u, v, light);
+                color = island.ColorAtSmooth(u, v, light, island.PageOf(IslandDocument.TextureKey(polygon)));
             }
             else
             {

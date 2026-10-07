@@ -50,10 +50,11 @@ internal sealed record RaceDriver(string Name, int Body, RaceTrackBuilder.Racing
         Baldino,
     };
 
-    // The Emerald Moon: Baldino in his space suit, in his lander
+    // The Emerald Moon: Baldino in his space suit, in his lander (the one to beat), and HAL, the moon base's computer, driving itself
     public static readonly List<RaceDriver> Emerald = new()
     {
         Of(RaceTrackCharacterCars.Lander, "Baldino", 0, 1.02, 0.95, main: true),
+        Of(RaceTrackCharacterCars.Hal, "HAL", 2.0, 1.0, 1.01),
     };
 
     // Mosquibees Island: the Queen (the one to beat), and the monkey monster with the sword in his war cart
@@ -70,6 +71,22 @@ internal sealed record RaceDriver(string Name, int Body, RaceTrackBuilder.Racing
         Of(RaceTrackCharacterCars.Kangaroo, "The kangaroo", -2.5, 1.03, 0.95),
         Of(RaceTrackCharacterCars.Seller, "The souvenir seller", 0, 1.0, 1.0, main: true),
         Of(RaceTrackCharacterCars.Guard, "The policeman", 2.5, 1.01, 0.98),
+    };
+
+    // Polar Island's dream race (2026-10-06): Twinsen dreams he is racing FunFrock to Sendell, from the dock to the top of the rocky peak --
+    // FunFrock in his car, the one to beat, a shade quicker on the straights than Twinsen's car would be and a shade slower in the bends
+    public static readonly List<RaceDriver> Polar = new()
+    {
+        Of(RaceTrackCharacterCars.FunFrock, "FunFrock", 1.5, 1.01, 0.97, main: true),
+    };
+
+    // The Island of the Francos (2026-10-07): its own -- De La Fontaine in the refinery's gazogem tanker (the one to beat), Mr. Kurtz in his
+    // laboratory and the Franco nurse with her pram
+    public static readonly List<RaceDriver> Knartas = new()
+    {
+        Of(RaceTrackCharacterCars.Tanker, "De La Fontaine", 0, 1.0, 1.0, main: true),
+        Of(RaceTrackCharacterCars.Laboratory, "Mr. Kurtz", -2.0, 0.99, 1.02),
+        Of(RaceTrackCharacterCars.Pram, "The nurse", 2.0, 1.02, 0.97),
     };
 
     // Otringal's palace has no track yet; its drivers are Stan, the pighead with the broom and the two-headed monster (CharactersForTrack.txt)

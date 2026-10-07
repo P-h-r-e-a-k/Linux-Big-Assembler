@@ -109,6 +109,18 @@ internal static class RaceTrackCommand
         return 0;
     }
 
+    // buildhere <game folder> <island>...: the islands' tracks built into the folder as it is -- as the race track window's Build does, its
+    // backups and all (2026-10-06: Polar Island at twice its size over a folder with the earlier island and its track)
+    public static int BuildHere(string[] args)
+    {
+        var game = args[1];
+        var tracks = args.Skip(2).Select(RaceTrackIsland.ByName).Select(where => new RaceTrackService.TrackBuild(RaceTrackPlan.Built(where), RaceTrackOptions.For(where))).ToList();
+        var result = RaceTrackService.Build(game, tracks);
+        Console.WriteLine(result.Summary);
+        foreach (var l in result.Log) Console.WriteLine("  " + l);
+        return result.Ok ? 0 : 1;
+    }
+
     // buildtogether <pristine> <game folder> <island>...: the islands' tracks (their built-in plans) built into one folder by one build, as
     // the race track window does with several islands ticked -- the game folder given its pristine files first, its backups removed -- and
     // for each track the start scene and line RACETRACK.JSON has. RT_CROSSING picks the crossing style of the ones that take it.
@@ -173,6 +185,24 @@ internal static class RaceTrackCommand
         var (_, log) = RaceTrackCharacterCars.Install(args[2], good);
         foreach (var line in log) Console.WriteLine(line);
         return failed;
+    }
+
+    // castcars <game folder> <scratch folder> [car number...]: the cast's cars (RaceTrackCharacterCars.Cast) installed into a copy of the
+    // folder's BODY.HQR and RESS.HQR (a folder whose race tracks are built: the cars made by hand are in it), with RACECARS.JSON; each car's
+    // points and polygons, and any not made.
+    public static int CastCars(string[] args)
+    {
+        Directory.CreateDirectory(args[2]);
+        CopyWritable(args[1], args[2], "BODY.HQR", "RESS.HQR");
+        var only = args.Length > 3 ? args.Skip(3).Select(int.Parse).ToList() : null;
+        foreach (var line in RaceTrackCharacterCars.InstallCast(args[2], only)) Console.WriteLine(line);
+        var bodies = HqrArchive.Open(Path.Combine(args[2], "BODY.HQR"));
+        foreach (var e in RaceTrackCharacterCars.Catalogue(args[2]).Where(e => e.Number >= RaceTrackCharacterCars.CastFirst))
+        {
+            var body = LbaBodyStudio.Body.Read(bodies.Read(e.Body), 2);
+            Console.WriteLine($"  {e.Number,3} {e.Name}: body {e.Body} (small {e.Small}), entity {e.Entity} body {e.Generic}; {body.Vertices.Count} points, {body.Faces.Count + body.Lines.Count + body.Spheres.Count} primitives");
+        }
+        return 0;
     }
 
     // carshow <game folder> <scene> <x> <y> <z> <turn> <dx> <dz> <body>...: stands cars of the racer's entity (its bodies: 0 its own, 1
@@ -248,6 +278,50 @@ internal static class RaceTrackCommand
         return 0;
     }
 
+    // scaleisland <game>: the island (RT_ISLAND, the Island of the Francos when not given) made bigger in the folder as a race build makes
+    // it (IslandScaler: its ground, its OBL's bodies, its scenes) -- the folder's own files, which must be the originals.
+    public static int ScaleIsland(string[] args)
+    {
+        var game = args[1];
+        var where = RaceTrackIsland.ByName(Environment.GetEnvironmentVariable("RT_ISLAND") ?? RaceTrackIsland.Knartas.Name);
+        var island = IslandFile.Load(Path.Combine(game, where.IleFile));
+        var anchor = IslandScaler.Anchor(island);
+        var log = new List<string>();
+        var scaled = IslandScaler.Scale(island, Math.Max(2, where.Scale), log);
+        scaled.Save(Path.Combine(game, where.IleFile));
+        log.Add(IslandScaler.ScaleObl(Path.Combine(game, where.OblFile), Math.Max(2, where.Scale)));
+        log.AddRange(IslandScaler.ScaleScenes(game, where, scaled, anchor, Math.Max(2, where.Scale)));
+        log.Add(IslandScaler.ScaleHolomap(game, where, anchor, Math.Max(2, where.Scale)));
+        foreach (var line in log) Console.WriteLine(line);
+        return 0;
+    }
+
+    // palettechart <game> <RESS palette entry> <out.png>: the palette's 256 colours, 16 a row, 32 px squares (picking body colours)
+    public static int PaletteChart(string[] args)
+    {
+        var palette = IslandMapRenderer.LoadPaletteEntry(args[1], int.Parse(args[2]));
+        var six = palette.Take(768).Max() <= 63;
+        var px = new byte[512 * 512 * 4];
+        for (var y = 0; y < 512; y++)
+            for (var x = 0; x < 512; x++)
+            {
+                var c = (y / 32) * 16 + x / 32; var i = (y * 512 + x) * 4;
+                px[i] = (byte)(palette[c * 3 + 2] * (six ? 4 : 1)); px[i + 1] = (byte)(palette[c * 3 + 1] * (six ? 4 : 1)); px[i + 2] = (byte)(palette[c * 3] * (six ? 4 : 1)); px[i + 3] = 255;
+            }
+        PngWriter.Write(args[3], px, 512, 512);
+        Console.WriteLine(args[3]);
+        return 0;
+    }
+
+    // hqrentry <file.HQR> <entry> <out>: one entry of an HQR, unpacked, to a file (looking into the game's resources)
+    public static int HqrEntry(string[] args)
+    {
+        var bytes = HqrArchive.Open(args[1]).Read(int.Parse(args[2]));
+        File.WriteAllBytes(args[3], bytes);
+        Console.WriteLine($"{args[3]}: {bytes.Length} bytes");
+        return 0;
+    }
+
     public static int RaceCarFile(string[] args)
     {
         var setup = new LBAAssembler.RaceCarSetup();
@@ -256,6 +330,8 @@ internal static class RaceTrackCommand
         if (Environment.GetEnvironmentVariable("RT_WEATHER") == "rain") setup.FineWeather = false;
         // (RT_NO_OPPONENTS=1: Twinsen alone on the track -- the car file then has the one to beat's line as its guide)
         if (Environment.GetEnvironmentVariable("RT_NO_OPPONENTS") == "1") setup.Opponent = false;
+        // (RT_DRIVE=<racer body>: driving as that opponent's car)
+        if (int.TryParse(Environment.GetEnvironmentVariable("RT_DRIVE"), out var drive)) { setup.DriveAs = drive; setup.DriveAsKey = RaceCarEngineFile.DriveAsLine(args[1], drive); }
         // (RT_RACE=<island file>: of a folder with several tracks, the one Play races with that island open in the editor, as RaceFor picks it)
         var track = Environment.GetEnvironmentVariable("RT_RACE") is { Length: > 0 } race ? RaceTrackService.RaceFor(args[1], race) : RaceTrackService.ReadInfo(args[1]);
         // (RT_STORY=1: the game played as a game -- every track in a set, raced where and when the game is, with the story's keys)
@@ -324,7 +400,7 @@ internal static class RaceTrackCommand
         var island = IslandFile.Load(Path.Combine(game, where.IleFile));
         var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, game);
         var cx = (int)Math.Floor(cellX / 64); var cz = (int)Math.Floor(cellZ / 64);
-        for (var scene = where.FirstScene; scene <= where.LastScene; scene++)
+        foreach (var scene in where.Scenes)
         {
             var model = store.Load(scene);
             if (model.CubeMode != 1 || model.CubeX != cx || model.CubeY != cz) continue;
@@ -332,7 +408,7 @@ internal static class RaceTrackCommand
             var dx = Math.Sin(turn * 2 * Math.PI / 4096); var dz = Math.Cos(turn * 2 * Math.PI / 4096);
             // (a scene with no buggy of its own -- only the start line's scene has one -- gets a copy of the island's)
             if (!model.Actors.Skip(1).Any(a => a.Entity == RaceTrackScenes.BuggyEntity))
-                for (var other = where.FirstScene; other <= where.LastScene; other++)
+                foreach (var other in where.Scenes)
                     if (other != scene && store.SceneExists(other) && store.Load(other).Actors.Skip(1).FirstOrDefault(a => a.Entity == RaceTrackScenes.BuggyEntity) is { } buggy)
                     {
                         LBAAssembler.Scenes.SceneOps.AddActor(model, buggy.Clone());

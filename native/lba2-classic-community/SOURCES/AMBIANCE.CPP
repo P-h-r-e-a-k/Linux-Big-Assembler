@@ -717,6 +717,40 @@ void FadeToPalAndSamples(U8 *ptrpal) {
 }
 
 //──────────────────────────────────────────────────────────────────────────
+// FadeToPalAndSamples from white instead of black (RACEMOD.CPP: a dream's waking scene)
+void FadeWhiteToPalAndSamples(U8 *ptrpal) {
+    S32 starttime, delta;
+
+    SaveTimer();
+
+    ResumeSamples();
+
+    if ((CubeMode == CUBE_INTERIEUR OR TEMPETE_FINIE)
+            AND IsSamplePlaying(SAMPLE_RAIN)) {
+        HQ_StopOneSample(SAMPLE_RAIN);
+    }
+
+    starttime = TimerSystemHR;
+
+    do {
+        Timer_FixedDtPump();
+        ManageTime();
+
+        delta = TimerSystemHR - starttime;
+
+        if (delta > FADE_DELAY)
+            delta = FADE_DELAY;
+
+        FadeInSamples(FADE_DELAY);
+        FadePal(255, 255, 255, ptrpal, delta);
+    } while (delta != FADE_DELAY);
+
+    FlagBlackPal = FALSE;
+
+    RestoreTimer();
+}
+
+//──────────────────────────────────────────────────────────────────────────
 void SetBlackPal() {
     S32 n;
 

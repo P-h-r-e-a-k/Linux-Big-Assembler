@@ -289,6 +289,9 @@ const char *IleLst[] = {
     "ilotcx",
     "ascence",
     "souscelb",
+    // island 12: Polar Island, ported from LBA1 (POLAR.ILE: LBA Assembler's Terrain/Polar), its sky RESS_SKYSEA0 + 12 (23) and palette
+    // RESS_XPL0 + 12 (39), two of the retail file's empty slots
+    "polar",
 };
 
 void InitGrilleExt(U32 numcube) {
@@ -323,6 +326,8 @@ void InitGrilleExt(U32 numcube) {
 
             numskysea = RESS_SKYSEA0;
         }
+        // (the weather shown, for the scene's scripts: RACEMOD.CPP RaceMod_CitadelWeather)
+        RaceMod_CitadelWeather(TEMPETE_FINIE ? 1 : 0);
         break;
 
     case 5:
@@ -630,6 +635,8 @@ static bool g_previewFreezeArmed = false;
 // why the actual restart is deferred to the *next* call's very start
 // instead of happening immediately, right where it's noticed.
 static bool g_previewNeedsAnimRestart = false;
+// (the restart logged once a body/animation: a short animation restarts every few frames, and its two lines a restart filled the log)
+static bool g_previewRestartLogged = false;
 
 static S32 ComputeBodyBoundingRadius(const void *bodyPtr)
 {
@@ -726,6 +733,7 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         // forces exactly the one call that needs forcing.
         ptrobj->Obj.Status |= FLAG_BODY;
         g_previewNeedsAnimRestart = false; // a real body/anim change already starts fresh at frame 0
+        g_previewRestartLogged = false;
     } else if (g_previewNeedsAnimRestart) {
         // Deferred from the *previous* call's own ObjectSetInterDep hitting
         // FLAG_LAST_FRAME (see that call site's own comment for why a
@@ -743,7 +751,9 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         // body/anim-change branch above -- the one call shape already
         // proven safe by every other test this session.
         void *animPtr = GivePtrAnim(anim); // resolved only to null-check below; NOT what gets passed to ObjectInitAnim -- see its own comment just below
-        NativeDebugLog("AffichageBodyPreview: deferred anim restart body=%d anim=%d (animPtr=%p)", body, anim, animPtr);
+        const bool logRestart = !g_previewRestartLogged;
+        g_previewRestartLogged = true;
+        if (logRestart) NativeDebugLog("AffichageBodyPreview: deferred anim restart body=%d anim=%d (animPtr=%p; logged once a body)", body, anim, animPtr);
         if (animPtr) {
             ptrobj->Obj.Anim.Num = -1; // force re-init -- see ObjectInitAnim's own Anim.Ptr==anim check
             // The actual crash (confirmed by bisecting via NativeDebugLog
@@ -780,7 +790,7 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
             // change branch above already uses correctly.
             ptrobj->Obj.LastOfsFrame = 0; // loop restart wants a hard cut to frame 0, not ObjectInitAnim's cross-fade-from-current-pose path -- see LastOfsFrame's own note in ANIM.CPP if this ever needs revisiting
             ObjectInitAnim(&ptrobj->Obj, (void *)(uintptr_t)(U32)anim);
-            NativeDebugLog("AffichageBodyPreview: deferred restart -- ObjectInitAnim returned");
+            if (logRestart) NativeDebugLog("AffichageBodyPreview: deferred restart -- ObjectInitAnim returned");
             ptrobj->Obj.Status |= FLAG_BODY; // matches the real-change branch: force ObjectSetInterDep to run even though TimerRefHR still equals the freshly-reset Time
         }
         g_previewNeedsAnimRestart = false;
@@ -902,9 +912,9 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     // needing any special-cased "frozen" rendering path of its own.
     if (!g_previewAnimationPaused) {
         S32 savedX = ptrobj->Obj.X, savedY = ptrobj->Obj.Y, savedZ = ptrobj->Obj.Z;
-        NativeDebugLog("AffichageBodyPreview: calling ObjectSetInterDep");
+        // (2026-10-05: the per-frame "calling/returned" breadcrumbs that were here -- four lines a frame, which rotated the log away
+        // within the hour -- are gone; a native fault now leaves its stack in native-crash.log, LBA2_RENDERER_CRASHLOG)
         ObjectSetInterDep(&ptrobj->Obj);
-        NativeDebugLog("AffichageBodyPreview: ObjectSetInterDep returned, Status=0x%x", (unsigned)ptrobj->Obj.Status);
         ptrobj->Obj.X = savedX;
         ptrobj->Obj.Y = savedY;
         ptrobj->Obj.Z = savedZ;
@@ -937,9 +947,7 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         if (zr <= ClipZFar) {
             SetCLUT(PalLevel + 16 * BoundRegleTrois(0, 15, ClipZFar - StartZFog, zr - StartZFog));
             if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) {
-                NativeDebugLog("AffichageBodyPreview: calling ObjectSetInterFrame");
                 ObjectSetInterFrame(&ptrobj->Obj);
-                NativeDebugLog("AffichageBodyPreview: ObjectSetInterFrame returned");
             }
             UnsetClip();
             // Real bug (confirmed via temporary logging, since removed): the preview is a single isolated
@@ -965,9 +973,7 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
             // would otherwise render with entire groups missing.
             g_disableBackfaceCulling = true;
             g_previewFlattenTransparent = true;
-            NativeDebugLog("AffichageBodyPreview: calling ObjectDisplay");
             ObjectDisplay(&ptrobj->Obj);
-            NativeDebugLog("AffichageBodyPreview: ObjectDisplay returned");
             g_disableBackfaceCulling = false;
             g_previewFlattenTransparent = false;
         }
@@ -1026,7 +1032,10 @@ extern void DrawOneSea(S32 y);
 // should reserve it for when the camera is pulled back enough that a
 // single cube's worth of terrain visibly runs out before the horizon does,
 // not use it for every frame regardless of zoom.
-void AffGrilleExtWide(int radiusCubes) {
+// The cubes from (x0, z0) to (x1, z1), all of them, whichever the camera's: the editor's view of a whole island (its cubes and a ring of
+// sea round them) -- a square round the camera's own cube moved the sea under the island as the view moved, and left out an island's
+// far cubes when it was wider than the square (the user, 2026-10-07: the Island of the Francos twice its size, four cubes across).
+void AffGrilleExtArea(int x0, int z0, int x1, int z1) {
     S32 centerCubeX = CurrentCubeX, centerCubeY = CurrentCubeY;
     S32 centerWorldX = centerCubeX * WIDE_WORLD_CUBE_SIZE + VueOffsetX;
     S32 centerWorldY = VueOffsetY;
@@ -1052,9 +1061,8 @@ void AffGrilleExtWide(int radiusCubes) {
 
     ManageSystem();
 
-    for (S32 dy = -radiusCubes; dy <= radiusCubes; dy++) {
-        for (S32 dx = -radiusCubes; dx <= radiusCubes; dx++) {
-            S32 cx = centerCubeX + dx, cy = centerCubeY + dy;
+    for (S32 cy = z0; cy <= z1; cy++) {
+        for (S32 cx = x0; cx <= x1; cx++) {
             if (cx < 0 || cx > 15 || cy < 0 || cy > 15) continue;
 
             S32 localOffsetX = centerWorldX - cx * WIDE_WORLD_CUBE_SIZE;
@@ -1122,6 +1130,11 @@ void AffGrilleExtWide(int radiusCubes) {
     Switch_Fillers(FILL_POLY_TEXTURES);
 
     CopyScreen(Log, Screen);
+}
+
+// The square of cubes `radiusCubes` round the camera's own.
+void AffGrilleExtWide(int radiusCubes) {
+    AffGrilleExtArea(CurrentCubeX - radiusCubes, CurrentCubeY - radiusCubes, CurrentCubeX + radiusCubes, CurrentCubeY + radiusCubes);
 }
 
 #endif // LBA2_RENDERER_HOST

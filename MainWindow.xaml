@@ -128,6 +128,9 @@
                 <MenuItem Header="_Open…" InputGestureText="Ctrl+O" Click="Open_Click"/>
                 <MenuItem Header="_Save" InputGestureText="Ctrl+S" Click="Save_Click"/>
                 <Separator/>
+                <MenuItem Header="Open the LBA2 1996 _demo…" Click="OpenDemo96_Click" ToolTip="The demo released before LBA2 was finished: its islands, interiors and scenes, converted to the retail game's layout to look at (your game folder is not changed)"/>
+                <MenuItem Header="_Close the 1996 demo" Click="CloseDemo96_Click"/>
+                <Separator/>
                 <MenuItem Header="Se_ttings…" Click="Settings_Click"/>
                 <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
@@ -184,6 +187,7 @@
                     <MenuItem x:Name="Lba1SurpriseMenuItem" Header="LBA1: _Make surprise changes…" Click="Lba1SurpriseChanges_Click"/>
                 </MenuItem>
                 <MenuItem x:Name="Lba2RaceTrackMenuItem" Header="LBA2: _race track…" Click="Lba2RaceTrack_Click" ToolTip="Builds race tracks, one island&apos;s or several at once (levelled, banked road, pit lane, start gantry, a bridge or a jump where the lap crosses itself), or puts the folder back. Play races the track of the island that is open"/>
+                <MenuItem x:Name="Lba2PolarIslandMenuItem" Header="LBA2: _Polar Island (from LBA1)…" Click="Lba2PolarIsland_Click" ToolTip="Adds LBA1&apos;s Polar Island to LBA2 as a new island (island 12) you can turn round, builds it again, or takes it out. Only the LBA Assembler&apos;s own engine (Play) loads it"/>
                 <Separator/>
                 <MenuItem Header="_Test edits" ToolTip="Try changes against a scratch copy of the game folder before any of them touch your real files">
                     <MenuItem x:Name="TestEditsStartMenuItem" Header="_Start testing…" Click="TestEditsStart_Click"/>
@@ -305,11 +309,14 @@
                                             <StackPanel x:Name="ZoneTypeList"/>
                                             <Separator Margin="0,14,0,14"/>
                                             <DockPanel Margin="0,0,0,10">
-                                                <Button DockPanel.Dock="Right" Content="↻" Width="24" Height="20" Padding="0" Style="{StaticResource IconButton}" ToolTip="Refresh the list from what is in view" Click="ActorsInViewRefresh_Click"/>
+                                                <Button DockPanel.Dock="Right" Content="↻" Width="24" Height="20" Padding="0" Style="{StaticResource IconButton}" ToolTip="Refresh the list from what is in view" Click="ActorsInViewRefresh_Click"
+                                                        AutomationProperties.Name="Refresh the actors in view" AutomationProperties.AutomationId="ActorsInViewRefresh"/>
+                                                <Button DockPanel.Dock="Right" Content="↗" Width="24" Height="20" Padding="0" Margin="0,0,4,0" Style="{StaticResource IconButton}" ToolTip="Open the selected actor's attributes (or double-click it, or press Enter)" Click="ActorsInViewOpen_Click"
+                                                        AutomationProperties.Name="Open the selected actor's attributes" AutomationProperties.AutomationId="ActorsInViewOpen"/>
                                                 <TextBlock x:Name="ActorsInViewHeader" Text="Actors in view" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
                                             </DockPanel>
                                             <ListBox x:Name="ActorsInViewList" Height="160" Background="{DynamicResource ThemeFieldBrush}" BorderBrush="{DynamicResource ThemeBorderBrush}" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="Consolas" FontSize="11"
-                                                     SelectionChanged="ActorsInViewList_SelectionChanged" MouseDoubleClick="ActorsInViewList_DoubleClick" ToolTip="Double-click to open the actor's attributes">
+                                                     SelectionChanged="ActorsInViewList_SelectionChanged" MouseDoubleClick="ActorsInViewList_DoubleClick" KeyDown="ActorsInViewList_KeyDown" ToolTip="Double-click (or Enter) to open the actor's attributes">
                                                 <ListBox.ItemContainerStyle>
                                                     <Style TargetType="ListBoxItem">
                                                         <Setter Property="Padding" Value="4,2"/>

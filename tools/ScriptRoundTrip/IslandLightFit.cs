@@ -166,11 +166,23 @@ internal static class IslandFreeTextureCommand
         var island = IslandFile.Load(Path.Combine(dir, name + ".ILE"));
         var used = new bool[256, 256];
         var defs = 0;
+        // (REFERENCED=1: only the definitions a textured polygon still reads -- a build leaves the ones of the ground it repainted behind)
+        var referencedOnly = Environment.GetEnvironmentVariable("REFERENCED") == "1";
         foreach (var cube in island.Cubes.Values)
         {
             var t = cube.TextureDefs;
+            var read = new HashSet<int>();
+            if (referencedOnly && cube.HasPolygons)
+                for (var z = 0; z < IslandCube.Cells; z++)
+                for (var x = 0; x < IslandCube.Cells; x++)
+                for (var half = 0; half < 2; half++)
+                {
+                    var p = new IslandPolygon(cube.Polygon(x, z, half));
+                    if (p.TexFlag != 0) read.Add(p.TextureIndex * 6);
+                }
             for (var i = 0; i + 5 < t.Length; i += 6)
             {
+                if (referencedOnly && !read.Contains(i)) continue;
                 defs++;
                 int u0 = 65535, v0 = 65535, u1 = 0, v1 = 0;
                 for (var k = 0; k < 3; k++)

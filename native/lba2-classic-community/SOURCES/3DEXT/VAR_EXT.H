@@ -63,6 +63,22 @@ extern S32 FogCoul;
 extern U8 *SkySeaTexture;
 extern U8 *ObjTexture;
 extern U8 *GroundTexture;
+/* More texture pages for an island that has them (POLAR.ILE, the LBA Assembler's port of LBA1's Polar Island; a retail island has
+   none): in the .ILE's entries after its cubes' records, a header (ISLE_PAGES_MAGIC, the ground pages past GroundTexture, the object
+   pages past ObjTexture), then those ground pages, then those object pages, 256 x 256 each (LOADISLE.CPP LoadIsland).
+   - ground: a ground triangle's IndexTex is its page in the top bits (>> GROUND_PAGE_SHIFT) and its texture definition in the cube's
+     list in the rest (TERRAIN.CPP GroundTexDef);
+   - objects: a decor's page is in its Body's bits DEC_PAGE_SHIFT.. (4 bits; the body number is the low 16, DEC_INVISIBLE and DEC_DRAWN
+     the next two), the page all its body's textures are on (DECORS.CPP). */
+#define ISLE_PAGES_MAGIC 0x45474150 // 'PAGE'
+#define MAX_GROUND_PAGES 8
+#define MAX_OBJ_PAGES 16
+#define GROUND_PAGE_SHIFT 10
+#define DEC_PAGE_SHIFT 18
+extern U8 *GroundPageBuf;   // ground pages 1.. (page 0 is GroundTexture)
+extern S32 NbGroundPages;
+extern U8 *ObjPageBuf;      // object pages 1.. (page 0 is ObjTexture)
+extern S32 NbObjPages;
 
 extern Struc_Point Tab_Points[];
 //extern	Struc_Point	MemoTab_Points[] ;

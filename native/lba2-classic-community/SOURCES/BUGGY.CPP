@@ -139,11 +139,11 @@ void TakeBuggy(void) {
 
     // Passe Buggy Scenarique en NoBody
     InitBody(NO_BODY, NUM_BUGGY);
+    // A parked buggy is drawn into the static background copy, so that copy is
+    // rebuilt, or the empty car stays on screen where it stood until the camera
+    // moves (a race track parks it on the start line; Polar Island on its dock).
+    FirstTime = AFF_ALL_FLIP;
     if (RaceMod_Active()) {
-        // A parked buggy is drawn into the static background copy, so that copy is
-        // rebuilt, or the empty car stays on screen where it stood (a race track
-        // parks it on the start line).
-        FirstTime = AFF_ALL_FLIP;
         RaceMod_ResetGear();
     }
 
@@ -255,7 +255,8 @@ static void RaceSpeedOnSlope(S_BUGGY *ptb, S32 deltatimer, S32 flagattack, doubl
     // (over the top gear's speed the car steers as much quicker as it goes faster: its tightest turn stays what it is; and a banked
     // bend turns it; and skidding on oil it turns round -- RACEMOD.CPP)
     const double fastest = car->GearTop[car->Gears - 1];
-    ptb->SpeedRot = (S32)(car->Steer * (v > fastest ? v / fastest : 1) * (1 + RACE_BANK_STEER * bank) * RaceMod_SkidSteer());
+    const double quick = v > fastest ? v / fastest : 1, jet = RaceMod_JetSteer();
+    ptb->SpeedRot = (S32)(car->Steer * (quick > jet ? quick : jet) * (1 + RACE_BANK_STEER * bank) * RaceMod_SkidSteer());
     const S32 touched = RaceMod_RailTouched();
 
     if (RaceMod_Held()) {
@@ -320,9 +321,12 @@ static void RaceSpeed(S_BUGGY *ptb, S32 deltatimer, S32 flagattack) {
     const S32 coast = (S32)(deltatimer * car->Coast * RaceMod_SkidCoast() / 1000);
 
     // (over the top gear's speed -- Gazogem fuel, a jet-pack -- it steers as much quicker as it goes faster: its tightest turn stays what
-    // it is, as on a slope, RaceSpeedOnSlope; the jet-pack drives the line at twice the speed round its bends)
+    // it is, as on a slope, RaceSpeedOnSlope; the jet-pack drives the line at twice the speed round its bends -- and steers as much
+    // quicker below the top gear's speed too, RaceMod_JetSteer: through a hairpin taken at twice the line's speed, still under the top
+    // speed, it turned on a circle twice as wide)
     const double fastest = car->GearTop[car->Gears - 1];
-    ptb->SpeedRot = (S32)(car->Steer * (ptb->Speed > fastest ? ptb->Speed / fastest : 1) * RaceMod_SkidSteer());
+    const double quick = ptb->Speed > fastest ? ptb->Speed / fastest : 1, jet = RaceMod_JetSteer();
+    ptb->SpeedRot = (S32)(car->Steer * (quick > jet ? quick : jet) * RaceMod_SkidSteer());
 
     // on the grid until the count-down's GO
     if (RaceMod_Held()) {
@@ -445,6 +449,7 @@ void MoveBuggy(T_OBJET *ptrobj) {
         if (RaceMod_Active()) // a race-track mod's car (RACEMOD.CPP)
         {
             RaceSpeed(ptb, deltatimer, flagattack);
+            RaceMod_Skid(&ptb3d->Beta, &ptb->Speed);
         } else if ((Input & I_UP) // j'accelere
                    AND !flagattack) {
             ptb->Speed += deltatimer * 4;
@@ -649,7 +654,7 @@ void DoAnimBuggy(T_OBJET *ptrobj) {
         return;
     }
 
-    LongRotate(0, ptb->SpeedInc * 1024, ptb3d->Beta);
+    LongRotate(0, ptb->SpeedInc * 1024, RaceMod_MoveBeta(ptb3d->Beta));   // (skidding on oil it slides on the way it was going: RACEMOD.CPP)
     Nxw = ptb3d->X + X0 / 1024;
     Nzw = ptb3d->Z + Z0 / 1024;
 

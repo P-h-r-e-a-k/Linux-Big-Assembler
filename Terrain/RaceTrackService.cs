@@ -70,14 +70,39 @@ internal static class RaceTrackService
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<DriverInfo>? Drivers = null,
         // Story: the story's texts the race-track mode needs (Citadel Island's: RaceTrackStory).
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] StoryInfo? Story = null,
-        // Mushrooms, Penguins: the power-ups' mushrooms along the lap and the nitro penguin of each scene, each [scene, actor]
+        // Mushrooms, Penguins: the power-ups' mushrooms along the lap and the nitro penguin of each scene, each [scene, actor] -- a
+        // mushroom [scene, actor, y], the height the race-track mode stands it at, out of sight until then (since 2026-10-05)
         // (RaceTrackScenes.MushroomSpots; RACEMOD.CPP's power-ups).
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Mushrooms = null,
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Penguins = null,
         // Oil: the oil slicks of each scene, out of sight until a car drops oil, each [scene, actor] (RaceTrackOil)
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Oil = null,
         // OilIcon: the oil's model in OBJFIX.HQR, which the item box shows (RaceTrackOil.InstallIcon)
-        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? OilIcon = null);
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? OilIcon = null,
+        // SuperJetModel: the super jet-pack the car turns into while it drives it, in OBJFIX.HQR (RaceTrackSuperJet)
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? SuperJetModel = null,
+        // TwinsenSmall: Twinsen's buggy at half its size, its generic body (RaceTrackSmallCars.HeroSmall), for an opponent's lightning
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? TwinsenSmall = null,
+        // Dream: a sprint dreamt at the start of the game (Polar Island's: RaceTrackIsland.Dream, Polar.PolarDream), since 2026-10-06
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] DreamInfo? Dream = null,
+        // Steam, Drips: the pipes over the road (RaceTrackPipes, the Island of the Francos' refinery): steam puffing from their tops, each
+        // [x, y, z, every (ms)], and oil dripping onto the road, each [x, y, z, the road's y under it, every (ms)] -- world units from the
+        // island's corner (RACEMOD.CPP steam= and drip=), since 2026-10-07
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Steam = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Drips = null,
+        // Jets: steam jets across the road (RaceTrackPipes.PlaceJets), each [x, y, z (the road's middle), its half width, the reach across,
+        // blowing (ms), not (ms), phase (ms), its way x and z (a thousand long)] (RACEMOD.CPP jet=)
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Jets = null);
+    // A dreamt sprint: its finish line (a line as the start line is), the car's top speed for it (km/h: the setup's gears scaled to it),
+    // the intro and the loss's line (texts of the island's), and where a win wakes Twinsen up -- the scene, the text of its island's its
+    // actor says there.
+    public sealed record DreamInfo(StartLineInfo Finish, int TopKmh, int IntroText, int LoseText, int WakeScene, int WakeText, int WakeActor,
+        // (since 2026-10-06, later: the game variable a win sets, which scene 0's opening wakes Twinsen up in his bed by -- it says the
+        // wake line itself then, and WakeText is -1)
+        int WinVar = -1,
+        // (since the island was made twice its size: how long after the finish line -- a jump's lip -- Twinsen wakes up, in mid-flight; 0, the
+        // car stops at the line and he wakes up 3.5 s later)
+        int WakeFlight = 0);
     public sealed record RivalInfo(string Name, List<int[]> Path, int Grid, Dictionary<int, int> Actors);
     // A driver: its name, its line ([x, z, y, speed, bend radius] as Path's), how many points before the start line it starts without a
     // grid, the scenes' copies of its car (none for a time to beat: Ghost), its character (Top, Grip: shares of the player's car's top
@@ -86,7 +111,9 @@ internal static class RaceTrackService
     // The story's: the tired line everyone says until Twinsen sleeps (a text of Citadel Island's), and the holomap arrow to the town
     // circuit's start line.
     // (Seller: Celebration Island's lava lake, whose race the souvenir seller has to lose: RaceTrackStory.ApplyCelebration)
-    public sealed record StoryInfo(int TiredText, int TownArrow, bool Seller = false);
+    // (RaphTime: Raph's line with the time to beat in it, RACEMOD.CPP beat_text=; RaphPark: where his car stands once he has stopped lapping
+    // the storm track, [scene, x, y, z, turn] -- RaceTrackStory)
+    public sealed record StoryInfo(int TiredText, int TownArrow, bool Seller = false, int RaphTime = -1, int[]? RaphPark = null);
 
     // Play's race-track mode on a folder with a race track built: writes the engine's car file (the car setup in the settings, and the track's
     // start line, checkpoints and opponents from RACETRACK.JSON: `track`, one of the folder's tracks as RaceFor picks it, or else the
@@ -97,6 +124,7 @@ internal static class RaceTrackService
     {
         if (!HasBackups(gameDirectory)) return null;
         var car = EditorSettings.Current.RaceCar.Clone();
+        car.DriveAsKey = RaceCarEngineFile.DriveAsLine(gameDirectory, car.DriveAs);
         if (story && ReadInfo(gameDirectory) is { } all) return path => car.WriteStorySet(path, all);
         return path => car.WriteEngineFile(path, track ?? ReadInfo(gameDirectory));
     }
@@ -194,7 +222,9 @@ internal static class RaceTrackService
     public static string? Problem(string gameDirectory)
     {
         if (!Directory.Exists(gameDirectory)) return "The LBA2 game folder isn't set. Choose it under File > Settings.";
-        foreach (var f in AllFiles) if (!File.Exists(Path.Combine(gameDirectory, f))) return $"{f} isn't in the game folder.";
+        // (Polar Island's files are the build's to add when they aren't there: EnsurePolar)
+        var added = RaceTrackIsland.All.Where(i => i.Dream).SelectMany(i => i.IslandFiles).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in AllFiles.Where(f => !added.Contains(f))) if (!File.Exists(Path.Combine(gameDirectory, f))) return $"{f} isn't in the game folder.";
         return null;
     }
 
@@ -215,6 +245,8 @@ internal static class RaceTrackService
         if (tracks.Count == 0) return new(false, "No island is chosen: nothing was changed.", new(), null);
         try
         {
+            // (Polar Island's track needs the island: added to the originals when they haven't got it)
+            var polar = tracks.Any(t => t.Options.Island.Dream) ? EnsurePolar(gameDirectory) : new List<string>();
             var files = tracks.SelectMany(t => FilesFor(t.Options.Island)).Concat(ExtraFiles).Distinct().ToArray();
             foreach (var f in files)
             {
@@ -246,6 +278,7 @@ internal static class RaceTrackService
                 if (tracks.Count > 1) log.Add($"==== {options.Island.Shown} ====");
                 log.Add($"The lap is {report.Length:0} cells ({report.Length * 512:0} game units) long: {report.Vertices} ground points levelled, {report.Cells} cells painted, {report.DecorsRemoved + report.SolidDecorsRemoved} decor objects taken off the road.");
                 if (options.Island.Created) log.AddRange(made);
+                if (options.Island.Dream) log.AddRange(polar);
                 log.AddRange(built.Log);
                 log.AddRange(report.Notes);
                 foreach (var placed in report.Placed) log.Add(placed);
@@ -268,7 +301,8 @@ internal static class RaceTrackService
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or LBAAssembler.LbaScript.ScriptCompileException)
         {
-            // leave the folder as it was
+            // leave the folder as it was (and where it went wrong, for the log)
+            DebugLog.Log($"RaceTrackService.Build failed: {error}");
             try { Restore(gameDirectory); } catch (Exception again) when (again is IOException or UnauthorizedAccessException) { /* the backups are still there */ }
             return new(false, $"Nothing was changed: {error.Message}", new(), null);
         }
@@ -283,8 +317,8 @@ internal static class RaceTrackService
     // all of them, and each track's record for RACETRACK.JSON, in the order built.
     public sealed class BuildSession
     {
-        public bool CharacterCars, Baldino, SmallCars, Oil;
-        public int? OilIcon;
+        public bool CharacterCars, Baldino, SmallCars, Oil, CastCars;
+        public int? OilIcon, SuperJetModel, TwinsenSmall;
         public List<TrackInfo> Tracks { get; } = new();
     }
 
@@ -303,12 +337,34 @@ internal static class RaceTrackService
         if (options.Island.TwinRoster is { } town && options.Drivers is not null) twinOptions.Drivers = town;
         if (twinPlan is not null) { options.AddOpponent = false; options.AddBaldino = false; options.AddBiker = false; }
         FollowPlan(plan, options);
-        var extra = Prepare(gameDirectory, options);
+        // (an island made bigger for its track -- the Island of the Francos twice its size: IslandScaler -- its ground, its objects' bodies
+        // and its scenes, from the originals, before the build adds its own)
         var island = IslandFile.Load(islandSource);
+        var scaled = new List<string>();
+        if (options.Island.Scale > 1)
+        {
+            var anchor = IslandScaler.Anchor(island);
+            island = IslandScaler.Scale(island, options.Island.Scale, scaled);
+            scaled.Add(IslandScaler.ScaleObl(Path.Combine(gameDirectory, options.Island.OblFile), options.Island.Scale));
+            scaled.AddRange(IslandScaler.ScaleScenes(gameDirectory, options.Island, island, anchor, options.Island.Scale));
+            scaled.Add(IslandScaler.ScaleHolomap(gameDirectory, options.Island, anchor, options.Island.Scale));
+        }
+        var extra = Prepare(gameDirectory, options);
+        extra.InsertRange(0, scaled);
         var themed = RaceTrackTextures.Import(island, options.Island, gameDirectory);
         options.Theme = themed.Theme;
         if (themed.Log.Length > 0) extra.Add(themed.Log);
         var report = RaceTrackBuilder.Build(island, plan, options);
+        // (an island with more ground pages -- POLAR.ILE -- has a texture index of a page and a definition, IslandFile.GroundPageShift, and
+        // the triangle's Wide bit: the road's definitions, the smooth kerbs' a triangle each on a bend, must fit in a cube's 2,048)
+        if (island.GroundPages.Count > 0)
+        {
+            var full = IslandOps.CubeCells(island).MaxBy(c => c.Item3.TextureDefs.Length);
+            var most = full.Item3.TextureDefs.Length / 6;
+            if (most > island.MaxGroundDefinitions)
+                throw new InvalidDataException($"{options.Island.IleFile}: cube ({full.Item1}, {full.Item2}) needs {most} ground texture definitions with the road, more than the {island.MaxGroundDefinitions} an island with more texture pages has room for.");
+            extra.Add($"{options.Island.IleFile}: at most {most} ground texture definitions in a cube with the road (room for {island.MaxGroundDefinitions})");
+        }
         island.Save(Path.Combine(gameDirectory, options.Island.IleFile));
         AppendBodies(Path.Combine(gameDirectory, options.Island.OblFile), report, options);
         var twin = BuildTwin(gameDirectory, twinPlan ?? plan, twinPlan is not null, twinOptions, options, report);
@@ -319,7 +375,17 @@ internal static class RaceTrackService
         var scenes = RaceTrackScenes.Apply(gameDirectory, report, options, own is null ? null : (own.Report, own.Options));
         var story = Story(gameDirectory, report, options, own, scenes);
         extra.AddRange(story.Log);
-        WriteInfo(gameDirectory, report, options, scenes, own, session, story.Info);
+        // (a dreamt sprint's texts, and where it ends)
+        DreamInfo? dream = null;
+        if (options.Island.Dream && report.FinishLine is { } finish)
+        {
+            var (dreamLog, wake, inOpening) = LBAAssembler.Terrain.Polar.PolarDream.Apply(gameDirectory);
+            extra.AddRange(dreamLog);
+            dream = new DreamInfo(LineInfo(finish, report.FinishLineHeight), LBAAssembler.Terrain.Polar.PolarDream.TopKmh, LBAAssembler.Terrain.Polar.PolarDream.IntroText,
+                LBAAssembler.Terrain.Polar.PolarDream.LoseText, LBAAssembler.Terrain.Polar.PolarDream.WakeScene, inOpening ? -1 : wake, LBAAssembler.Terrain.Polar.PolarDream.WakeActor,
+                inOpening ? LBAAssembler.Terrain.Polar.PolarDream.DreamVar : -1, LBAAssembler.Terrain.Polar.PolarDream.WakeFlightMs);
+        }
+        WriteInfo(gameDirectory, report, options, scenes, own, session, story.Info, dream);
         return new Built(report, options, twin, scenes, extra);
     }
 
@@ -474,7 +540,16 @@ internal static class RaceTrackService
         // has one yet)
         if (!session.CharacterCars) { log.AddRange(RaceTrackCharacterCars.Install(gameDirectory).Log); session.CharacterCars = true; }
         // ... and each of the racer entity's cars shrunk to half its size, for the lightning spell (RaceTrackSmallCars)
-        if (!session.SmallCars) { log.Add(RaceTrackSmallCars.Install(gameDirectory)); session.SmallCars = true; }
+        if (!session.SmallCars)
+        {
+            var small = RaceTrackSmallCars.Install(gameDirectory);
+            log.Add(small);
+            if (!small.Contains("not found")) session.TwinsenSmall = RaceTrackSmallCars.HeroSmall;
+            session.SmallCars = true;
+        }
+        // ... and the cars of the rest of the game's characters, each with its half-size copy, and RACECARS.JSON with every car
+        // (RaceTrackCharacterCars.InstallCast: the car setup's "drive as" goes by it)
+        if (!session.CastCars) { log.AddRange(RaceTrackCharacterCars.InstallCast(gameDirectory)); session.CastCars = true; }
         // ... and the oil slick the power-ups' oil leaves on the road (RaceTrackOil)
         if (!session.Oil)
         {
@@ -483,6 +558,10 @@ internal static class RaceTrackService
             var (icon, iconLog) = RaceTrackOil.InstallIcon(gameDirectory);
             log.Add(iconLog);
             session.OilIcon = icon;
+            // ... and the super jet-pack the car turns into
+            var (jet, jetLog) = RaceTrackSuperJet.Install(gameDirectory);
+            log.Add(jetLog);
+            session.SuperJetModel = jet;
             session.Oil = true;
         }
         return log;
@@ -491,10 +570,10 @@ internal static class RaceTrackService
     // RACETRACK.JSON: the crossing style and the start line, for Play; and, for a twin with a track of its own, that track as Twin. The
     // tracks built before this one in `session` stay in it: the first is the file's own record, the rest its Others.
     public static void WriteInfo(string gameDirectory, RaceTrackReport report, RaceTrackOptions options, RaceTrackScenes.Result scenes, TwinTrack? twin = null, BuildSession? session = null,
-        StoryInfo? story = null)
+        StoryInfo? story = null, DreamInfo? dream = null)
     {
         session ??= new BuildSession();
-        var info = Info(report, options, scenes) with { Story = story, OilIcon = session.OilIcon };
+        var info = Info(report, options, scenes) with { Story = story, OilIcon = session.OilIcon, SuperJetModel = session.SuperJetModel, TwinsenSmall = session.TwinsenSmall, Dream = dream };
         if (info.ArcJumps is not null) info = info with { CubeScenes = RaceTrackScenes.CubeScenes(gameDirectory, options.Island) };
         if (twin is { Own: true } && scenes.Twin is { } twinScenes)
         {
@@ -502,22 +581,25 @@ internal static class RaceTrackService
             var fine = Info(twin.Report, twin.Options, twinScenes);
             // (the town circuit's own arrow, which the bed switches on)
             if (story is not null) fine = fine with { StoryArrow = story.TownArrow };
-            info = info with { Twin = fine with { OilIcon = session.OilIcon } };
+            info = info with { Twin = fine with { OilIcon = session.OilIcon, SuperJetModel = session.SuperJetModel, TwinsenSmall = session.TwinsenSmall } };
         }
         session.Tracks.Add(info);
         var all = session.Tracks[0] with { Others = session.Tracks.Count > 1 ? session.Tracks.Skip(1).ToList() : null };
         File.WriteAllText(Path.Combine(gameDirectory, InfoFile), JsonSerializer.Serialize(all, new JsonSerializerOptions { WriteIndented = true }));
     }
 
+    // A line across the road (island cells) as the engine has it: in the cube its middle is in.
+    private static StartLineInfo LineInfo((double X0, double Z0, double X1, double Z1, double DirX, double DirZ) l, double? height = null)
+    {
+        var cx = (int)Math.Floor((l.X0 + l.X1) / 2 / 64); var cz = (int)Math.Floor((l.Z0 + l.Z1) / 2 / 64);
+        int Local(double cells, int cube) => (int)Math.Round((cells - cube * 64) * 512);
+        return new StartLineInfo(cx, cz, Local(l.X0, cx), Local(l.Z0, cz), Local(l.X1, cx), Local(l.Z1, cz), (int)Math.Round(l.DirX * 1000), (int)Math.Round(l.DirZ * 1000),
+            height is { } h ? (int)Math.Round(h) : null);
+    }
+
     private static TrackInfo Info(RaceTrackReport report, RaceTrackOptions options, RaceTrackScenes.Result scenes)
     {
-        static StartLineInfo Line((double X0, double Z0, double X1, double Z1, double DirX, double DirZ) l, double? height = null)
-        {
-            var cx = (int)Math.Floor((l.X0 + l.X1) / 2 / 64); var cz = (int)Math.Floor((l.Z0 + l.Z1) / 2 / 64);
-            int Local(double cells, int cube) => (int)Math.Round((cells - cube * 64) * 512);
-            return new StartLineInfo(cx, cz, Local(l.X0, cx), Local(l.Z0, cz), Local(l.X1, cx), Local(l.Z1, cz), (int)Math.Round(l.DirX * 1000), (int)Math.Round(l.DirZ * 1000),
-                height is { } h ? (int)Math.Round(h) : null);
-        }
+        static StartLineInfo Line((double X0, double Z0, double X1, double Z1, double DirX, double DirZ) l, double? height = null) => LineInfo(l, height);
         // (every line with its height: the engine counts it only for a car near that height, so a line under a bridge, or a raised road's
         // other levels, is not crossed from the road over it; since 2026-10-01 for every lap, not only a raised road's)
         var raised = report.Raised.Count > 0;
@@ -546,7 +628,9 @@ internal static class RaceTrackService
                 : null,
             ArcJumps: raised && report.ArcRaised.Count > 0 ? report.ArcRaised.ToList() : null, Drivers: drivers.Count > 0 ? drivers : null,
             Mushrooms: scenes.Mushrooms is { Count: > 0 } mushrooms ? mushrooms : null, Penguins: scenes.Penguins is { Count: > 0 } penguins ? penguins : null,
-            Oil: scenes.Oil is { Count: > 0 } oil ? oil : null);
+            Oil: scenes.Oil is { Count: > 0 } oil ? oil : null,
+            Steam: report.Steam.Count > 0 ? report.Steam.ToList() : null, Drips: report.Drips.Count > 0 ? report.Drips.ToList() : null,
+            Jets: report.Jets.Count > 0 ? report.Jets.ToList() : null);
     }
 
     private static int[] LoopRecord(LoopInfo l)
@@ -588,7 +672,54 @@ internal static class RaceTrackService
         }
     }
 
-    // Puts the changed files back from the copies made by the first build and removes the copies (and RACETRACK.JSON).
+    // Polar Island, for its track (RaceTrackIsland.Polar): when the originals the build starts from haven't got it (the folder's files, or
+    // the copies an earlier build kept), the folder is put back to its originals and the island added to them (Polar.PolarIsland, from
+    // the LBA1 folder in the settings; LBA1_DIR for the command line), so the copies the build keeps from now on have it. Putting the
+    // track back later leaves the island. Returns lines for the log.
+    private static List<string> EnsurePolar(string gameDirectory)
+    {
+        if (PolarInOriginals(gameDirectory)) return new List<string> { "Polar Island is in the folder: the track is built on it" };
+        var lba1 = Environment.GetEnvironmentVariable("LBA1_DIR") is { Length: > 0 } env ? env : EditorSettings.Current.Lba1Directory;
+        if (!LBAAssembler.Lba1.Lba1Game.IsInstalled(lba1))
+            throw new InvalidDataException("Polar Island's track is built on Polar Island, which is made from LBA1's own scenes: choose the LBA1 game folder under File > Settings first.");
+        var log = new List<string>();
+        if (AllFiles.Any(f => File.Exists(Path.Combine(gameDirectory, f + BackupSuffix))))
+            log.Add("The folder put back to its originals first: " + Restore(gameDirectory));
+        var added = LBAAssembler.Terrain.Polar.PolarIsland.Add(lba1, gameDirectory);
+        log.Add($"Polar Island added to the folder from LBA1's scenes ({added.Count} steps: Tools > LBA2: Polar Island has the island on its own)");
+        return log;
+    }
+
+    // Whether the originals a build starts from have Polar Island: its files and its scenes.
+    private static bool PolarInOriginals(string gameDirectory)
+    {
+        string Original(string f) { var p = Path.Combine(gameDirectory, f); return File.Exists(p + BackupSuffix) ? p + BackupSuffix : p; }
+        if (!File.Exists(Original(LBAAssembler.Terrain.Polar.PolarTerrain.IleFile)) || !File.Exists(Original(LBAAssembler.Terrain.Polar.PolarTerrain.OblFile))) return false;
+        try
+        {
+            var path = Original("SCENE.HQR");
+            var count = HqrArchive.CountEntries(path);
+            var scenes = HqrArchive.Open(path);
+            var island = RaceTrackIsland.Polar;
+            // (as this version numbers its scenes, each the scene of its own cube; an earlier version's, 229-240, is added again)
+            for (var n = LBAAssembler.Terrain.Polar.PolarScenes.OldFirstScene; n < island.FirstScene && n + 1 < count; n++)
+            {
+                var old = scenes.Read(n + 1);
+                if (old.Length > 0 && old[0] == island.IslandByte) return false;
+            }
+            for (var n = island.FirstScene; n <= island.LastScene && n + 1 < count; n++)
+            {
+                var record = scenes.Read(n + 1);
+                if (record.Length == 0 || record[0] != island.IslandByte) continue;
+                var model = LBAAssembler.Scenes.SceneSerializer.Parse(LBAAssembler.Scenes.SceneGame.Lba2, record);
+                return LBAAssembler.Terrain.Polar.PolarScenes.SceneOf(model.CubeX, model.CubeY) == n;
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException) { }
+        return false;
+    }
+
+    // Puts the changed files back from the copies made by the first build and removes the copies (and RACETRACK.JSON, RACECARS.JSON).
     public static string Restore(string gameDirectory)
     {
         if (!HasBackups(gameDirectory)) return "There is no race track build to undo in this folder.";
@@ -603,8 +734,8 @@ internal static class RaceTrackService
         foreach (var f in back) File.Delete(Path.Combine(gameDirectory, f + BackupSuffix));
         // (an island the build made has no originals: it goes)
         var gone = SendellWell.Remove(gameDirectory) ? $" {SendellWell.IleFile} and {SendellWell.OblFile}, which the build made, are gone." : "";
-        var info = Path.Combine(gameDirectory, InfoFile);
-        if (File.Exists(info)) File.Delete(info);
+        foreach (var made in new[] { InfoFile, RaceTrackCharacterCars.CatalogueFile })
+            if (File.Exists(Path.Combine(gameDirectory, made))) File.Delete(Path.Combine(gameDirectory, made));
         return $"The original {string.Join(", ", back)} are back.{gone}";
     }
 }

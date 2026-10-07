@@ -22,10 +22,10 @@ CP = [
     ('S1', 537, 625.5), ('S2', 546, 622.5),
     ('SE1', 552, 616), ('SE2', 555, 606),
     ('E1', 557, 595), ('E2', 559, 580), ('E3', 560.5, 566), ('E4', 561, 557.5),
-    ('A0', 558, 551), ('A1', 550, 549), ('A2', 543, 548.5),
-    ('H1', 537, 546.5), ('H2', 535.5, 542), ('H3', 538.5, 537.5),
-    ('B1', 545, 537), ('B2', 552, 537),
-    ('H4', 558, 535), ('H5', 559.5, 530.5), ('H6', 556, 526.5),
+    ('A0', 558, 551), ('A1', 551, 549.2),
+    ('H1', 544.5, 547.2), ('H2', 541.5, 542.3), ('H3', 544.5, 537.5),
+    ('B1', 548.5, 537),
+    ('H4', 553, 535.5), ('H5', 554.2, 531), ('H6', 551, 526.6),
     ('N1', 547, 526), ('N2', 537, 526), ('N3', 529, 526),
 ]
 names = [c[0] for c in CP]
@@ -61,12 +61,15 @@ sOf = {nm: S[np.argmax(owner == i)] for i, nm in enumerate(names)}
 
 # ---- heights: keys, straight between, each kink rounded by a vertical curve (a parabola tangent to both grades, R cells either side);
 # the jump's stretch exactly level from 10 cells before the take-off lip to 14 after the landing lip (the ramps go on top of it) ----
-TOP, JUMP, LOW = 2500, 2000, 250
+TOP, JUMP, LOW = 2500, 3900, 250
 R = 5.0
-key = [(sOf['N3'], TOP), (sOf['W1'], TOP),
+# (2026-10-06, night: the jump off the rampart's end as it was -- an 11-cell gap, the retail flight -- but at JUMP, the take-off over the
+# shop (its top 3,500) and the landing over the museum's lower block, all on the raised road from the harbour to the north rampart; the
+# museum's top floor goes, as the user allowed)
+key = [(sOf['N3'], TOP),
        (sOf['J0'] - R, JUMP), (sOf['J3'] + R, JUMP),
-       (sOf['S1'] + 4, LOW), (sOf['E4'], LOW),
-       (sOf['N1'], TOP)]
+       (sOf['SE1'], LOW), (sOf['E4'], LOW), (sOf['H2'], LOW),
+       (sOf['N2'], TOP)]
 key = sorted(((k % L), v) for k, v in key)
 kx = [k for k, _ in key]; kv = [v for _, v in key]
 KX = np.array([kx[-1] - L] + kx + [kx[0] + L]); KV = np.array([kv[-1]] + kv + [kv[0]])
@@ -156,6 +159,7 @@ def inside(i):
     return [round(float(X[i] + 3 * nx - OX), 3), round(float(Z[i] + 3 * nz - OZ), 3)]
 
 
+# (the pit lane as it was, the start line at z 585.5: the tavern beside it goes -- the user preferred the room, 2026-10-06)
 PIT_A, PIT_B = pidx('SE2', 2), pidx('E3', -2)
 pits = [inside(PIT_A), inside(PIT_B)]
 # The lap is laid out above the way it was first built (south down the rampart, off its end); the user asked for it the other way round
@@ -164,21 +168,30 @@ pits = [inside(PIT_A), inside(PIT_B)]
 REVERSE = True
 order = np.arange(n)[::-1].copy() if REVERSE else np.arange(n)
 at_of = np.empty(n, int); at_of[order] = np.arange(n)          # a point's index in the lap as it runs
-Xr, Zr, Hr = X[order], Z[order], H_road[order]
+Xr, Zr, Hr = X[order], Z[order], H_road[order].copy()
+
 plan = {
     'originCellX': OX, 'originCellZ': OZ,
     'points': [[round(float(x - OX), 3), round(float(z - OZ), 3)] for x, z in zip(Xr, Zr)],
     'heights': [round(float(h), 1) for h in Hr],
     'maxGrade': round(float(max(grade.max(), -grade.min()) + 0.01), 3),
-    'gapJump': [int(at_of[pidx('J2')]), int(at_of[pidx('J1')])] if REVERSE else [pidx('J1'), pidx('J2')],
+    'gapJump': [int(at_of[pidx('J2')]), int(at_of[pidx('J1')])],
     'pitA': pits[1] if REVERSE else pits[0],
     'pitB': pits[0] if REVERSE else pits[1],
     'pitTaper': 7,
+    # (from the harbour, up over the town's way into the docks and the shop, the jump, and down onto the north rampart: one raised road)
+    'raised': [int(at_of[pidx('SE1')]), int(at_of[pidx('N3')])],
+    'raisedHalf': 4.5,
+    # (the buildings kept, and the ground under them as it is: the pharmacy and the baggage claim -- one building of two bodies by the
+    # rampart, its doors on the switchback's street -- the museum's lower block under the landing (its top floor, 31 and 42, goes), the
+    # shop under the take-off and the school by the switchback's east turn)
+    'keepBodies': [32, 33, 30, 59, 60, 61, 62, 63, 64, 65, 72, 35],
+    'keepGroundUnder': True,
 }
 json.dump(plan, open('E:/dump/LBAAssembler/docs/racetrack/citadel_storm_track_plan.json', 'w'))
 json.dump({'plan': plan, 'marks': {nm: int(at_of[pidx(nm)]) for nm in names}}, open('design.json', 'w'))
 np.save('design_lap.npy', np.stack([Xr, Zr], 1))
-print('plan written: jump points %s, pit %s..%s, max grade %.3f' % (plan['gapJump'], plan['pitA'], plan['pitB'], plan['maxGrade']))
+print('plan written: jump points %s, raised %s, pit %s..%s, max grade %.3f' % (plan['gapJump'], plan['raised'], plan['pitA'], plan['pitB'], plan['maxGrade']))
 
 # ---- pictures ----
 X0, X1, Z0, Z1, SC = 496, 584, 510, 640, 8

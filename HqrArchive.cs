@@ -35,9 +35,11 @@ internal sealed class HqrArchive
         return Math.Max(0, slots - 1);
     }
 
-    public static HqrArchive Open(string path)
+    public static HqrArchive Open(string path) => FromBytes(File.ReadAllBytes(path));
+
+    // An archive of a file's bytes already in memory (one being changed entry by entry before it is written).
+    public static HqrArchive FromBytes(byte[] data)
     {
-        var data = File.ReadAllBytes(path);
         if (data.Length < 4) throw new InvalidDataException("The HQR file is too small.");
         var count = BinaryPrimitives.ReadUInt32LittleEndian(data);
         if (count < 1 || count > data.Length / 4) throw new InvalidDataException("The HQR index is invalid.");

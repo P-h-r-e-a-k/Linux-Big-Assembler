@@ -971,7 +971,22 @@ int RendererScanIslandActors(int islandIndex)
     // Scanning through 222 requests entry 223, past the end of the archive;
     // Load_HQR doesn't reject it, and ExpandLZ segfaults decompressing
     // whatever garbage offset/size it finds past the real entry table.
-    for (S32 scene = 0; scene <= 221; scene++) {
+    // (and no further than the archive's own scenes: the 1996 demo's SCENE.HQR, converted to the retail layout by the editor, has 66)
+    S32 lastScene = 221;
+    {
+        char scenePath[ADELINE_MAX_PATH];
+        GetResPath(scenePath, ADELINE_MAX_PATH, SCENE_HQR_NAME);
+        if (FILE *f = fopen(scenePath, "rb")) {
+            U32 tableBytes = 0;
+            if (fread(&tableBytes, 4, 1, f) == 1 && tableBytes >= 8 && tableBytes / 4 - 1 >= 1) {
+                // (entries numscene + 1: the last entry's scene is the entry count less 2)
+                const S32 scenes = (S32)(tableBytes / 4 - 1) - 1;
+                if (scenes - 1 < lastScene) lastScene = scenes - 1;
+            }
+            fclose(f);
+        }
+    }
+    for (S32 scene = 0; scene <= lastScene; scene++) {
         S32 cubeX, cubeY;
         if (!PeekSceneCube(scene, islandIndex, &cubeX, &cubeY)) continue;
         if (cubeX >= 0 && cubeX < 16 && cubeY >= 0 && cubeY < 16) g_sceneForCube[cubeY][cubeX] = scene;

@@ -9,7 +9,10 @@ public sealed record Bone(int Start, int Count, int Pivot, int Parent, byte[] Re
 // lower materials are drawn unlit. Colour is the palette index the shade is added to.
 // A textured LBA2 polygon: which entry of the body's texture table it uses and one (U, V) pair per point, 8.8 fixed point pixels of the object texture page.
 public sealed record FaceTexture(int Handle, int[] UV);
-public sealed record Face(int[] Points, int Colour, int DetailTone = -1, int Material = -1, int FaceNormal = -1, int[]? PointNormals = null, FaceTexture? Texture = null);
+// Lba2Type: an LBA2 polygon type to write the face as, whatever its Material says (-1: from the Material and the body's Lit; the 1996
+// demo's bodies, Demo96Bodies, carry the retail types their polygons had)
+public sealed record Face(int[] Points, int Colour, int DetailTone = -1, int Material = -1, int FaceNormal = -1, int[]? PointNormals = null, FaceTexture? Texture = null,
+    int Lba2Type = -1);
 // A normal of an LBA1 body: a vector (x, y, z) and the "prenormalized range" its lighting is divided by.
 public sealed record BodyNormal(int X, int Y, int Z, int Range);
 public sealed record BodyLine(int A, int B, int Colour);
@@ -263,7 +266,21 @@ public sealed class Body
             // blocks of triangles / quads, textured ones (type 8, or 10 = Gouraud lit when Lit) apart from the plain ones (type 0, or 4 = Gouraud);
             // a plain face whose Material is 0 stays flat and unlit (type 0) in a lit body too: drawn in its colour as it is (a flame, a shadow),
             // and one whose Material is 2 stays see-through (type 2: what is behind it, moved into its colour's ramp -- a wing, a pane)
-            foreach(var group in Faces.GroupBy(f=>(Quad:f.Points.Length==4,Textured:f.Texture!=null,Flat:f.Texture==null&&f.Material==0,Trans:Lit&&f.Texture==null&&f.Material==2)))
+            // (faces with an explicit LBA2 type: a block of each type, textured from 8 up)
+            foreach(var group in Faces.Where(f=>f.Lba2Type>=0).GroupBy(f=>(Quad:f.Points.Length==4,Type:f.Lba2Type)))
+            {
+                bool quad=group.Key.Quad,textured=group.Key.Type>=8;int stride=textured?(quad?32:24):12;
+                if(textured&&group.Any(f=>f.Texture==null))throw new InvalidDataException("A textured LBA2 polygon type needs a texture.");
+                w.Write((ushort)((quad?32768:0)|group.Key.Type));w.Write((ushort)group.Count());w.Write(8+group.Count()*stride);
+                foreach(var f in group)
+                {
+                    if(!textured){foreach(int i in f.Points)w.Write((ushort)i);if(!quad)w.Write((ushort)0);w.Write((ushort)f.Colour);w.Write((ushort)0);continue;}
+                    var t=f.Texture!;
+                    if(quad){foreach(int i in f.Points)w.Write((ushort)i);w.Write((ushort)f.Colour);w.Write((ushort)0);foreach(int uv in t.UV)w.Write((ushort)uv);w.Write((ushort)t.Handle);w.Write((ushort)0);}
+                    else{foreach(int i in f.Points)w.Write((ushort)i);w.Write((ushort)t.Handle);w.Write((ushort)f.Colour);w.Write((ushort)0);foreach(int uv in t.UV)w.Write((ushort)uv);}
+                }
+            }
+            foreach(var group in Faces.Where(f=>f.Lba2Type<0).GroupBy(f=>(Quad:f.Points.Length==4,Textured:f.Texture!=null,Flat:f.Texture==null&&f.Material==0,Trans:Lit&&f.Texture==null&&f.Material==2)))
             {
                 if(group.Key.Quad==false&&group.First().Points.Length!=3)throw new InvalidDataException("LBA2 requires triangles or quads.");
                 bool quad=group.Key.Quad,textured=group.Key.Textured;int stride=textured?(quad?32:24):12;
