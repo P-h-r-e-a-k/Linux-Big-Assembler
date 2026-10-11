@@ -684,16 +684,17 @@ internal static class Lba2ScreenLiftStudy
 {
     public static int Run(string[] args)
     {
-        var margin = args.Length > 2 ? int.Parse(args[2]) : 24;
+        // (order=<scene>,<scene>,...: another stacked map's scenes, bottom to top -- the control tower's lower level: order=180,181)
+        var margin = args.Length > 2 && int.TryParse(args[2], out var m) ? m : 24;
+        var order = args.FirstOrDefault(a => a.StartsWith("order="))?[6..].Split(',').Select(int.Parse).ToArray() ?? new[] { 188, 187, 192, 185, 186 };
         var interiors = new Lba2Interiors(args[1]);
-        var area = Lba2AreaStudy.Areas(interiors).First(a => a.Tiles.Any(t => t.Scene == 185));
+        var area = Lba2AreaStudy.Areas(interiors).First(a => a.Tiles.Any(t => t.Scene == order[0]));
         var raw = area.Tiles.ToDictionary(t => t.Scene, t =>
         {
             var sep = Lba2Areas.Separations.Where(s => s.Scene == t.Scene).Select(s => (s.Dx, s.Dy, s.Dz)).FirstOrDefault();
             return (X: t.OffsetX / 512 - sep.Dx, Y: t.OffsetY / 256 - sep.Dy, Z: t.OffsetZ / 512 - sep.Dz);
         });
         var silhouettes = Lba2Silhouettes.Of(interiors, area, s => raw[s]);
-        var order = new[] { 188, 187, 192, 185, 186 };
         var lift = order.ToDictionary(s => s, _ => 0);
         for (var i = 1; i < order.Length; i++)
             for (var j = 0; j < i; j++)

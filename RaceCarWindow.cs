@@ -197,6 +197,7 @@ internal sealed class RaceCarWindow : Window
         var ok = new Button { Content = forPlay ? "Play" : "Save", Padding = new Thickness(18, 5, 18, 5), IsDefault = true, Margin = new Thickness(0, 0, 10, 0) };
         var cancel = new Button { Content = "Cancel", Padding = new Thickness(14, 5, 14, 5), IsCancel = true };
         ok.Click += (_, _) => Accept();
+        cancel.Click += (_, _) => this.DialogResult = false;     // (WPF closed a dialog by its IsCancel button by itself; Avalonia only clicks it)
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
         buttons.Children.Add(ok); buttons.Children.Add(cancel);
         root.Children.Add(buttons);
@@ -231,11 +232,15 @@ internal sealed class RaceCarWindow : Window
     // retail racer's, Baldino's rocket car and the cars made after the characters (Terrain.RaceTrackCharacterCars) -- by name.
     private static List<(int Generic, string Name)> DrivableCars(string? gameDirectory)
     {
-        var list = new List<(int, string)> { (-1, "Twinsen's buggy") };
-        // (a folder built since 2026-10-05: every car by its number, the cast's too -- RACECARS.JSON)
+        // (his laser cars: his buggy, its gun firing lasers -- RaceCarSetup.LaserGreen/LaserRed)
+        var list = new List<(int, string)> { (RaceCarSetup.OwnBuggy, "Twinsen's buggy"), (RaceCarSetup.LaserGreen, "Twinsen's buggy, firing green lasers"),
+            (RaceCarSetup.LaserRed, "Twinsen's buggy, firing red lasers") };
+        // (a folder built since 2026-10-05: every car by its number, the cast's too -- RACECARS.JSON; a folder built on 2026-10-08 lists the
+        // laser cars as two cars of their own, left out: the two above are they)
         if (gameDirectory is not null && Terrain.RaceTrackCharacterCars.Catalogue(gameDirectory) is { Count: > 0 } listed)
         {
-            list.AddRange(listed.Select(e => (e.Number, $"{e.Number}: {e.Name} ({e.Driver})")));
+            list.AddRange(listed.Where(e => e.Name is not (Terrain.RaceTrackCharacterCars.LaserGreenName or Terrain.RaceTrackCharacterCars.LaserRedName))
+                .Select(e => (e.Number, $"{e.Number}: {e.Name} ({e.Driver})")));
             return list;
         }
         var racer = gameDirectory is null ? null : Lba2EntityTable.Load(gameDirectory)?.Entities.FirstOrDefault(e => e.Id == Terrain.RaceTrackScenes.RacerEntity);

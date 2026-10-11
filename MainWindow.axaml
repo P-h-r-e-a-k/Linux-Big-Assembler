@@ -73,6 +73,8 @@
                 </MenuItem>
                 <MenuItem x:Name="Lba2RaceTrackMenuItem" Header="LBA2: _race track…" Click="Lba2RaceTrack_Click" ToolTip.Tip="Builds race tracks, one island&apos;s or several at once (levelled, banked road, pit lane, start gantry, a bridge or a jump where the lap crosses itself), or puts the folder back. Play races the track of the island that is open"/>
                 <MenuItem x:Name="Lba2PolarIslandMenuItem" Header="LBA2: _Polar Island (from LBA1)…" Click="Lba2PolarIsland_Click" ToolTip.Tip="Adds LBA1&apos;s Polar Island to LBA2 as a new island (island 12) you can turn round, builds it again, or takes it out. Only the LBA Assembler&apos;s own engine (Play) loads it"/>
+                <MenuItem x:Name="Lba2PalaceIslandMenuItem" Header="LBA2: P_alace island (Otringal's palace)…" Click="Lba2PalaceIsland_Click" ToolTip.Tip="Makes the Emperor&apos;s palace on Otringal -- its sixteen rooms and the last room -- a 3D building on an island of its own, scaled up for the cars, with a roof over each room: for a race track through it later"/>
+                <MenuItem x:Name="Lba2ControlTowerMenuItem" Header="LBA2: Island CX _control tower (3D)…" Click="Lba2ControlTower_Click" ToolTip.Tip="Island CX twice its size with its control tower&apos;s lower level -- the two halls round the control room, and the secret passage under their floor -- built in 3D where its buildings were, for a race track in through a door and out again later"/>
                 <Separator/>
                 <MenuItem Header="_Test edits" ToolTip.Tip="Try changes against a scratch copy of the game folder before any of them touch your real files">
                     <MenuItem x:Name="TestEditsStartMenuItem" Header="_Start testing…" Click="TestEditsStart_Click"/>
@@ -340,11 +342,16 @@
             <StackPanel x:Name="MinimapPanelContent" Background="{DynamicResource ThemeWindowBrush}">
                 <Border x:Name="MinimapBody" Margin="20,14,20,14" Background="{DynamicResource ThemeFieldBrush}" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1" Padding="4">
                     <ScrollViewer x:Name="MinimapScrollViewer" Width="222" Height="222" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                        <!-- the scale of a race's minimap (MainWindow.RaceMinimap.cs), which is a layout transform so the scroll viewer's
+                             extent and offsets are in the scaled space, as the scene editors' and Lba1PlayView's map zoom is -->
+                        <LayoutTransformControl x:Name="MinimapScaleHost" HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <LayoutTransformControl.LayoutTransform><ScaleTransform ScaleX="1" ScaleY="1"/></LayoutTransformControl.LayoutTransform>
                         <Grid x:Name="MinimapContent" Cursor="Hand" PointerPressed="Minimap_MouseDown" ToolTip.Tip="Double-click to pop out">
                             <Image x:Name="MinimapImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" RenderOptions.BitmapInterpolationMode="HighQuality"/>
                             <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
                             <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
                         </Grid>
+                        </LayoutTransformControl>
                     </ScrollViewer>
                 </Border>
             </StackPanel>

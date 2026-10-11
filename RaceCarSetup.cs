@@ -39,8 +39,10 @@ public sealed class RaceCarSetup
     public bool PowerUps { get; set; } = true;
     // A nitro penguin dropped walks the track until a car comes near it, and goes off; off: it goes off a second after it is dropped.
     public bool PenguinsWalk { get; set; } = true;
-    // The checkpoints drawn as red lines across the road (RACEMOD.CPP checkpoint_lines=), for testing where they are; off: unseen.
-    public bool ShowCheckpoints { get; set; } = true;
+    // The checkpoints drawn as red lines across the road (RACEMOD.CPP checkpoint_lines=), for testing where they are; off: unseen. Off
+    // unless asked for, since 2026-10-08 (in pictures of a race they read as something wrong with the track; the race log says when each
+    // is crossed).
+    public bool ShowCheckpoints { get; set; }
     public List<string> LeftOut { get; set; } = new();
     // A qualifying lap before the race: its time against the opponents' sets the grid (off: Twinsen starts on pole).
     public bool Qualifying { get; set; } = true;
@@ -57,11 +59,12 @@ public sealed class RaceCarSetup
     // Play starts a new game -- the story from its start, Twinsen in his house -- instead (the folder's tracks each raced where and when the
     // game is: RaceCarEngineFile.WriteStorySet).
     public bool NewGame { get; set; }
-    // The car Twinsen drives: -1 his own buggy, else a race car by its number -- the racer entity's bodies (RaceTrackScenes.RacerEntity:
-    // the retail racer's car 0, Baldino's rocket car 1, the cars made after the characters 2 on, Terrain.RaceTrackCharacterCars) and the
-    // cast's cars on from 64 (RACECARS.JSON) -- for a test drive of a track in it (the engine's drive_as=: RaceCarEngineFile.DriveAsLine).
-    // It handles as this setup makes the car.
+    // The car Twinsen drives: -1 his own buggy, -2 or -3 his buggy firing green or red lasers out of its gun (his laser cars), else a race
+    // car by its number -- the racer entity's bodies (RaceTrackScenes.RacerEntity: the retail racer's car 0, Baldino's rocket car 1, the cars
+    // made after the characters 2 on, Terrain.RaceTrackCharacterCars) and the cast's cars on from 64 (RACECARS.JSON) -- for a test drive of a
+    // track in it (the engine's drive_as= and drive_laser=: RaceCarEngineFile.DriveAsLine). It handles as this setup makes the car.
     public int DriveAs { get; set; } = -1;
+    public const int OwnBuggy = -1, LaserGreen = -2, LaserRed = -3;
     // (that car as the folder's files have it, worked out when the car file is written: RaceTrackService.CarFileWriter)
     [System.Text.Json.Serialization.JsonIgnore] internal string? DriveAsKey { get; set; }
 

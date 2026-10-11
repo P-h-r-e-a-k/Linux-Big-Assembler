@@ -604,6 +604,10 @@ void GereAnimAction(T_OBJET *ptrobj, U8 numobj) {
                 poids = GET_S8;
                 force = GET_S8;
 
+                // (a race-track mode's machine gunner's gun: its firing animation without the bullets it throws -- RACEMOD.CPP flies its own)
+                extern S32 RaceMod_SilentThrow(S32 numobj);
+                if (RaceMod_SilentThrow(numobj)) break;
+
                 last_extra = ThrowExtra(numobj,
                                         x, y, z,
                                         sprite,
@@ -916,6 +920,10 @@ void GereAnimAction(T_OBJET *ptrobj, U8 numobj) {
 
                 // ATTENTION: cet extra suit l'aplha de l'objet
                 //	      (cf buggy)
+
+                // (one of Twinsen's laser cars in a race-track mod: its gun's shot a laser bolt instead -- RACEMOD.CPP)
+                extern S32 RaceMod_LaserThrow(S32 numobj);
+                if (RaceMod_LaserThrow(numobj)) break;
 
                 last_extra = ThrowExtra(numobj,
                                         point, 0, 0, // magouille: x,y,z seront calculés +tard

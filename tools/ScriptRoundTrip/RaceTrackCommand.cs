@@ -330,7 +330,9 @@ internal static class RaceTrackCommand
         if (Environment.GetEnvironmentVariable("RT_WEATHER") == "rain") setup.FineWeather = false;
         // (RT_NO_OPPONENTS=1: Twinsen alone on the track -- the car file then has the one to beat's line as its guide)
         if (Environment.GetEnvironmentVariable("RT_NO_OPPONENTS") == "1") setup.Opponent = false;
-        // (RT_DRIVE=<racer body>: driving as that opponent's car)
+        // (RT_CHECKPOINTS=1: the checkpoints drawn as red lines across the road -- off by default)
+        if (Environment.GetEnvironmentVariable("RT_CHECKPOINTS") == "1") setup.ShowCheckpoints = true;
+        // (RT_DRIVE=<racer body>: driving as that opponent's car; -2 or -3 Twinsen's buggy firing green or red lasers)
         if (int.TryParse(Environment.GetEnvironmentVariable("RT_DRIVE"), out var drive)) { setup.DriveAs = drive; setup.DriveAsKey = RaceCarEngineFile.DriveAsLine(args[1], drive); }
         // (RT_RACE=<island file>: of a folder with several tracks, the one Play races with that island open in the editor, as RaceFor picks it)
         var track = Environment.GetEnvironmentVariable("RT_RACE") is { Length: > 0 } race ? RaceTrackService.RaceFor(args[1], race) : RaceTrackService.ReadInfo(args[1]);

@@ -292,7 +292,8 @@ static void RaceSpeedOnSlope(S_BUGGY *ptb, S32 deltatimer, S32 flagattack, doubl
             v = 0;
     }
 
-    if (v > gearTop) {
+    // (the golden Gazogem running: no top speed -- RACEMOD.CPP RaceMod_NoTopSpeed)
+    if (v > gearTop && !RaceMod_NoTopSpeed()) {
         v -= dt * RACE_OVERSPEED_DRAG * (v - gearTop);
         // (the rail takes what the slopes gave: a car it holds loses its speed over the gear's top)
         if (touched) {
@@ -344,7 +345,7 @@ static void RaceSpeed(S_BUGGY *ptb, S32 deltatimer, S32 flagattack) {
             ptb->Speed += (S32)(deltatimer * car->Accel * pull * factor / 1000.0);
             if (ptb->Speed > top)
                 ptb->Speed = top;
-        } else {
+        } else if (!RaceMod_NoTopSpeed()) {     // (the golden Gazogem running: no top speed)
             ptb->Speed -= coast;
             if (ptb->Speed < top)
                 ptb->Speed = top;
@@ -378,6 +379,10 @@ void MoveBuggy(T_OBJET *ptrobj) {
     timerhr = TimerRefHR;
     deltatimer = timerhr - ptb->LastTimer;
 
+    // (a race-track mod's car fires as it drives: the throw doesn't stop it, nor take its steering for aiming -- RACEMOD.CPP; the user,
+    // 2026-10-08: "Currently Twinsen's car can shoot small balls but only when he's stationary")
+    const S32 raceFires = RaceMod_Active();
+    // (one of Twinsen's laser cars fires the same way: its gun's shots are laser bolts -- FICHE.CPP, RACEMOD.CPP RaceMod_LaserThrow)
     if ((Input & I_THROW)
             AND(PtrComportement->Flags & CF_WEAPON)) {
         // est-on en mage ?
@@ -390,7 +395,7 @@ void MoveBuggy(T_OBJET *ptrobj) {
         InitAnim(GEN_ANIM_LANCE, ANIM_REPEAT, NUM_PERSO);
 
         /* control direction pendant visée */
-        if (!(ptrobj->WorkFlags & ANIM_MASTER_ROT)) {
+        if (!(ptrobj->WorkFlags & ANIM_MASTER_ROT) AND !raceFires) {
             ptb3d->Beta += GetDeltaMove(&ptrobj->BoundAngle.Move);
             ptb3d->Beta &= 4095;
 
@@ -448,7 +453,7 @@ void MoveBuggy(T_OBJET *ptrobj) {
         // check speed command
         if (RaceMod_Active()) // a race-track mod's car (RACEMOD.CPP)
         {
-            RaceSpeed(ptb, deltatimer, flagattack);
+            RaceSpeed(ptb, deltatimer, flagattack AND !raceFires);
             RaceMod_Skid(&ptb3d->Beta, &ptb->Speed);
         } else if ((Input & I_UP) // j'accelere
                    AND !flagattack) {
@@ -503,7 +508,7 @@ void MoveBuggy(T_OBJET *ptrobj) {
 
     // check dir
 
-    if (!flagattack) {
+    if (!flagattack OR raceFires) {
         if (Input & I_RIGHT) {
             ptb->BetaWheel = -300;
             if (ptb->Speed) {

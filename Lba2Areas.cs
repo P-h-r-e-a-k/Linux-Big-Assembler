@@ -21,11 +21,15 @@ internal static class Lba2Areas
         // and the two secret rooms open off the second room and the fourth.
         new(140, 141), new(141, 142), new(142, 143), new(141, 145), new(143, 146),
         // Island CX's control tower is two maps: the upper level (the stairs, the tower itself and the only outside scene, each opening onto the next)
-        // and the lower one (the room in the emperor's palace and the secret passage between its two levels, which is why it has two zones into
-        // that room: the first is used). The zone from the outside scene down to the palace room is left out: put in one picture the two levels lay
-        // over one another. The Esmer shuttle only leads back to Francos Island, and the stairs' three zones that lead back into their own scene are
-        // one flight going up.
-        new(177, 178), new(178, 179), new(181, 180),
+        // and the lower one (the room in the emperor's palace and the secret passage under its floor). The zone from the outside scene down to the
+        // palace room is left out: put in one picture the two levels lay over one another. The Esmer shuttle only leads back to Francos Island, and
+        // the stairs' three zones that lead back into their own scene are one flight going up.
+        // The secret passage (180) is a walkway hung between two shafts; each shaft's top is a grate in the room's floor (181's two zones down to
+        // it). It goes under the room (the user, 2026-10-08: "180 ... needs moving underneath 181"): the first shaft under the first grate, where
+        // both zones between them put it sideways (13 cells west, a cell north), and the whole scene below the room's floor -- the second shaft's
+        // top (layer 24, the passage's highest) a layer under it. (The two grates are 37 cells apart east and 32 north, the shafts 28 east: only
+        // the first lines up. The 3D island stretches the walkway between them to fit: Terrain/ControlTower.)
+        new(177, 178), new(178, 179), new(181, 180, Cells: (-13, -25, -1)),
         // Otringal's palace: sixteen rooms of 13 x 13 cells in a square, four by four (each room's zones lead to the next along the row and down the
         // column, and the two directions agree exactly), and the last room of the palace (80) at the far end of the fourth row.
         new(151, 152), new(152, 153), new(153, 154), new(155, 156), new(156, 157), new(157, 158), new(159, 160), new(160, 161), new(161, 162), new(163, 164), new(164, 165), new(165, 166),
@@ -185,8 +189,9 @@ internal static class Lba2Areas
         // Control tower, upper level
         (178, 4, 0, -9),
         (179, 3, 0, 3),
-        // Control tower, lower level
-        (181, 51, 0, 0),
+        // Control tower, lower level: the room lifted over the secret passage under it, so that its picture stands clear above the passage's
+        // (`lba2screenlift <folder> 24 order=180,181`), like the Dark Monk Statue's levels
+        (181, 0, LowerLevelLift, 0),
         // Protection spell cave
         (184, 4, 0, -7),
         // The mine (the temple and the box transport building are scenes of their own)
@@ -199,7 +204,11 @@ internal static class Lba2Areas
 
     // Maps whose scenes really stack one above another: their overlap is counted in cells, not in the plan view. The Dark Monk statue, and the
     // Temple of Bù, whose second scene is a lower level under the first one's western rooms (the two share only the stairwell both of them draw).
-    public static bool IsStacked(Lba1Area area) => area.Tiles.Any(t => t.Scene is 185 or 10);
+    // And the control tower's lower level, whose secret passage hangs under the room's floor.
+    public static bool IsStacked(Lba1Area area) => area.Tiles.Any(t => t.Scene is 185 or 10 or 181);
+
+    // The control tower's lower level: the room's lift over the passage on the picture (layers, on top of the 25 it is above it).
+    internal const int LowerLevelLift = 54;
 
     private static int Round(int value, int unit) => (int)Math.Round(value / (double)unit) * unit;
 

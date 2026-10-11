@@ -2447,6 +2447,16 @@ static void cmd_raceblast(int argc, const char *argv[]) {
     Console_Print("raceblast");
 }
 
+/* racecars: where every car of a race-track mod's race is (RACEMOD.CPP RaceMod_Cars) -- the editor's minimap asks while it plays one. */
+static void cmd_racecars(int argc, const char *argv[]) {
+    (void)argc; (void)argv;
+    extern int RaceMod_Cars(char lines[][96], int most);
+    static char lines[8][96];
+    const int n = RaceMod_Cars(lines, 8);
+    Console_Print("racecars %d", n);
+    for (int i = 0; i < n; i++) Console_Print("%s", lines[i]);
+}
+
 static void cmd_input(int argc, const char *argv[]) {
     if (argc < 2) {
         Console_Print("Usage: input <flags> [ticks] | input seq <t:flags:dur[/...]>");
@@ -2685,6 +2695,9 @@ void Console_RegisterAll(void) {
                               "0 fuel, 1 protection, 2 lightning, 3 penguin, 4 super jet-pack, 5 oil (RACEMOD.CPP).");
     Console_RegisterCommandEx("raceblast", cmd_raceblast, "Race-track test: a nitro penguin goes off ahead of the car", "raceblast [cells]",
                               "As if another car dropped it; the blast's own rules decide what it does to Twinsen (RACEMOD.CPP).");
+    Console_RegisterCommandEx("racecars", cmd_racecars, "Race-track: where every car is", "racecars",
+                              "Twinsen's car and each opponent's, a line each: car <n> <x> <z> <beta> <name> (island units; n -1 "
+                              "Twinsen). The editor's minimap asks for it while it plays a race (RACEMOD.CPP).");
     Console_RegisterCommandEx("autodrive", cmd_autodrive, "Race-track test pilot: drive the player's car along the racing line",
                               "autodrive <0|1> [look cells]",
                               "With a race-track mod running (LBA2_RACETRACK_FILE), steers and pedals the player's "

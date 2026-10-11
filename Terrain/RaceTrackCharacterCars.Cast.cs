@@ -199,6 +199,10 @@ internal static partial class RaceTrackCharacterCars
         new(460, "The green mechanic", "the green mechanic grobo with the missiles", Otringal, Kind.Grobo, Style.Robot),
         new(468, "The mechanic rabbibunny", "the mechanic rabbibunny", Otringal, Kind.Rabbibunny, Style.Robot),
     };
+    // Twinsen's laser cars as folders built on 2026-10-08 list them (cars 218 and 219 of RACECARS.JSON: a roadster with a laser cannon on
+    // its bonnet). Since then they are his own buggy, its gun firing the lasers (the user: "let's keep the look of his original car, it
+    // already has an animation for firing bullets"): RaceCarSetup.DriveAs LaserGreen/LaserRed, which those two stand for in such a folder.
+    public const string LaserGreenName = "Twinsen's green laser car", LaserRedName = "Twinsen's red laser car";
 
     public static Style StyleOf(CastMember c) => c.Style ?? c.Kind switch
     {

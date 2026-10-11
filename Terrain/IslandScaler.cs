@@ -179,7 +179,7 @@ internal static class IslandScaler
 
     // A new island file with `cubes` (in that order, ids 1..): the source's atlases; each cube's records blank (settings, no objects, cells,
     // one texture definition, heights 0, light 10) for Scale to fill.
-    private static byte[] NewFile(IslandFile source, List<(int X, int Z)> cubes)
+    internal static byte[] NewFile(IslandFile source, List<(int X, int Z)> cubes)
     {
         var entries = new List<byte[]>();
         var map = new byte[IslandFile.MapSize * IslandFile.MapSize];
@@ -438,6 +438,81 @@ internal static class IslandScaler
         if (names is not null) File.WriteAllText(Path.Combine(gameDirectory, HqdWriter.SidecarName("SCENE.HQR")), names, System.Text.Encoding.Latin1);
         log.Add($"SCENE.HQR: {where.Name}'s {olds.Count} outside scenes {k} times as big, {plan.Count} scenes ({string.Join(", ", plan.Select(p => $"{p.Scene} ({p.Cube.X},{p.Cube.Z})"))}): " +
                 $"{zonesCopied} zones, {edges} cube changes between them, {actorsHere} actors where they were and {standIns} stand-ins in others' places; {doors} ways onto the island from other scenes moved");
+        return log;
+    }
+
+    // A scene for each of an island's cubes the game has none for (RaceTrackIsland.NewCubes): a copy of its template scene in that cube --
+    // Twinsen on the ground nearest its middle, its actors inert stand-ins (scripts use them by number), its track points kept, its zones
+    // only the cube changes to its neighbours' scenes -- and a cube change into it from each neighbour's (SCENE.HQR in the folder). Returns
+    // lines for the log.
+    public static List<string> AddCubeScenes(string gameDirectory, RaceTrackIsland where, IslandFile island)
+    {
+        var log = new List<string>();
+        var scenePath = Path.Combine(gameDirectory, "SCENE.HQR");
+        var hqr = HqrFile.Parse(File.ReadAllBytes(scenePath));
+        SceneModel? Load(int scene) => scene + 1 < hqr.Count && !hqr.IsEmpty(scene + 1) && hqr.Read(scene + 1) is { Length: > 0 } r ? SceneSerializer.Parse(SceneGame.Lba2, r) : null;
+        // the island's scenes by cube: its own and the new ones
+        var sceneOf = new Dictionary<(int X, int Z), int>();
+        for (var s = where.FirstScene; s <= where.LastScene; s++)
+            if (Load(s) is { } m && m.Island == where.IslandByte && m.CubeMode == 1) sceneOf[(m.CubeX, m.CubeY)] = s;
+        foreach (var c in where.NewCubes) sceneOf[(c.CubeX, c.CubeZ)] = c.Scene;
+        var largest = BinaryPrimitives.ReadInt32LittleEndian(hqr.Read(0));
+        const int Side = 32768, EdgeWidth = 512, Near = 512, Far = 32768 - 1024;
+        SceneZoneModel EdgeZone(int next, int x0, int z0, int x1, int z1, int info0, int info2)
+        {
+            var zone = new SceneZoneModel { Type = 0, Num = next, X0 = x0, Y0 = 0, Z0 = z0, X1 = x1, Y1 = EdgeTop, Z1 = z1, Info = new int[8] };
+            zone.Info[0] = info0; zone.Info[2] = info2; zone.Info[7] = 1;   // ZONE_ON
+            return zone;
+        }
+        // (the four sides: east (x + 1), west, south (z + 1), north -- the zone along that side, and where it puts Twinsen in the next cube)
+        var sides = new[] { (1, 0, Side - EdgeWidth, 0, Side, Side, Near, 0), (-1, 0, 0, 0, EdgeWidth, Side, Far, 0),
+                            (0, 1, 0, Side - EdgeWidth, Side, Side, 0, Near), (0, -1, 0, 0, Side, EdgeWidth, 0, Far) };
+        void Store(int scene, SceneModel model)
+        {
+            var record = SceneSerializer.Write(model);
+            var entry = scene + 1;
+            while (hqr.Count < entry) hqr.Slots.Add(new HqrFile.Slot());
+            if (hqr.Count == entry) hqr.Add(record); else hqr.SetStored(entry, record);
+            largest = Math.Max(largest, record.Length);
+        }
+        foreach (var (cx, cz, number, template) in where.NewCubes)
+        {
+            if (Load(template) is not { } source) throw new InvalidDataException($"{where.Name}: scene {template}, the template for cube ({cx},{cz}), isn't in SCENE.HQR.");
+            var model = source.Clone();
+            model.CubeX = cx; model.CubeY = cz;
+            var (sx, sy, sz) = StandingPlace(island, (cx, cz));
+            model.Hero.X = sx; model.Hero.Y = sy; model.Hero.Z = sz;
+            for (var a = 1; a < model.Actors.Count; a++)
+            {
+                var actor = model.Actors[a];
+                if (a == 1 && actor.Entity == 14 && actor.X == 0 && actor.Z == 0) continue;
+                actor.Flags = (uint)(Invisible | NoShadow);
+                actor.X = 16384; actor.Z = 16384; actor.Y = -16000;
+                actor.Life = new byte[] { 0 }; actor.Track = new byte[] { 0 };
+            }
+            model.Zones.Clear();
+            var edges = 0;
+            foreach (var (dx, dz, x0, z0, x1, z1, i0, i2) in sides)
+                if (sceneOf.TryGetValue((cx + dx, cz + dz), out var next)) { model.Zones.Add(EdgeZone(next, x0, z0, x1, z1, i0, i2)); edges++; }
+            Store(number, model);
+            // (into it from its neighbours: each neighbour's side towards it)
+            var into = 0;
+            foreach (var (dx, dz, x0, z0, x1, z1, i0, i2) in sides)
+            {
+                if (!sceneOf.TryGetValue((cx - dx, cz - dz), out var neighbour) || where.NewCubes.Any(c => c.Scene == neighbour)) continue;
+                if (Load(neighbour) is not { } n) continue;
+                if (n.Zones.Any(z => z.Type == 0 && z.Num == number)) continue;
+                n.Zones.Add(EdgeZone(number, x0, z0, x1, z1, i0, i2));
+                Store(neighbour, n);
+                into++;
+            }
+            log.Add($"scene {number}: cube ({cx},{cz}) of {where.Name}'s ground, which the game has no scene for -- a copy of scene {template}, its {model.Actors.Count - 1} actors " +
+                    $"inert stand-ins, {edges} cube changes out of it and {into} into it from its neighbours");
+        }
+        var size = new byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(size, largest);
+        hqr.SetStored(0, size);
+        File.WriteAllBytes(scenePath, hqr.ToBytes());
         return log;
     }
 

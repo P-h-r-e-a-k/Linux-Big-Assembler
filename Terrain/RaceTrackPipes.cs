@@ -371,7 +371,7 @@ internal static class RaceTrackPipes
     }
 
     // a box round `centre`, `u` and `v` its half sides on the level, from y0 to y1
-    private static void Box(List<Vector3> pts, List<Face> faces, Vector3 centre, Vector3 u, Vector3 v, float y0, float y1, int light, int dark, int top)
+    internal static void Box(List<Vector3> pts, List<Face> faces, Vector3 centre, Vector3 u, Vector3 v, float y0, float y1, int light, int dark, int top)
     {
         var c = new[] { centre - u - v, centre + u - v, centre + u + v, centre - u + v };
         var lo = c.Select(p => { pts.Add(p + new Vector3(0, y0, 0)); return pts.Count - 1; }).ToArray();
@@ -390,7 +390,7 @@ internal static class RaceTrackPipes
         Quad(lo[0], lo[1], lo[2], lo[3], dark, -Vector3.UnitY);
     }
 
-    private static byte[] Write(List<Vector3> pts, List<Face> faces, bool lit) => new Body
+    internal static byte[] Write(List<Vector3> pts, List<Face> faces, bool lit) => new Body
     {
         Game = 2, Static = true, Lit = lit, Header = new byte[96],
         Vertices = pts,

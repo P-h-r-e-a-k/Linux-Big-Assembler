@@ -45,7 +45,7 @@ internal static class AreaTests
         var palace = areas.SingleOrDefault(a => a.Tiles.Any(t => t.Scene == 151));
         Check(factory is not null && factory.Name == "Gazogem factory" && factory.Island == 8 && factory.Tiles.Select(t => t.Scene).Order().SequenceEqual(new[] { 140, 141, 142, 143, 145, 146 }), "LBA2: the gazogem factory's six scenes (four rooms and two secret rooms) are one map, called Gazogem factory, on Francos Island");
         Check(tower is not null && tower.Name == "Control tower, upper level" && tower.Island == 9 && tower.Tiles.Select(t => t.Scene).Distinct().Order().SequenceEqual(new[] { 177, 178, 179 }), "LBA2: Island CX's stairs, control tower and outside scene are one map, Control tower, upper level");
-        Check(lower is not null && lower.Name == "Control tower, lower level" && lower.Island == 9 && lower.Tiles.Select(t => t.Scene).Order().SequenceEqual(new[] { 180, 181 }), "LBA2: Island CX's palace room and secret passage are another, Control tower, lower level (the two levels are not put in one picture)");
+        Check(lower is not null && lower.Name == "Control tower, lower level" && lower.Island == 9 && lower.Tiles.Select(t => t.Scene).Order().SequenceEqual(new[] { 180, 181 }), "LBA2: Island CX's palace room and secret passage are another, Control tower, lower level");
         Check(palace is not null && palace.Name == "Emperor's palace" && palace.Island == 4 && palace.Tiles.Select(t => t.Scene).Order().SequenceEqual(Enumerable.Range(151, 16).Append(80).Order()), "LBA2: Otringal's palace (the sixteen rooms and the last room) is one map, called Emperor's palace");
         Check(areas.Count == 24 && areas.Select(a => a.Name).Distinct().Count() == 24 && areas.All(a => a.Tiles.Select(t => t.Scene).Distinct().Count() >= 2), "LBA2: 24 joined maps, each with its own name and two scenes or more (Twinsen's house, Tralu, the tavern, the sewer, the baths, the mine, the city, the bar ...)");
         var mine = areas.SingleOrDefault(a => a.Tiles.Any(t => t.Scene == 100));
@@ -73,6 +73,20 @@ internal static class AreaTests
                 for (var j = 0; j < i; j++) worst = Math.Max(worst, ScriptRoundTrip.Lba2Silhouettes.Need(pictures[bottomToTop[i]], pictures[bottomToTop[j]], 15));
             Check(worst <= 0, $"LBA2: the Dark Monk Statue's levels stand clear of each other on the picture: an upper level never reaches the one below it, with a layer to spare (the worst needs {worst} more layers)");
         }
+        if (lower is not null)
+        {
+            // the control tower's lower level: the secret passage under the room (the user, 2026-10-08), not beside it -- the room not moved sideways, every
+            // brick of the passage below the room's floor, and the room's picture lifted clear above the passage's
+            var (room, passage) = (lower.Tiles.Single(t => t.Scene == 181), lower.Tiles.Single(t => t.Scene == 180));
+            var lift = Lba2Areas.Separations.Single(s => s.Scene == 181);
+            var passageTop = interiors.Placements(passage).Max(p => p.Y) + passage.OffsetY / 256;
+            var roomFloor = interiors.Placements(room).Min(p => p.Y) + room.OffsetY / 256 - lift.Dy;
+            Check(Lba2Areas.IsStacked(lower) && lift.Dx == 0 && lift.Dz == 0 && passageTop < roomFloor,
+                $"LBA2: the control tower's secret passage hangs under the room, where its zones put it sideways (its top, layer {passageTop}, under the room's floor, {roomFloor})");
+            var pictures = ScriptRoundTrip.Lba2Silhouettes.Of(interiors, lower, s => { var t = lower.Tiles.Single(t => t.Scene == s); return (t.OffsetX / 512, t.OffsetY / 256, t.OffsetZ / 512); });
+            var need = ScriptRoundTrip.Lba2Silhouettes.Need(pictures[181], pictures[180], 15);
+            Check(need <= 0, $"LBA2: the control tower's room stands clear above the passage on the picture (it needs {need} more layers)");
+        }
         if (factory is null || tower is null || lower is null || palace is null) return;
 
         // where the zones put the scenes (before the small moves that keep them apart)
@@ -85,8 +99,8 @@ internal static class AreaTests
         (int, int, int) Between(Lba1Area area, int from, int to) { var (a, b) = (At(area, from), At(area, to)); return (b.X - a.X, b.Y - a.Y, b.Z - a.Z); }
         Check(Between(factory, 140, 141) == (29, -7, 4) && Between(factory, 141, 142) == (32, 14, -14) && Between(factory, 142, 143) == (12, 2, -36) && Between(factory, 141, 145) == (31, -5, 40) && Between(factory, 143, 146) == (30, 8, 45),
             "LBA2: the factory's rooms sit where each first room's cube-change zone puts the next (zone corner minus arrival point)");
-        Check(Between(tower, 177, 178) == (-28, -5, -37) && Between(tower, 178, 179) == (34, -5, 27) && Between(lower, 181, 180) == (-13, -14, -1),
-            "LBA2: the control tower's scenes sit where the zones put them");
+        Check(Between(tower, 177, 178) == (-28, -5, -37) && Between(tower, 178, 179) == (34, -5, 27) && Between(lower, 181, 180) == (-13, -25, -1),
+            "LBA2: the control tower's scenes sit where the zones put them (the secret passage under the room's floor, its first shaft under the first grate)");
         Check(Enumerable.Range(0, 3).All(r => Enumerable.Range(0, 3).All(c => Between(palace, 151 + 4 * r + c, 152 + 4 * r + c) == (13, 0, 0))) && Enumerable.Range(0, 3).All(r => Enumerable.Range(0, 4).All(c => Between(palace, 151 + 4 * r + c, 155 + 4 * r + c) == (0, 0, -13))) && Between(palace, 163, 80) == (0, 0, -45),
             "LBA2: the palace's rooms are 13 cells apart along the rows and down the columns, as every room's zones say, and the last room is 45 cells past the fourth row");
         // and that the zone back agrees with the zone forward, within a few cells (the arrival point in a doorway is not the spot the other zone stands on)
@@ -157,8 +171,8 @@ internal static class AreaTests
         var overlapping = ScriptRoundTrip.Lba2AreaStudy.Overlaps(interiors, areas, false).Where(o => !(areas[o.Area].Tiles.Any(t => t.Scene == 10) && o.A == 10 && o.B == 11)).ToList();
         Check(overlapping.Count == 0, $"LBA2: no two scenes of any joined map share a plan column ({overlapping.Count} pairs do" + (overlapping.Count > 0 ? $", e.g. {overlapping[0].A} and {overlapping[0].B}" : "") + ")");
         var tileKeys = areas.SelectMany(a => a.Tiles.Select(t => t.Key)).ToHashSet();
-        Check(Lba2Areas.Separations.Select(s => s.Scene).Distinct().Count() == Lba2Areas.Separations.Length && Lba2Areas.Separations.All(s => tileKeys.Contains(s.Scene) && Math.Abs(s.Dx) <= 60 && Math.Abs(s.Dz) <= 60 && (s.Dy == 0 || s.Scene is 185 or 186 or 187 or 192)),
-            "LBA2: every separation is for one tile of a map and moves it sideways by at most 60 cells (the Dark Monk Statue's scenes are lifted instead)");
+        Check(Lba2Areas.Separations.Select(s => s.Scene).Distinct().Count() == Lba2Areas.Separations.Length && Lba2Areas.Separations.All(s => tileKeys.Contains(s.Scene) && Math.Abs(s.Dx) <= 60 && Math.Abs(s.Dz) <= 60 && (s.Dy == 0 || s.Scene is 185 or 186 or 187 or 192 or 181)),
+            "LBA2: every separation is for one tile of a map and moves it sideways by at most 60 cells (the Dark Monk Statue's scenes and the control tower's room are lifted instead)");
         // the Temple of Bù: its two scenes, not the Esmer base, and placed where the flight of stairs both draw is the same stairs: the second scene's
         // stairs (x 58-62, rows 2-4, above the floor under them) have the first scene's layers (x 12-16, rows 19-21) 16 layers up, column for column
         var temple = areas.SingleOrDefault(a => a.Tiles.Any(t => t.Scene == 10));

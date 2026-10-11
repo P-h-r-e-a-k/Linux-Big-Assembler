@@ -302,6 +302,12 @@ static int s_wantFlip = 0;
 typedef struct { int Var, Least; char Text[64]; } T_RACE_GATE;
 static T_RACE_GATE s_gates[RACE_MAX_GATES];
 static int s_nbGates = 0;
+// Game variables held while the race-track mode runs (vargame=<n> <value>): an island's travel cutscenes kept from playing in a race --
+// Otringal's square island plays the Dino-Fly's landing (Twinsen held at its pad while the Dino-Fly comes in) whenever variable 83 is
+// under 2, and the car flew into it off the jump over the sea and stood there 11 s (2026-10-08).
+#define RACE_MAX_HELD 16
+static int s_held[RACE_MAX_HELD][2];
+static int s_nbHeld = 0;
 static int s_beatOpp = -1;                 // the opponent whose lap is the time to beat (-1 none)
 // beat_text=: the text (the island's) that tells the time to beat -- its "##" is that time, as the display shows it (RaceMod_Text)
 static int s_beatText = -1;
@@ -356,6 +362,7 @@ static T_RACE_MUSHROOM s_mush[RACE_MAX_MUSHROOMS];
 static int s_nbMush = 0;
 static int s_powerups = 0;
 static int s_fuelAlways = 0;               // fuel_always=1: every car on Gazogem fuel all race, and no mushroom gives it (the Island of the Francos', 2026-10-07)
+static int s_prizeForce = -1;              // roulette_prize=<0|1|2> (tests): every drop's prize black, red or the green
 static int s_powerupOnly = -1;             // powerup_only=<n> [<n>...] (tests): every mushroom has that one -- or one of those, at random
 static int s_onlyList[8], s_nbOnly = 0;
 #define RACE_MAX_PENGUIN_ACTORS 192
@@ -384,7 +391,11 @@ static int s_penguinWalk = 1;              // penguin_mode=walk (1) or fuse (0)
 // (Q selects the other); when he last took a mushroom's item (a car takes one from a row: the mushrooms beside it give way, empty); and
 // Shift and Q last frame
 #define RACE_ITEM_SLOTS 2
-#define RACE_ROLL_MS 1500                  // the item box's roulette
+// the item box's roulette: this long, this many items going by, fast at first and slowing to the one drawn (the user, 2026-10-08: "let's
+// have this go through them a lot faster so it only takes 4-5 seconds to decide on a powerup" -- 20 items; and RACE_ROLL_MS, 1,500,
+// was the green ball's 6,000 from its define on, that name's second: six seconds)
+#define RACE_ITEM_ROLL_MS 4500
+#define RACE_ITEM_ROLL_STEPS 45
 #define RACE_ROW_MS 700                    // one item a row
 static int s_item[RACE_ITEM_SLOTS] = {-1, -1};
 static S32 s_itemAt[RACE_ITEM_SLOTS];
@@ -396,17 +407,40 @@ static S32 s_autoDrop = 1000;              // autodrop_ms=<ms> (tests): how long
 static T_RACE_PENGUIN s_penguins[RACE_MAX_PENGUINS];
 // (health and clovers were power-ups too: no one dies in a race, so they did nothing -- out since 2026-10-03)
 // (the super jet-pack: the game drives, at twice the car's speed; the plain jet-pack, one and a half times it, is out since 2026-10-04)
-enum { PU_FUEL, PU_PROTECT, PU_LIGHTNING, PU_PENGUIN, PU_SUPERJET, PU_OIL, PU_COUNT };
-static const char *const s_puName[PU_COUNT] = {"Gazogem fuel!", "Protection spell!", "Lightning spell!", "Nitro penguin!", "Super jet-pack!", "Oil slick!"};
-static const int s_puWeight[PU_COUNT] = {20, 12, 10, 16, 12, 16};
-static const double s_puJet[PU_COUNT] = {0, 0, 0, 0, 2.0, 0};
+// (2026-10-08, the user: "an attacking powerup for cars to hit other drivers with utilising Twinsen's magic ball and it's different
+// colours with different behaviours" -- the yellow ball darts a short way straight ahead, the green rolls along the track bouncing from
+// rail to rail for a few seconds, the red homes in on the car in front, the fire ball splits into one for each of the other cars, each
+// hunting its own down (Shots); and "a fake powerup mushroom ... identical to the real powerup mushrooms, the car can drop this powerup
+// anywhere, and when another car drives into it the fake mushroom explodes" (Fakes))
+// (2026-10-10: the golden Gazogem, the roulette wheel's green zero's prize -- the user: "if they get the green super jackpot they get a
+// golden gazogem bottle where they can use the power up for a speedboost as many times as they like for 8 seconds"; last, and never drawn
+// from a mushroom nor the item box's roulette, PU_ROLLED)
+enum { PU_FUEL, PU_PROTECT, PU_LIGHTNING, PU_PENGUIN, PU_SUPERJET, PU_OIL, PU_BALL_YELLOW, PU_BALL_GREEN, PU_BALL_RED, PU_BALL_FIRE, PU_FAKE, PU_GOLD, PU_COUNT };
+#define PU_ROLLED PU_GOLD
+static const char *const s_puName[PU_COUNT] = {"Gazogem fuel!", "Protection spell!", "Lightning spell!", "Nitro penguin!", "Super jet-pack!", "Oil slick!",
+                                               "Yellow magic ball!", "Green magic ball!", "Red magic ball!", "Fire ball!", "Fake mushroom!", "Golden Gazogem!"};
+static const int s_puWeight[PU_COUNT] = {20, 12, 10, 16, 12, 16, 12, 10, 9, 5, 10, 0};
+static const double s_puJet[PU_COUNT] = {0, 0, 0, 0, 2.0, 0, 0, 0, 0, 0, 0, 0};
 // each one's weight times these for the leader and for the last car (between them by the car's place: RandomPowerUp) -- the ones to
-// drop behind (penguins, oil) for the cars in front, the ones to catch up with (the super jet-pack, lightning) for the cars at the back
-static const double s_puLead[PU_COUNT] = {1.0, 0.8, 0.05, 1.8, 0.0, 2.0};
-static const double s_puLast[PU_COUNT] = {1.0, 1.2, 2.0, 0.4, 2.5, 0.4};
+// drop behind (penguins, oil, a fake mushroom) for the cars in front, the ones to catch up with (the super jet-pack, lightning, the red
+// ball and the fire ball) for the cars at the back
+static const double s_puLead[PU_COUNT] = {1.0, 0.8, 0.05, 1.8, 0.0, 2.0, 1.2, 1.0, 0.3, 0.0, 1.8, 0};
+static const double s_puLast[PU_COUNT] = {1.0, 1.2, 2.0, 0.4, 2.5, 0.4, 0.8, 1.0, 1.8, 2.4, 0.5, 0};
 // what the item box shows (OBJFIX.HQR, the inventory's own: the Gazogem, the protection spell, the lightning ring, the meca-penguin,
-// the super jet-pack; -2 the oil's, oil_icon=)
-static const int s_puModel[PU_COUNT] = {15, 39, 19, 14, 48, -2};
+// the super jet-pack, the magic ball in each of its colours -- INVENT.CPP's TabObj3D for FLAG_BALLE_MAGIQUE, {1, 40, 41, 42}, picked by
+// MagicLevel - 1: until 2026-10-08 the balls had 0-3 here, OBJFIX's own 0-3, the holomap, the yellow ball, the dart and Sendell's ball;
+// -2 the oil's, oil_icon=; -3 the mushroom's own body; -4 the golden Gazogem, gold_icon=: the Gazogem in gold)
+static const int s_puModel[PU_COUNT] = {15, 39, 19, 14, 48, -2, 1, 40, 41, 42, -3, -4};
+static int s_goldIcon = -1;                // gold_icon=: the golden Gazogem's model in OBJFIX.HQR (the builder adds it)
+#define RACE_GOLD_MS 8000                  // the golden Gazogem: from its first use, this long to boost with it as often as wanted ...
+#define RACE_GOLD_BURST_MS 1200            // ... each use Gazogem's boost this long ...
+#define RACE_GOLD_INJECT (10 * 5120 / 36)  // ... and 10 km/h more speed at once (the dial's km/h: speed * 36 / 5120; the user, 2026-10-10:
+                                           // "every time the user presses the powerup button they get an instant 10 kmph speed injection"),
+                                           // with no top speed while it runs ("Remove the top speed limit whilst we have golden gazogem,
+                                           // let's allow the user to inject as much speed as they can handle": RaceMod_NoTopSpeed)
+#define RACE_GOLD_AUTO_MS 600              // (the test pilot: once in this long)
+static S32 s_goldUntil = 0, s_goldLast = 0;
+static int s_slotOn = 0;                   // the roulette wheel's slot machine spinning (SlotSpin)
 // oil: the slicks on the road (world units; until when), and the scenes' copies of the slick that show them
 #define RACE_MAX_SLICKS 16                 // (6 until 2026-10-07: the pipes' drips have slicks too)
 #define RACE_MAX_OIL_ACTORS 256
@@ -418,12 +452,67 @@ static const int s_puModel[PU_COUNT] = {15, 39, 19, 14, 48, -2};
 // Until: when it dries up (a drip's), 0 never
 typedef struct { double X, Y, Z; S32 Dropped; int On; S32 Posed, Alpha, Gamma; double Lift; S32 Until; } T_RACE_SLICK;
 static T_RACE_SLICK s_slicks[RACE_MAX_SLICKS];
+// The magic balls in flight (Shots): each one's kind (its colour), whose (-1 Twinsen's, else the opponent's), what it is after (-1
+// Twinsen, an opponent, -2 none), where it is (world units) and which way it goes; the guide line's S and how far to its side for those
+// that follow the track; its sprite in this scene (-1 none) and when it last left a trail
+#define RACE_MAX_SHOTS 16
+#define RACE_SHOT_REACH 950                // a car this near a ball is hit
+#define RACE_SHOT_FORCE 20
+// (the ball's sprite: Twinsen's magic ball, without a trail -- "It looks like we're using a different model for the magic ball to the
+// in-game one, let's switch to Twinsen's normal ball" -- at 16, four and a half times the game's own size (70: ThrowExtra's -1), since
+// "The magic ball powerup when thrown seems very small, let's make this a lot bigger and faster"; 22 with a trail until 2026-10-08, then
+// -1 for a while)
+#define RACE_SHOT_SCALE 16
+#define RACE_SHOT_RISE 450                 // over the road
+// (the speeds since 2026-10-08, the user: "it moves too slowly to catch up with the car in front ... especially for the red and fire
+// balls so they home in on their target" -- 11,000, 9,500 and 10,500 before; a car's top speed is about 4,800, the super jet-pack's
+// twice that)
+// (and faster again the same evening: 15,000, 20 cells, 12,500, 16,000 and 5,000 for a while)
+#define RACE_DART_SPEED 22000.0            // the yellow: straight ahead, this fast, ...
+#define RACE_DART_RANGE (56 * 512.0)       // ... this far (28 cells until 2026-10-10: the user, "increase the cells the yellow ball is
+                                           // active to 56, double what it is now")
+#define RACE_ROLL_SPEED 18000.0            // the green: along the track, this fast, ...
+#define RACE_GREEN_MS 10000                // ... this long (6 s until 2026-10-10), ...
+#define RACE_ROLL_SIDE (2.6 * 512)         // ... from side to side of the road ...
+#define RACE_ROLL_ACROSS 2600.0            // ... this fast
+#define RACE_HOME_SPEED 24000.0            // the red and the fire: along the track after its car, this fast ...
+#define RACE_HOME_DIRECT 6000.0            // ... straight at it once this near
+#define RACE_HOME_MS 15000                 // ... and gone after this long -- only the red with no car in front: the red goes on till it
+                                           // hits the car it is after and the fire's till each hits its own (2026-10-10, the user: "Red ball
+                                           // to last until it hits the car in front, and fire balls to always hit all cars")
+enum { SHOT_YELLOW, SHOT_GREEN, SHOT_RED, SHOT_FIRE, SHOT_LASER_GREEN, SHOT_LASER_RED };
+// Twinsen's laser cars (drive_laser=1 green, 2 red): his own car, its gun firing laser bolts instead of its magic balls -- the bolts' models
+// (laser_models=<green> <red>, OBJFIX.HQR: the builder adds them) flown straight ahead, one for each shot of the gun's firing animation
+// (FICHE.CPP: RaceMod_LaserThrow)
+#define RACE_LASER_SPEED 17000.0
+#define RACE_LASER_RANGE (34 * 512.0)
+#define RACE_LASER_MUZZLE 420.0            // a bolt starts this far ahead of the car (the gun's muzzle, on its bonnet)
+#define RACE_LASER_REACH 1050
+static int s_driveLaser = 0, s_laserModel[2] = {-1, -1};
+static int LaserExtra(int model, S32 x, S32 y, S32 z);
+typedef struct { int On, Kind, Owner, Target, Extra; double X, Y, Z, Hx, Hz, S, Side, SideV, Travelled; S32 T0, Trail; } T_RACE_SHOT;
+static T_RACE_SHOT s_shots[RACE_MAX_SHOTS];
+static void LaunchShot(int kind, int owner, int target, double x, double y, double z, double hx, double hz, S32 now);
+static void Attack(int pu, int owner, double x, double y, double z, double beta, S32 now);
+// The fake mushrooms (Fakes): where each lies (world units), who dropped it and when (it can't go off under that car for a moment), the
+// scene its height was found in; shown by the scenes' copies of the mushroom (fake=), the box a point; the mushroom's body for the item box
+#define RACE_MAX_FAKES 8
+#define RACE_MAX_FAKE_ACTORS 256
+#define RACE_FAKE_ARM 1200
+typedef struct { int On, Dropper; double X, Y, Z; S32 Dropped, Posed; } T_RACE_FAKE;
+static T_RACE_FAKE s_fakes[RACE_MAX_FAKES];
+static int s_fakeScene[RACE_MAX_FAKE_ACTORS], s_fakeActor[RACE_MAX_FAKE_ACTORS];
+static int s_nbFakeActors = 0, s_fakeIconBody = -1;
+static void DropFake(double x, double y, double z, int dropper, S32 now);
+extern void MagicBallExplo(S32 x, S32 y, S32 z, S32 beta);  // EXTRA.CPP
+extern void SampleMagicBall(S32 x, S32 y, S32 z);           // FICHE.CPP
 static int s_oilScene[RACE_MAX_OIL_ACTORS], s_oilActor[RACE_MAX_OIL_ACTORS];
 static int s_nbOilActors = 0;
 static S32 s_skidUntil = 0, s_skidStart = 0, s_skidBeta = 0, s_skidSpeed = 0;
 static int s_skidDir = 1;
 #define RACE_BOOST_MS 4000
-#define RACE_PROTECT_MS 30000
+#define RACE_PROTECT_MS 12000              // (30 s until 2026-10-10: the user, "decrease the length the protection spell lasts for, perhaps
+                                           // 12 seconds, let's also have it no longer cancel a shrink" -- it still keeps a new strike off)
 #define RACE_SHRINK_MS 20000
 #define RACE_SHRINK_SPREAD 0.25            // ... longer for a car ahead, shorter for one behind: the leader's x1.25, the last's x0.75
 #define RACE_JETPACK_MS 10000
@@ -592,6 +681,243 @@ typedef struct { double X, Y, Z, DirX, DirZ, Half; S32 Reach, On, Off, Phase, Pu
 extern T_FLOW *TabPartFlow;
 static T_RACE_JET s_jets[RACE_MAX_JETS];
 static int s_nbJets = 0;
+// Tunnels over the raised road (tunnel=<from> <to> <roof>: its first and last point, its roof's height over the deck; Otringal's over the
+// bridge to its square island, 2026-10-08): the camera that follows the car rides the road behind it under the roof from RACE_TUNNEL_LEAD
+// points before the tunnel's mouth to its end (TunnelCamera) -- out at the arm's usual length the eye stood over the roof, which hid the
+// car; and the follow camera's own, its arm only shortened, looks at a point well ahead of the car (DISTANCE_VISEE): the car went out of
+// the bottom of the view.
+#define RACE_MAX_TUNNELS 8
+#define RACE_TUNNEL_LEAD 40
+#define RACE_TUNNEL_TAIL 16                // ... and this many past its end (the car out from under the roof before the eye rises)
+#define RACE_TUNNEL_EYE 900                // the eye this far under the roof at the most
+#define RACE_TUNNEL_BACK 4200              // ... and this far behind the car along the road (TunnelCamera)
+#define RACE_TUNNEL_UP 1500
+#define RACE_TUNNEL_AHEAD 3000
+#define RACE_TUNNEL_SIGHT 700              // ... its sight line clearing the road to the car's middle
+#define RACE_TUNNEL_UNDER 250              // ... and the eye at least this far under the roof
+typedef struct { int From, To; double Roof; } T_RACE_TUNNEL;
+static T_RACE_TUNNEL s_tunnels[RACE_MAX_TUNNELS];
+static int s_nbTunnels = 0;
+// Lava balls (lavaball=<x> <y> <z> <from> <to> <every> <phase>: a source on the lava's surface, island units, and the stretch of the raised
+// road it rains on, its first and last point): Volcano Island's (the user, 2026-10-08: "lava balls shooting up and out of the lava at
+// points and raining down onto the track"). Every so often (Every ms, give or take a quarter, from Phase) while Twinsen is near, a ball
+// of lava is shot up out of the lava and falls on a place along that stretch, its shadow on the road there growing as it comes; where it
+// lands it bursts, and a car in the burst is stopped. Since 2026-10-10 the game's own lava (the user: "the lava balls that are currently
+// coming out of the lava are different to the retail ones, so let's switch these"): the ball is its lava ball (OBJFIX.HQR entry 69, the
+// one Wannies Island's mine spits; lava_ball_model=, the builder's copy of it RaceTrackOil.LavaBallScale times as big) tumbling along its
+// arc, shot out of the lava with the mine's lava burst (impact 25: a spray of sparks and of little balls, its sound) and bursting the same
+// way where it lands -- the magic ball's fire sprite with a trail of fire, and a nitro penguin's blast, until then.
+#define RACE_MAX_LAVA 16
+#define RACE_LAVA_MODEL 69                 // OBJFIX.HQR: the game's lava ball (lava_ball_model=: its bigger copy)
+#define RACE_LAVA_BURST 25                 // IMPACT 25: the mine's lava burst
+#define RACE_LAVA_BURST_FLOW 67            // ... its sparks, alone when the extras are short
+#define RACE_LAVA_SPIT_FLOW 90             // impact 23's flow, the mine's fall's foot: sparks thrown out and down, little balls with them
+#define RACE_LAVA_FREE 24                  // the little balls only while this many extras are free (the race's own need theirs)
+#define RACE_LAVA_SHADOW 12                // SPRITE_BALLE_SHADOW
+#define RACE_LAVA_SCALE 14                 // the shadow's size where it lands
+#define RACE_LAVA_NEAR (40 * 512)          // shot only while Twinsen is this near the place it will land
+#define RACE_LAVA_REACH 1100               // a car this near the place it lands is caught in its burst
+#define RACE_LAVA_FORCE 20
+typedef struct { double SrcX, SrcY, SrcZ, DstX, DstY, DstZ; int From, To; S32 Every, Phase, Next, T0, Dur, Trail; int On, Ball, Shadow; } T_RACE_LAVA;
+static T_RACE_LAVA s_lava[RACE_MAX_LAVA];
+static int s_nbLava = 0;
+static int s_lavaModel = -1;               // lava_ball_model=
+// Lava falls (lavafall=<lip x> <y> <z> <foot x> <y> <z> <beta>, island units, one a place across the fall's face: RaceTrackLavaFall,
+// Volcano Island's crag by its plateau's south edge -- the user, 2026-10-10: "In scene 100 ... there's a lava water fall next to a section
+// of track that shoots lava balls, let's steal this idea"). While Twinsen is near, the mine's fall's spit: sparks and little lava balls
+// thrown out of its foot every RACE_FALL_FOOT_MS or so (impact 23's, the way its face looks), sparks off its lip and down its face every
+// RACE_FALL_LIP_MS or so. The balls it shoots onto the road are lavaball='s, its pool their source.
+#define RACE_MAX_FALLS 16
+#define RACE_FALL_FOOT_MS 1500
+#define RACE_FALL_LIP_MS 600
+#define RACE_FALL_NEAR (48 * 512)
+#define RACE_FALL_DROP 1000                // (a flow's sparks die this far under where it starts: one at a height down the face)
+typedef struct { double LipX, LipY, LipZ, FootX, FootY, FootZ; S32 Beta; } T_RACE_FALL;
+static T_RACE_FALL s_falls[RACE_MAX_FALLS];
+static int s_nbFalls = 0;
+static S32 s_fallFootNext = 0, s_fallLipNext = 0;
+// Boost panels (boostpanel=<x> <y> <z> <way x> <way z> <half length> <half width>, island units, the way in thousandths: RaceTrackPlan.
+// BoostPanels, chevrons on the deck): a car with two of its wheels or more on one is at RACE_PANEL_KMH at once (the user, 2026-10-10: "a
+// boost panel that cars can drive over for a speed boost, they'd only need to drive over it with at least two wheels for it to activate,
+// this should immediately shoot a car up to 120kph"). It lasts (the user, the same day: "The current boost panel duration needs to be a lot
+// longer" -- it had been lost as any speed over the gear's top is, in 1.6 s): the car's top speed is RACE_PANEL_KMH for RACE_PANEL_HOLD_MS
+// (RaceMod_SpeedFactor: the accelerator held keeps it there), then comes back down to its own over RACE_PANEL_FADE_MS.
+// Twinsen's car by its four wheels where BUGGY.CPP has them. (The opponents' lines keep to the race lanes: Volcano Island's panel is in
+// its pit lane, "so if cars want the speed boost they have to deviate from the normal racing line".)
+#define RACE_MAX_PANELS 8
+#define RACE_PANEL_KMH 120
+#define RACE_PANEL_SPEED (RACE_PANEL_KMH * 5120.0 / 36)
+#define RACE_PANEL_ABOVE 700               // the car this far over the panel or under it is on it (the deck's slope, the car's bounce)
+#define RACE_PANEL_HOLD_MS 4500
+#define RACE_PANEL_FADE_MS 3500
+typedef struct { double X, Y, Z, Dx, Dz, HalfLen, HalfWidth; int OnHero; } T_RACE_PANEL;
+static T_RACE_PANEL s_panels[RACE_MAX_PANELS];
+static int s_nbPanels = 0;
+#define RACE_PANEL_PILOT_MS (RACE_PANEL_HOLD_MS + RACE_PANEL_FADE_MS) // (the test pilot holds the accelerator while it lasts, as a player would)
+static S32 s_panelAt = -1000000;
+// Machine gunners (gunner=<scene> <gun's actor> <Franco's actor> <muzzle x> <y> <z>, island units, then gunner_target=<x> <z> <y> <radius>,
+// the places its bullets land): Otringal's Franco machine gun on its knoll inside the corner past the start -- the user, 2026-10-09: "add in
+// a franco to fire in bursts so that the bullets only land on the inside of the corner so they can be avoided by driving the corner on the
+// outside". Every RACE_GUN_EVERY ms or so a burst, whenever a race is on -- alone or against others (2026-10-10: it never fired in a race
+// without opponents): the gun plays its own firing animation (its kick and its rattle; the bullets that animation throws left out, FICHE.CPP
+// RaceMod_SilentThrow, as they fly level from it whichever way it faces) and RACE_GUN_SHOTS of the game's own bullets fly from its muzzle to
+// places among its targets, the gun turning to each: thrown as its animation throws them (F_THROW_3D: raw sprite 50 at its own size, 100 a
+// frame, its weight 12, ThrowExtra) at the height that brings each down on its place (the user, 2026-10-10: "he's not firing the default
+// bullets the retail version normally fires" -- they were a tracer of the race mode's, the sprite made bigger and flown straight); where
+// one lands, a spark, and a car there is stopped as by a magic ball.
+#define RACE_MAX_GUNNERS 4
+#define RACE_MAX_GUN_TARGETS 32
+#define RACE_MAX_BULLETS 24
+#define RACE_GUN_EVERY 4200
+#define RACE_GUN_SHOTS 10
+#define RACE_GUN_GAP 110                   // ms between its bullets
+#define RACE_GUN_SPRITE 50                 // the gun's bullet (raw sprites), as its firing animation throws it (entity 200, anim 173) ...
+#define RACE_GUN_SPEED 100                 // ... this fast (a 20 ms frame's way) ...
+#define RACE_GUN_WEIGHT 12                 // ... and falling with this weight (ThrowExtra, InitFly)
+#define RACE_GUN_REACH 650                 // a car this near where a bullet lands is hit
+#define RACE_GUN_FIRING 173                // the gun's firing animation (entity 200)
+#define RACE_GUN_AT_IT 474                 // the Franco sitting at it (entity 201)
+typedef struct {
+    S32 Scene, Gun, Franco; double MX, MY, MZ;
+    int NbTargets; double TX[RACE_MAX_GUN_TARGETS], TZ[RACE_MAX_GUN_TARGETS], TY[RACE_MAX_GUN_TARGETS], TR[RACE_MAX_GUN_TARGETS];
+    S32 Next, BurstAt; int Fired, Firing, Ready;
+} T_RACE_GUNNER;
+typedef struct { int On, Extra, Owner; double FromX, FromY, FromZ, ToX, ToY, ToZ; S32 T0, Dur; } T_RACE_BULLET;
+static T_RACE_GUNNER s_gunners[RACE_MAX_GUNNERS];
+static int s_nbGunners = 0;
+static T_RACE_BULLET s_bullets[RACE_MAX_BULLETS];
+// The roulette wheel the lap runs through (roulette=<cube x> <cube z> <x> <z> <spin> <the ball's body> <its radius> <landing> <the floor's
+// height at the hole's edge> <its rise a cell outwards> <its steepening a cell a cell, hundredths> <the hole's radius> <the wall's> <its
+// outside's> <its underside under its floor> <its turning bodies...>, island units): Otringal's, floating over where its casino stood --
+// the user, 2026-10-09: "a giant rotating roulette wheel complete with colours, numbers, and a giant white ball that rolls around for cars to
+// avoid"; then "twice as wide and over the casino location ... magically floating ... Let's make the sides of the roulette wheel steeper
+// so instead of a guide rail cars are slowly drawn down with gravity". Its parts are decors of the island's (RaceTrackRoulette), drawn from
+// wherever the wheel is seen: as each cube's decors are drawn (3DEXT/DECORS.CPP DecorPoseHook) they are turned, <spin> tenths of a degree a
+// second, and the ball's moved to where it rolls, round the bowl the other way. Its floor is the race-track mode's own (WheelFloorAt: no
+// rails -- the lap's way round it has no width in the raised road's file): Twinsen's car drives it freely, drawn down it towards the hole
+// as hard as it is steep (WheelMove; and its slopes speed it up and slow it down, RaceMod_Gravity), kept inside its wall, and dropped
+// through the hole onto the road under it -- place <landing> of the raised road's file -- from wherever it goes in. A car the ball rolls
+// into is struck, as by a magic ball.
+#define RACE_MAX_WHEEL_PARTS 12
+// The user, 2026-10-10: "The roulette wheel we've created isn't really fun to drive" -- of the ideas offered, all four: a prize by the
+// pocket the car goes into the hole over, the turning floor carrying the car round, a quicker way down, balls that bounce and knock cars.
+#define RACE_MAX_BALLS 4                   // roulette_balls=<n>: its balls, rolling down the bowl, carried round by its turn, bouncing off its
+#define RACE_BALL_G 16000.0                // wall, the ridge round its hole, each other and the cars: pulled down it this hard a unit of slope ...
+#define RACE_BALL_GRIP 0.08                // ... brought to the turning floor's own speed this much a second (much more, and they rode round
+                                           // against the wall with it) ...
+#define RACE_BALL_BOUNCE 0.85              // ... keeping this much of their speed off what they hit ...
+#define RACE_BALL_KICK 1.15                // ... and kicked back up the bowl off the ridge round the hole, this much faster ...
+#define RACE_BALL_TOP 9000.0               // ... no faster than this ...
+#define RACE_BALL_DAMP 0.03                // ... losing this share of their speed a second
+#define RACE_BALL_KNOCK 1800.0             // a car a ball rolls into is knocked this far aside ...
+#define RACE_BALL_KNOCK_MS 450             // ... over this long ...
+#define RACE_BALL_SLOW 0.6                 // ... and left this much of its speed
+#define RACE_WHEEL_DRAG 0.4                // how much of the turning floor's speed carries Twinsen's car round with it
+#define RACE_WHEEL_RED_MS 2500             // a red pocket into the hole: Gazogem's boost this long on the road under the wheel ...
+#define RACE_WHEEL_ZERO_MS 5000            // ... the green zero: this long, and an item if a slot is free
+#define RACE_BALL_REACH 330                // a car is hit with its middle this much further from the ball's than the ball's radius, or nearer
+#define RACE_BALL_AGAIN 1500               // ms before a ball can knock the same car again
+#define RACE_WHEEL_TURN (-1)               // the way the wheel turns (the cars go round it anticlockwise seen from above, the ball the other way)
+#define RACE_WHEEL_PULL 3500.0             // units a second a car on the bowl is drawn in, a unit of slope (was 1,500: a slow way down)
+#define RACE_WHEEL_DROP_LEAST 3000.0       // the drop through the hole: carried at least this fast ...
+#define RACE_WHEEL_DROP_MS 900             // ... and taking at least this long
+typedef struct {
+    int On, CubeX, CubeZ, Ball, BallR, Landing, NbParts, Parts[RACE_MAX_WHEEL_PARTS];
+    double X, Z, Spin, HoleY, S1, S2, Hole, Rim, Outer, Under;
+    // (its balls: where, how fast, their last step's time; their bodies Ball.. Ball+NbBalls-1)
+    int NbBalls, BallsSet, BallShown, Pockets;
+    double BallX[RACE_MAX_BALLS], BallY[RACE_MAX_BALLS], BallZ[RACE_MAX_BALLS], BallVX[RACE_MAX_BALLS], BallVZ[RACE_MAX_BALLS];
+    S32 BallT;
+    // (Twinsen's car knocked by a ball: since when, which way; the pocket it went into the hole over: its number, its prize 0 black, 1 red,
+    // 2 the zero)
+    S32 KnockT0; double KnockX, KnockZ;
+    int Prize, PrizeNumber;
+    S32 Beta, Again[RACE_MAX_OPPONENTS + 1];
+    // (Twinsen's car: its last move, and the drop through the hole -- from D0, by D1 and D2, to DL, DropMs long at DropV)
+    S32 MoveT;
+    int DropOn;
+    S32 DropT0, DropMs, DropBeta;
+    double D0x, D0y, D0z, D1x, D1z, D2x, D2z, DLx, DLy, DLz, DropV;
+    // (the camera's eye in the bowl, kept while the car drops: cube-local)
+    S32 Eye[3];
+} T_RACE_ROULETTE;
+static T_RACE_ROULETTE s_wheel;
+static S32 WheelMove(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz);
+// The bowl's floor (world units): at `r` from its middle, its slope outwards (a unit a unit), its underside, and whether a place is on it.
+static double WheelR(double wx, double wz) { return sqrt((wx - s_wheel.X) * (wx - s_wheel.X) + (wz - s_wheel.Z) * (wz - s_wheel.Z)); }
+static double WheelCells(double r) { const double d = (r - s_wheel.Hole) / 512.0; return d > 0 ? d : 0; }
+static double WheelFloorAt(double r) { const double d = WheelCells(r); return s_wheel.HoleY + s_wheel.S1 * d + s_wheel.S2 * d * d; }
+static double WheelSlopeAt(double r) { return (s_wheel.S1 + 2 * s_wheel.S2 * WheelCells(r)) / 512.0; }
+static double WheelUnderAt(double r) { return WheelFloorAt(r < s_wheel.Rim ? r : s_wheel.Rim) - s_wheel.Under; }
+static int OnWheel(double wx, double wy, double wz) {
+    if (!s_wheel.On) return 0;
+    const double r = WheelR(wx, wz);
+    if (r > s_wheel.Rim + 64 || r < s_wheel.Hole - 64) return 0;
+    const double f = WheelFloorAt(r);
+    return wy > f - 1500 && wy < f + 1500;
+}
+extern void (*DecorPoseHook)(T_DECORS *list, S32 count);  // 3DEXT/DECORS.CPP
+static void WheelDecors(T_DECORS *list, S32 count);
+// Gas monsters (gasmonster=<scene> <its actor> <its body> <x> <z> <bite x> <bite z> <bite y> <foot y> <first anim> [<scene> <actor>]...,
+// island units: where it stands out of the gas, its place on the road and the road's height there, its foot's height; the first of its
+// animations; then its actor in each other scene it is seen from -- the engine draws a scene's actors only while it is the one about, and
+// the islets' monsters stood up out of nowhere as the car came into their scene, 2026-10-10): Otringal's,
+// at its docks and round the islets where Baldino's plane lies crashed -- the user, 2026-10-09: "let's have gas monsters coming out of the
+// gas and attempting to bite cars, any bitten cars should be stunned for a couple of seconds as though they've been hit then be able to
+// continue"; then: "let's have them permanently visible with their necks above the track and randomly striking down. Let's have each gas
+// monster always attack the same point in the track, so once their positions are learnt they're avoidable"; then: "Let's make the gas
+// monsters necks longer ... so they're above the track then when they're ready they strike down onto the track into their strike zone".
+// The game's own gas monster (entity 222), twice its size, its neck as long as its place wants (a body of its own), stands beside the road
+// for good, swaying with its head poised high over its strike zone on the road's near half, mouth open (its first animation). Every
+// RACE_MONSTER_EVERY to twice that, at random, it rears back and strikes down (the next), its mouth on the strike zone RACE_MONSTER_HIT after
+// the strike begins: a car there, or one driving into it while its jaw snaps shut and holds (RACE_MONSTER_HOLD), is bitten and held
+// RACE_MONSTER_STUN; then it goes back to poised (the third). Its animations are made for its place by
+// RaceTrackGasMonster.InstallPoses, and these times are theirs. Its actor is posed while its scene is the one about; elsewhere it strikes
+// all the same, for the opponents there.
+#define RACE_MAX_MONSTERS 16
+#define RACE_MONSTER_SEEN 8                // the scenes a monster has an actor in, at the most
+#define RACE_MONSTER_SEEN_FAR (40 * 512.0) // drawn only with the car this near it, and not from the roulette wheel's bowl: the decors are drawn
+                                           // without the z-buffer, and a monster far behind one -- the wheel, a road's deck -- was drawn over it,
+                                           // white in the fog (the user, 2026-10-10: "random shadow images of our gas monsters at points in
+                                           // the track")
+#define RACE_MONSTER_HIT (150 + 650 + 220) // ms from the strike's start to its head on the road (InstallPoses: PoiseMs, RearMs, LungeMs) ...
+#define RACE_MONSTER_BACK (20 + 120 + 330 + 700) // ... and from there, biting, back to poised (20, SnapMs, HoldMs, BackMs) ...
+#define RACE_MONSTER_HOLD (120 + 330)      // ... the first part of it its jaw snapping shut on the road and held (SnapMs, HoldMs)
+#define RACE_MONSTER_EVERY 1400            // ms poised between strikes, at the least (and up to twice as long)
+#define RACE_MONSTER_BITE 950              // a car this near its place (on the level) when its head comes down is bitten ...
+#define RACE_MONSTER_STUN 2200             // ... and held this long
+enum { MONSTER_POISED, MONSTER_STRIKE, MONSTER_BITE };
+typedef struct {
+    S32 Scene; int Neck, Body, Anim0; double RiseX, RiseZ, BiteX, BiteZ, BiteY, FootY;
+    int State, Shown, Anim; S32 T0, Next;
+    int NbSeen; S32 SeenScene[RACE_MONSTER_SEEN], ShownScene; int SeenActor[RACE_MONSTER_SEEN];   // its actors, its own scene's first
+} T_RACE_MONSTER;
+static T_RACE_MONSTER s_monsters[RACE_MAX_MONSTERS];
+static int s_nbMonsters = 0;
+static S32 s_bittenUntil[RACE_MAX_OPPONENTS + 1];  // a car just bitten is let be till then -- a monster beside it doesn't bite it again
+#define RACE_MONSTER_GRACE 2500            // ms after its stun
+// Shuttles (shuttle=<scene> <actor> <x> <y> <z>: the scene's actor, and the pad it lands on, cube-local, on the road): Otringal's spaceship
+// on the square island, which in the game comes down onto its pad on the road and takes off again at random -- the user, 2026-10-08:
+// "leave this in as a feature but perhaps have it hover for a few seconds, land for a couple of seconds before rising straight up
+// again". Its own scripts are stopped and it is flown here, on the race's clock (the same for every lap): out of sight, then down out of
+// the sky over its pad with its legs coming out, hovering over the road high enough for the cars to pass under it, down onto the road,
+// a while there, and straight up again with its legs going in. A car that runs into it while it is down is stopped, as by a penguin's
+// blast (the game's own script hit Twinsen for 50 when it touched him).
+#define RACE_MAX_SHUTTLES 4
+#define RACE_SHUTTLE_AWAY 5500             // out of sight (ms)
+#define RACE_SHUTTLE_DOWN 2600             // ... coming down out of the sky to hover
+#define RACE_SHUTTLE_HOVER 3600            // ... hovering over the pad
+#define RACE_SHUTTLE_TOUCH 900             // ... down onto it
+#define RACE_SHUTTLE_LANDED 2200           // ... on the road
+#define RACE_SHUTTLE_RISE 3400             // ... straight up out of sight
+#define RACE_SHUTTLE_HOVERY 2700           // its hover over the pad (the cars pass under it)
+#define RACE_SHUTTLE_HIGH 15000            // where it comes down from and rises to, over the pad
+#define RACE_SHUTTLE_LOW 1200              // under this over the pad it is in the cars' way ...
+#define RACE_SHUTTLE_REACH 1700            // ... a car this near its middle is hit
+#define RACE_SHUTTLE_FORCE 20
+typedef struct { S32 Scene, Actor, X, Y, Z; int Ready; S32 Hit; } T_RACE_SHUTTLE;
+static T_RACE_SHUTTLE s_shuttles[RACE_MAX_SHUTTLES];
+static int s_nbShuttles = 0;
 // Jump cameras (jumpcam=, JumpCamera): a drop -- a flight off a raised road's end and down a hillside onto the ground far below (the lava
 // lake's, 2026-10-01) -- took the camera behind the car down into the hill, and the landing was never seen. While the hero flies such a
 // jump, and RACE_JUMPCAM_HOLD after he lands, the camera stands at a place of its own beside the flight (the builder's, with the whole
@@ -619,6 +945,9 @@ static int s_cubeScenes[RACE_MAX_CUBE_SCENES][3];
 static int s_nbCubeScenes = 0;
 static int s_arcOn = -1, s_arcLast = -1;
 static double s_arcS = 0, s_arcV = 0, s_arcAcross = 0;
+static double s_arcAcross1 = 0;
+static int s_arcSeg = -1;                 // the raised road's segment the carried car is over, and how far along it (ArcPlace)
+static double s_arcT = 0;           // ... and where it is set down: within the landing's rails (a narrower road there: the roulette wheel's lane)
 static S32 s_arcTime = 0, s_arcLandedAt = 0;
 
 static int ArcPrepare(T_RACE_ARC *a) {
@@ -718,6 +1047,14 @@ static int RaisedAt(double wx, double wz, S32 ref, double pad, S32 *y, int *seg,
 
 static S32 RaisedAltitude(S32 x, S32 z, S32 y) {
     if (s_floorRef == RAISED_NOREF || CubeMode != CUBE_EXTERIEUR) return y;
+    // (the roulette wheel's bowl, for something about its floor's height there)
+    if (s_wheel.On) {
+        const double wx = x + CurrentCubeX * 32768.0, wz = z + CurrentCubeY * 32768.0, r = WheelR(wx, wz);
+        if (r <= s_wheel.Rim + 64 && r >= s_wheel.Hole) {
+            const double f = WheelFloorAt(r);
+            if (s_floorRef > f - 1500 && s_floorRef < f + 1500) return f > y ? (S32)floor(f + 0.5) : y;
+        }
+    }
     S32 f;
     int seg;
     double lat, t;
@@ -727,6 +1064,7 @@ static S32 RaisedAltitude(S32 x, S32 z, S32 y) {
 
 static S32 RaisedCol(S32 x, S32 z, S32 col) {
     if (!col || s_floorRef == RAISED_NOREF || CubeMode != CUBE_EXTERIEUR) return col;
+    if (OnWheel(x + CurrentCubeX * 32768.0, s_floorRef, z + CurrentCubeY * 32768.0)) return 0;
     S32 f;
     int seg;
     double lat, t;
@@ -774,6 +1112,18 @@ static double RaisedSlope(int seg, S32 beta) {
 double RaceMod_Gravity(double *slope, double *bank) {
     *slope = 0;
     *bank = 0;
+    // (the roulette wheel's bowl: its slope the way the car faces, rising outwards; its bank across it -- whatever gravity= says)
+    if (s_wheel.On && !s_wheel.DropOn && CubeMode == CUBE_EXTERIEUR) {
+        const T_OBJET *hero = &ListObjet[NUM_PERSO];
+        const double wx = hero->Obj.X + CurrentCubeX * 32768.0, wz = hero->Obj.Z + CurrentCubeY * 32768.0, r = WheelR(wx, wz);
+        if (r > 1 && OnWheel(wx, hero->Obj.Y, wz)) {
+            const double a = (hero->Obj.Beta & 4095) * 2 * 3.14159265358979 / 4096.0, fx = sin(a), fz = cos(a), rx = (wx - s_wheel.X) / r, rz = (wz - s_wheel.Z) / r;
+            const double k = WheelSlopeAt(r);
+            *slope = k * (rx * fx + rz * fz);
+            *bank = k * fabs(rx * fz - rz * fx);
+            return 1;
+        }
+    }
     if (s_gravity <= 0 || !s_nbRaised || CubeMode != CUBE_EXTERIEUR) return 0;
     const T_OBJET *hero = &ListObjet[NUM_PERSO];
     S32 f;
@@ -869,6 +1219,27 @@ static int RaisedAlong(int seg, double t, double distance, double *x, double *y,
 // levels are over it, a drop's crest between it and the car, a bend swings it out over nothing -- so the eye rides the road itself:
 // over its middle s_railBack behind the car (behind the way the car faces), s_railUp over it, looking at the road s_railLead ahead of
 // the car. Kept under a level of the road that passes over it, and high enough to see the car over a crest between them.
+// (TunnelCamera's: the sight line to the car ends this far over the road, at the car's middle -- to its wheels, near the car the line
+// is so near the road that the eye was lifted 3,300 over the road to clear it, over the roof of Otringal's bridge, 2026-10-08 -- and
+// the eye no higher than this over the road under it, under a tunnel's roof: -1 none)
+static double s_railSight = 0, s_railCeil = -1;
+// Whether a jump's gap (points with no width) lies on the raised road between segments a and b (either way round, the shorter): the rail
+// camera's eye is not let ride back over the gap the car has just flown -- under the roulette wheel, up on the wheel's lane over the car.
+static int GapBetween(int a, int b) {
+    const int n = s_nbRaised - 1;
+    if (n <= 0 || a < 0 || b < 0) return 0;
+    int from = a, to = b;
+    if (s_raisedLoop) { if (((b - a) % n + n) % n > n / 2) { from = b; to = a; } }
+    else if (a > b) { from = b; to = a; }
+    for (int i = from, guard = 0; guard <= n; guard++) {
+        if (s_raised[i].Half <= 0) return 1;
+        if (i == to) break;
+        i = s_raisedLoop ? (i + 1) % n : i + 1;
+        if (i > n) break;
+    }
+    return 0;
+}
+
 static S32 RailCamera(S32 *eye, S32 *target) {
     if (s_railBack <= 0 || !s_nbRaised || CubeMode != CUBE_EXTERIEUR || Comportement != C_BUGGY) return FALSE;
     const T_OBJET *hero = &ListObjet[NUM_PERSO];
@@ -876,7 +1247,11 @@ static S32 RailCamera(S32 *eye, S32 *target) {
     S32 f;
     int seg;
     double lat, t;
-    if (!RaisedAt(hero->Obj.X + cx, hero->Obj.Z + cz, hero->Obj.Y + 64, RAISED_PAD, &f, &seg, &lat, &t) || abs(f - hero->Obj.Y) > 300) return FALSE;
+    // (carried over a jump with no camera of its own beside it -- the roulette wheel's drop through its hole, 2026-10-09: the follow
+    // camera took over there from where it had last been, out past the wheel behind a rock -- where along the road it is)
+    const int carried = s_arcOn >= 0 && s_arcSeg >= 0 && s_arcs[s_arcOn].Side == 0;
+    if (carried) { seg = s_arcSeg; t = s_arcT; }
+    else if (!RaisedAt(hero->Obj.X + cx, hero->Obj.Z + cz, hero->Obj.Y + 64, RAISED_PAD, &f, &seg, &lat, &t) || abs(f - hero->Obj.Y) > 300) return FALSE;
     // which way along the road the car faces
     const T_RACE_RAISED *a = &s_raised[seg], *c = a + 1;
     const double angle = (hero->Obj.Beta & 4095) * 2 * 3.14159265358979 / 4096.0;
@@ -888,9 +1263,12 @@ static S32 RailCamera(S32 *eye, S32 *target) {
     const double fx = sin(angle), fz = cos(angle);
     double back = s_railBack;
     int behind = RaisedAlong(seg, t, -way * back, &ex, &ey, &ez);
-    while (back > RAIL_CAMERA_NEAREST) {
+    // (... and nearer still, past RAIL_CAMERA_NEAREST, while it would ride over a jump's gap the car has just flown)
+    while (back > 512) {
+        const int gap = !carried && GapBetween(behind, seg);
+        if (back <= RAIL_CAMERA_NEAREST && !gap) break;
         const double dx = hx - ex, dz = hz - ez, d = sqrt(dx * dx + dz * dz);
-        if (d < 1 || (dx * fx + dz * fz) / d >= cos(RAIL_CAMERA_SIDE * 3.14159265358979 / 180)) break;
+        if ((d < 1 || (dx * fx + dz * fz) / d >= cos(RAIL_CAMERA_SIDE * 3.14159265358979 / 180)) && !gap) break;
         back -= 256;
         behind = RaisedAlong(seg, t, -way * back, &ex, &ey, &ez);
     }
@@ -899,17 +1277,27 @@ static S32 RailCamera(S32 *eye, S32 *target) {
     tx = hx + (tx - hx) * RAIL_CAMERA_LOOK; ty = hy + (ty - hy) * RAIL_CAMERA_LOOK; tz = hz + (tz - hz) * RAIL_CAMERA_LOOK;
     // (lower too when nearer, so the view is no steeper)
     const double up = s_railUp * sqrt(back / s_railBack);
+    const double roadBehind = ey;
     ey += up;
     // over a crest between the eye and the car: the line to the car clears the road by RAIL_CAMERA_CLEAR all the way
     double lift = 0;
     for (int k = 1; k < 8; k++) {
         double mx, my, mz;
         RaisedAlong(seg, t, -way * back * k / 8.0, &mx, &my, &mz);
-        const double line = hy + (ey - hy) * k / 8.0;
+        const double line = hy + s_railSight + (ey - hy - s_railSight) * k / 8.0;
         const double need = (my + RAIL_CAMERA_CLEAR - line) * 8.0 / k;      // what the eye has to rise for the line to clear this point
         if (need > lift) lift = need;
     }
     ey += lift;
+    if (s_railCeil >= 0 && ey > roadBehind + s_railCeil) ey = roadBehind + s_railCeil;
+    // (the car under the roulette wheel -- the road on from its hole runs under the bowl -- the eye under the bowl too)
+    if (s_wheel.On && !carried && hy < s_wheel.HoleY - s_wheel.Under) {
+        double r = sqrt((ex - s_wheel.X) * (ex - s_wheel.X) + (ez - s_wheel.Z) * (ez - s_wheel.Z));
+        if (r < s_wheel.Outer + 600) {
+            const double ceiling = WheelUnderAt(r) - 250;
+            if (ey > ceiling) ey = ceiling;
+        }
+    }
     // under a level of the road over the eye
     double over;
     if (RaisedBetween(ex, ez, ey - up - lift + 800.0, ey + RAISED_UNDER, behind, &over) && ey > over - RAISED_UNDER) ey = over - RAISED_UNDER;
@@ -956,6 +1344,18 @@ static S32 RaisedArm(S32 base) {
         if (under < arm) arm = under;
     }
     return arm < 3000 ? 3000 : arm > base ? base : (S32)arm;
+}
+
+// The tunnel the car is in, or coming up to (RACE_TUNNEL_LEAD points before its mouth): -1 none. `seg` a raised road segment.
+static int InTunnel(int seg) {
+    const int n = s_raisedLoop ? s_nbRaised - 1 : s_nbRaised;
+    for (int k = 0; k < s_nbTunnels && n > 0; k++) {
+        const T_RACE_TUNNEL *tn = &s_tunnels[k];
+        const int from = ((tn->From - RACE_TUNNEL_LEAD) % n + n) % n;
+        const int span = ((tn->To + RACE_TUNNEL_TAIL - from) % n + n) % n, at = ((seg - from) % n + n) % n;
+        if (at <= span) return k;
+    }
+    return -1;
 }
 
 void RaceMod_FloorFor(S32 y) { s_floorRef = s_nbRaised ? y : RAISED_NOREF; }
@@ -1470,6 +1870,102 @@ static void Load(const char *path, int carOnly = 0) {
                 p->X = x; p->Y = y; p->Z = z; p->Every = every; p->Next = 0; s_nbVents++;
             }
         }
+        else if (!strcmp(key, "gunner")) {
+            T_RACE_GUNNER *g = &s_gunners[s_nbGunners];
+            int scene, gun, franco, x, y, z;
+            if (s_nbGunners < RACE_MAX_GUNNERS && sscanf(v, "%d %d %d %d %d %d", &scene, &gun, &franco, &x, &y, &z) == 6) {
+                memset(g, 0, sizeof(*g));
+                g->Scene = scene; g->Gun = gun; g->Franco = franco; g->MX = x; g->MY = y; g->MZ = z;
+                s_nbGunners++;
+            }
+        }
+        else if (!strcmp(key, "gasmonster")) {
+            int scene, neck, size, x, z, bx, bz, by, fy, anim0;
+            int used = 0;
+            if (s_nbMonsters < RACE_MAX_MONSTERS && sscanf(v, "%d %d %d %d %d %d %d %d %d %d%n", &scene, &neck, &size, &x, &z, &bx, &bz, &by, &fy, &anim0, &used) == 10 && anim0 >= 0) {
+                T_RACE_MONSTER *m = &s_monsters[s_nbMonsters++];
+                memset(m, 0, sizeof(*m));
+                m->Scene = scene; m->Neck = neck; m->Body = size; m->RiseX = x; m->RiseZ = z; m->BiteX = bx; m->BiteZ = bz; m->BiteY = by; m->FootY = fy; m->Anim0 = anim0;
+                m->Shown = -1;
+                m->SeenScene[0] = scene; m->SeenActor[0] = neck; m->NbSeen = 1;
+                // (and its actor in each other scene it is seen from)
+                const char *rest = v + used;
+                int sc, ac, n2 = 0;
+                while (m->NbSeen < RACE_MONSTER_SEEN && sscanf(rest, "%d %d%n", &sc, &ac, &n2) == 2) {
+                    m->SeenScene[m->NbSeen] = sc; m->SeenActor[m->NbSeen] = ac; m->NbSeen++;
+                    rest += n2;
+                }
+            }
+        }
+        else if (!strcmp(key, "roulette")) {
+            int cx, cz, x, z, spin, ball, radius, landing, holeY, s1, s2, hole, rim, outer, under, used = 0;
+            memset(&s_wheel, 0, sizeof(s_wheel));
+            if (sscanf(v, "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d%n", &cx, &cz, &x, &z, &spin, &ball, &radius, &landing, &holeY, &s1, &s2, &hole, &rim, &outer, &under, &used) == 15) {
+                s_wheel.CubeX = cx; s_wheel.CubeZ = cz; s_wheel.X = x; s_wheel.Z = z; s_wheel.Spin = spin / 10.0;
+                s_wheel.Ball = ball; s_wheel.BallR = radius; s_wheel.Landing = landing;
+                s_wheel.HoleY = holeY; s_wheel.S1 = s1; s_wheel.S2 = s2 / 100.0; s_wheel.Hole = hole; s_wheel.Rim = rim; s_wheel.Outer = outer; s_wheel.Under = under;
+                const char *p = v + used;
+                int part, n;
+                while (s_wheel.NbParts < RACE_MAX_WHEEL_PARTS && sscanf(p, "%d%n", &part, &n) == 1) { s_wheel.Parts[s_wheel.NbParts++] = part; p += n; }
+                s_wheel.On = 1; s_wheel.NbBalls = 1; s_wheel.Pockets = 18;
+            }
+        }
+        else if (!strcmp(key, "roulette_prize")) s_prizeForce = atoi(v);
+        else if (!strcmp(key, "roulette_pockets")) { if (s_wheel.On) s_wheel.Pockets = atoi(v) > 2 ? atoi(v) : 18; }
+        else if (!strcmp(key, "roulette_balls")) {
+            const int n = atoi(v);
+            if (s_wheel.On) s_wheel.NbBalls = n < 1 ? 1 : n > RACE_MAX_BALLS ? RACE_MAX_BALLS : n;
+        }
+        else if (!strcmp(key, "gunner_target")) {
+            int x, z, y, r;
+            if (s_nbGunners > 0 && sscanf(v, "%d %d %d %d", &x, &z, &y, &r) == 4) {
+                T_RACE_GUNNER *g = &s_gunners[s_nbGunners - 1];
+                if (g->NbTargets < RACE_MAX_GUN_TARGETS) {
+                    g->TX[g->NbTargets] = x; g->TZ[g->NbTargets] = z; g->TY[g->NbTargets] = y; g->TR[g->NbTargets] = r; g->NbTargets++;
+                }
+            }
+        }
+        else if (!strcmp(key, "lava_ball_model")) s_lavaModel = atoi(v);
+        else if (!strcmp(key, "lavafall")) {
+            int lx, ly, lz, fx, fy, fz, beta;
+            if (s_nbFalls < RACE_MAX_FALLS && sscanf(v, "%d %d %d %d %d %d %d", &lx, &ly, &lz, &fx, &fy, &fz, &beta) == 7) {
+                T_RACE_FALL *f = &s_falls[s_nbFalls++];
+                f->LipX = lx; f->LipY = ly; f->LipZ = lz; f->FootX = fx; f->FootY = fy; f->FootZ = fz; f->Beta = beta & 4095;
+            }
+        }
+        else if (!strcmp(key, "boostpanel")) {
+            int x, y, z, dx, dz, hl, hw;
+            if (s_nbPanels < RACE_MAX_PANELS && sscanf(v, "%d %d %d %d %d %d %d", &x, &y, &z, &dx, &dz, &hl, &hw) == 7 && (dx || dz) && hl > 0 && hw > 0) {
+                T_RACE_PANEL *p = &s_panels[s_nbPanels++];
+                const double l = sqrt((double)dx * dx + (double)dz * dz);
+                p->X = x; p->Y = y; p->Z = z; p->Dx = dx / l; p->Dz = dz / l; p->HalfLen = hl; p->HalfWidth = hw; p->OnHero = 0;
+            }
+        }
+        else if (!strcmp(key, "lavaball")) {
+            T_RACE_LAVA *b = &s_lava[s_nbLava];
+            int x, y, z, from, to, every, phase;
+            if (s_nbLava < RACE_MAX_LAVA && sscanf(v, "%d %d %d %d %d %d %d", &x, &y, &z, &from, &to, &every, &phase) == 7 && every > 0) {
+                memset(b, 0, sizeof(*b));
+                b->SrcX = x; b->SrcY = y; b->SrcZ = z; b->From = from; b->To = to; b->Every = every; b->Phase = phase; b->Ball = b->Shadow = -1;
+                s_nbLava++;
+            }
+        }
+        else if (!strcmp(key, "shuttle")) {
+            T_RACE_SHUTTLE *sh = &s_shuttles[s_nbShuttles];
+            int scene, actor, x, y, z;
+            if (s_nbShuttles < RACE_MAX_SHUTTLES && sscanf(v, "%d %d %d %d %d", &scene, &actor, &x, &y, &z) == 5 && actor > 0) {
+                memset(sh, 0, sizeof(*sh));
+                sh->Scene = scene; sh->Actor = actor; sh->X = x; sh->Y = y; sh->Z = z;
+                s_nbShuttles++;
+            }
+        }
+        else if (!strcmp(key, "tunnel")) {
+            T_RACE_TUNNEL *t = &s_tunnels[s_nbTunnels];
+            int from, to, roof;
+            if (s_nbTunnels < RACE_MAX_TUNNELS && sscanf(v, "%d %d %d", &from, &to, &roof) == 3 && roof > 0) {
+                t->From = from; t->To = to; t->Roof = roof; s_nbTunnels++;
+            }
+        }
         else if (!strcmp(key, "jet")) {
             T_RACE_JET *p = &s_jets[s_nbJets];
             int x, y, z, a, b, c, d, e, f, g, h = RACE_STEAM_HIGH;
@@ -1499,6 +1995,10 @@ static void Load(const char *path, int carOnly = 0) {
             if (s_nbJumpCams < RACE_MAX_JUMPCAMS && sscanf(v, "%d %d %d %d %d %d", &c->Anim, &c->CubeX, &c->CubeZ, &c->X, &c->Y, &c->Z) == 6) s_nbJumpCams++;
         }
         else if (!strcmp(key, "qualifying_seed")) s_seed = (unsigned)strtoul(v, NULL, 10);
+        else if (!strcmp(key, "vargame")) {
+            int n, value;
+            if (s_nbHeld < RACE_MAX_HELD && sscanf(v, "%d %d", &n, &value) == 2 && n >= 0 && n < 256) { s_held[s_nbHeld][0] = n; s_held[s_nbHeld][1] = value; s_nbHeld++; }
+        }
         else if (!strcmp(key, "gate")) {
             T_RACE_GATE *g = &s_gates[s_nbGates];
             int used = 0;
@@ -1527,6 +2027,7 @@ static void Load(const char *path, int carOnly = 0) {
         else if (!strcmp(key, "protect_ms")) s_protectUntil = TimerRefHR + atoi(v);   // (tests: protected from the start, without the spell's sprites)
         else if (!strcmp(key, "shrunk_ms")) s_shrunkUntil = TimerRefHR + atoi(v);     // (tests: shrunk from the start)
         else if (!strcmp(key, "oil_icon")) s_oilIcon = atoi(v);
+        else if (!strcmp(key, "gold_icon")) s_goldIcon = atoi(v);
         else if (!strcmp(key, "superjet_model")) s_superModel = atoi(v);
         else if (!strcmp(key, "twinsen_small")) s_heroSmall = atoi(v);
         else if (!strcmp(key, "drive_as")) {
@@ -1543,6 +2044,11 @@ static void Load(const char *path, int carOnly = 0) {
             if (s_nbMush < RACE_MAX_MUSHROOMS && (got = sscanf(v, "%d %d %d", &m->Scene, &m->Actor, &y)) >= 2) {
                 m->Y = got == 3 ? y : 0; m->HasY = got == 3; m->Back = 0; s_nbMush++;
             }
+        }
+        else if (!strcmp(key, "drive_laser")) s_driveLaser = atoi(v);
+        else if (!strcmp(key, "laser_models")) sscanf(v, "%d %d", &s_laserModel[0], &s_laserModel[1]);
+        else if (!strcmp(key, "fake")) {
+            if (s_nbFakeActors < RACE_MAX_FAKE_ACTORS && sscanf(v, "%d %d", &s_fakeScene[s_nbFakeActors], &s_fakeActor[s_nbFakeActors]) == 2) s_nbFakeActors++;
         }
         else if (!strcmp(key, "oil")) {
             if (s_nbOilActors < RACE_MAX_OIL_ACTORS && sscanf(v, "%d %d", &s_oilScene[s_nbOilActors], &s_oilActor[s_nbOilActors]) == 2) s_nbOilActors++;
@@ -1622,7 +2128,11 @@ static void Load(const char *path, int carOnly = 0) {
     for (int i = 0; i < s_nbArcs; i++)
         if (!ArcPrepare(&s_arcs[i])) { Log_Info("[racemod] carried jump %d: not along the raised road -- left out", i + 1); s_arcs[i--] = s_arcs[--s_nbArcs]; }
     if (s_nbArcs) Log_Info("[racemod] %d carried jump(s), %d cube scenes", s_nbArcs, s_nbCubeScenes);
-    if (s_nbLoops || s_nbJumpCams || s_nbArcs) FollowCamEyeHook = RaceCameraEye;
+    if (s_nbLoops || s_nbJumpCams || s_nbArcs || s_nbTunnels) FollowCamEyeHook = RaceCameraEye;
+    // (a roulette wheel: its head and its ball posed as their cube's decors are drawn)
+    DecorPoseHook = s_wheel.On ? WheelDecors : NULL;
+    if (s_wheel.On) Log_Info("[racemod] roulette wheel at (%.0f,%.0f): %d turning pieces, its floor %.0f at the hole to %.0f at the wall, the drop onto place %d", s_wheel.X, s_wheel.Z,
+                             s_wheel.NbParts, WheelFloorAt(s_wheel.Hole), WheelFloorAt(s_wheel.Rim), s_wheel.Landing);
     if (s_car.Gears < 1) s_car.Gears = 1;
     if (s_car.Gears > RACE_MAX_GEARS) s_car.Gears = RACE_MAX_GEARS;
     for (S32 g = 0; g < s_car.Gears; g++)
@@ -1968,6 +2478,10 @@ static int StartScene(void) {
 void RaceMod_Story(void) {
     // (a car lapping on its own, parade=: the whole picture drawn again -- this runs just before the frame is drawn, AffScene(FirstTime))
     if (s_paradeFlip) { FirstTime = AFF_ALL_FLIP; s_paradeFlip = 0; }
+    // (and every frame of a race out of doors: with the camera still -- the car stopped, bitten, hit -- the engine draws only what moves over
+    // the picture kept from the last whole one, and what the race-track mode moves outside that left its copies behind: the user,
+    // 2026-10-10, a gas monster's dark double standing behind it as it struck; and the roulette wheel, decors, stood still)
+    else if (RaceMod_Active() && CubeMode == CUBE_EXTERIEUR && NewCube == -1) FirstTime = AFF_ALL_FLIP;
     // (the waking scene held white: now it fades in)
     if (s_whiteUntil && TimerRefHR >= s_whiteUntil && NewCube == -1) {
         s_whiteUntil = 0;
@@ -2050,6 +2564,9 @@ void RaceMod_Story(void) {
         Log_Info("[racemod] the dream's race put away: the car alone, %d gears to %d", (int)s_car.Gears, (int)s_car.GearTop[s_car.Gears - 1]);
         // (a fresh start of the scene, at its own start, as a new game's or the console's `cube`: FlagChgCube 2 carries the hero's animation
         // over the change -- FlagReinit, ChangeCube -- and the scene's own opening, which lays him on his bed, lost its animation to it)
+        // (with FlagChgCube 0 ChangeCube doesn't open the game clock's bracket but closes it: opened here, or it closes the one a loaded
+        // game leaves open and the clock goes back to the load -- as the rescue's did, Rescue)
+        SaveTimer();
         NewCube = wakeScene;
         FlagChgCube = 0;
         Log_Info("[racemod] the dream is over: Twinsen wakes up in scene %d", wakeScene);
@@ -2063,6 +2580,9 @@ void RaceMod_Story(void) {
     s_phase = PHASE_WAIT; s_wantGrid = 1;
     for (int n = 0; n < RACE_MAX_OPPONENTS; n++) if (s_opp[n].Count) { s_opp[n].Laps = 1; s_opp[n].S = 0; s_opp[n].Speed = 0; }
     if (scene >= 0 && !(CurrentCubeX == s_spots[0].CubeX && CurrentCubeY == s_spots[0].CubeZ)) {
+        // (the game clock's bracket opened here: asked for before AffScene, whose end clears FlagChgCube before the change is made, so
+        // ChangeCube doesn't open it but closes it -- as the rescue's, Rescue)
+        SaveTimer();
         NewCube = scene;
         NewPosX = s_spots[0].X; NewPosY = s_spots[0].Y; NewPosZ = s_spots[0].Z;
         FlagChgCube = 1;
@@ -2156,7 +2676,8 @@ U32 RaceMod_AutoInput(void) {
         const double want = LoopAim(l);
         return bits | (speed > want + 150 ? I_DOWN : speed > want - 60 ? 0 : I_UP);
     }
-    bits |= speed > here * 1.05 + 150 ? I_DOWN : I_UP;
+    // (the golden Gazogem running, or just off a boost panel: no brakes -- a player holds the accelerator, keeping every 10 km/h it gives)
+    bits |= speed > here * 1.05 + 150 && !RaceMod_NoTopSpeed() && (S32)TimerRefHR - s_panelAt > RACE_PANEL_PILOT_MS ? I_DOWN : I_UP;
     return bits;
 }
 
@@ -2363,9 +2884,29 @@ static int s_rescue = 0;                   // asked for by GereCodesJeu, done by
 static int s_rescueArrive = -1;            // a rescue into the safe place's scene: the line point, finished once the scene is in (RescueArrive)
 
 // A point of the line on the ground, in the cube the player is in: not over a jump's gap, where the line is the flight's arc.
+// A place over a jump's gap in a raised road, or within a point of it (the raised point nearest it, or one either side, with no floor --
+// Half 0): a car there would be in the air.
+static int OverRaisedGap(double x, double z) {
+    int best = -1;
+    double bd = 1e30;
+    for (int k = 0; k < s_nbRaised; k++) {
+        const double dx = s_raised[k].X - x, dz = s_raised[k].Z - z, d = dx * dx + dz * dz;
+        if (d < bd) { bd = d; best = k; }
+    }
+    if (best < 0) return 0;
+    for (int d = -1; d <= 1; d++) {
+        const int k = best + d;
+        if (k >= 0 && k < s_nbRaised && s_raised[k].Half == 0) return 1;
+    }
+    return 0;
+}
+
 static int LineOnGround(const T_RACE_OPPONENT *o, int i) {
     if (o->X[i] / 32768 != CurrentCubeX || o->Z[i] / 32768 != CurrentCubeY) return 0;
-    if (s_nbRaised) return 1;
+    // (on a raised road, not over a jump's gap: a car that missed a carried jump -- stopped by a fake mushroom's blast at the ramp, 2026-10-10
+    // -- drove off the lip, and its last safe place had been taken in the gap past it, the line there in the air: put back there over and
+    // over, it fell for the rest of the race)
+    if (s_nbRaised) return !OverRaisedGap(o->X[i], o->Z[i]);
     return abs(o->Y[i] - CalculAltitudeTerrain(o->X[i] - CurrentCubeX * 32768, o->Z[i] - CurrentCubeY * 32768, 0)) < 400;
 }
 
@@ -2753,6 +3294,7 @@ static void ArcPlace(const T_RACE_ARC *a, double s, double across, double *x, do
     const double len = a->S[k + 1] - a->S[k];
     double t = len > 0 ? (s - a->S[k]) / len : 0;
     if (t < 0) t = 0; else if (t > 1) t = 1;
+    s_arcSeg = a->Foot + k; s_arcT = t;
     double ux = q->X - p->X, uz = q->Z - p->Z;
     const double ul = sqrt(ux * ux + uz * uz);
     if (ul > 0) { ux /= ul; uz /= ul; } else { ux = 1; uz = 0; }
@@ -2761,6 +3303,15 @@ static void ArcPlace(const T_RACE_ARC *a, double s, double across, double *x, do
     *y = p->Y + (q->Y - p->Y) * t;
     *dx = ux; *dz = uz;
     *slope = len > 0 ? (q->Y - p->Y) / len : 0;
+}
+
+// A carried jump just taken, `across` its way: where across the landing the car comes down (the narrower of the lip -- a lane narrowing
+// into the roulette wheel's hole -- and the landing), how fast it is carried, from when.
+static void ArcTaken(const T_RACE_ARC *a, double across) {
+    const double room = (s_raised[a->LandFoot].Half < s_raised[a->Lip].Half ? s_raised[a->LandFoot].Half : s_raised[a->Lip].Half) - RAISED_INSET;
+    s_arcAcross1 = room <= 0 ? 0 : across > room ? room : across < -room ? -room : across;
+    s_arcV = ListBuggy[0].Speed > RACE_ARC_LEAST ? ListBuggy[0].Speed : RACE_ARC_LEAST;
+    s_arcTime = TimerRefHR;
 }
 
 // For RaceMod_Loop: non-zero when a carried jump carries the car this frame (its new place, cube-local, in *nx..*nz).
@@ -2785,10 +3336,32 @@ static S32 RaceArc(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz) {
             const double across = -(px - f->X) * uz + (pz - f->Z) * ux;
             if (fabs(across) > f->Half) continue;
             s_arcOn = i; s_arcLast = i; s_arcS = 0; s_arcAcross = across;
-            s_arcV = ListBuggy[0].Speed > RACE_ARC_LEAST ? ListBuggy[0].Speed : RACE_ARC_LEAST;
-            s_arcTime = TimerRefHR;
+            ArcTaken(a, across);
             Log_Info("[racemod] carried jump %d: on at %d units/s (carried at %.0f), %.0f across", i + 1, (int)ListBuggy[0].Speed, s_arcV, across);
             break;
+        }
+        // (or a car on the ramp, past its foot, going up it: one that crossed the foot stopped -- held by a fake mushroom's blast, it slid
+        // on over the line at no speed and was never taken; it drove up the ramp and off its lip, 2026-10-10 -- carried on from where it is)
+        for (int i = 0; i < s_nbArcs && s_arcOn < 0; i++) {
+            const T_RACE_ARC *a = &s_arcs[i];
+            for (int k = a->Foot; k < a->Lip; k++) {
+                const T_RACE_RAISED *p = &s_raised[k], *q = p + 1;
+                double ux = q->X - p->X, uz = q->Z - p->Z;
+                const double ul = sqrt(ux * ux + uz * uz);
+                if (ul <= 0) continue;
+                ux /= ul; uz /= ul;
+                const double px = *nx + cx - p->X, pz = *nz + cz - p->Z;
+                const double along = px * ux + pz * uz, across = -px * uz + pz * ux;
+                if (along < 0 || along > ul || fabs(across) > p->Half) continue;
+                const double y = p->Y + (q->Y - p->Y) * along / ul;
+                const double moved = (*nx - ox) * ux + (*nz - oz) * uz;
+                if (fabs(oy - y) > RACE_ARC_ENTRY || moved <= 0) continue;
+                s_arcOn = i; s_arcLast = i; s_arcS = a->S[k - a->Foot] + along; s_arcAcross = across;
+                ArcTaken(a, across);
+                Log_Info("[racemod] carried jump %d: on, up its ramp already (%.0f along), at %d units/s (carried at %.0f), %.0f across", i + 1, s_arcS,
+                         (int)ListBuggy[0].Speed, s_arcV, across);
+                break;
+            }
         }
         if (s_arcOn < 0) return 0;
     }
@@ -2801,7 +3374,10 @@ static S32 RaceArc(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz) {
     const double end = a->S[a->LandFoot - a->Foot];
     const int done = s_arcS >= end;
     double x, y, z, dx, dz, slope;
-    ArcPlace(a, done ? end : s_arcS, s_arcAcross, &x, &y, &z, &dx, &dz, &slope);
+    // (eased over the flight from where it was across the ramp to where the landing's rails let it be)
+    double f = end > 0 ? (done ? end : s_arcS) / end : 1;
+    f = f < 0 ? 0 : f > 1 ? 1 : f * f * (3 - 2 * f);
+    ArcPlace(a, done ? end : s_arcS, s_arcAcross + (s_arcAcross1 - s_arcAcross) * f, &x, &y, &z, &dx, &dz, &slope);
     const S32 beta = (S32)floor(atan2(dx, dz) * 4096 / (2 * RACE_PI) + 0.5) & 4095;
     ListBuggy[0].Speed = (S32)s_arcV;
     if (done) {
@@ -2863,6 +3439,7 @@ S32 RaceMod_Loop(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz) {
     T_OBJ_3D *obj = &hero->Obj;
     if (!RaceMod_Active() || Comportement != C_BUGGY || CubeMode != CUBE_EXTERIEUR) { s_loopOn = -1; s_loopState = LOOP_NONE; s_arcOn = -1; return 0; }
     if (s_loopState == LOOP_NONE && RaceArc(ox, oy, oz, nx, ny, nz)) return 1;
+    if (s_loopState == LOOP_NONE && s_arcOn < 0 && WheelMove(ox, oy, oz, nx, ny, nz)) return 1;
     if (s_loopState == LOOP_NONE) {
         if (!(obj->Master & 1) && (obj->Alpha || obj->Gamma)) { obj->Alpha = 0; obj->Gamma = 0; }
         if (!s_nbLoops || (hero->WorkFlags & (FALLING | ANIM_MASTER_GRAVITY))) return 0;
@@ -2986,7 +3563,72 @@ static S32 JumpCamera(S32 *eye, S32 *target) {
     return FALSE;
 }
 
-static S32 RaceCameraEye(S32 *eye, S32 *target) { return ArcCamera(eye, target) || JumpCamera(eye, target) || LoopCamera(eye, target) || RailCamera(eye, target); }
+// In a tunnel (InTunnel): the rail camera's eye -- behind the car along the road, looking at it -- low enough to be under the roof.
+static S32 TunnelCamera(S32 *eye, S32 *target) {
+    if (!s_nbTunnels || !s_nbRaised || CubeMode != CUBE_EXTERIEUR || Comportement != C_BUGGY) return FALSE;
+    const T_OBJET *hero = &ListObjet[NUM_PERSO];
+    S32 f;
+    int seg;
+    double lat, t;
+    if (!RaisedAt(hero->Obj.X + CurrentCubeX * 32768.0, hero->Obj.Z + CurrentCubeY * 32768.0, hero->Obj.Y + 64, RAISED_PAD, &f, &seg, &lat, &t) || abs(f - hero->Obj.Y) > 300) return FALSE;
+    const int k = InTunnel(seg);
+    if (k < 0) return FALSE;
+    const double back = s_railBack, upKept = s_railUp, lead = s_railLead;
+    s_railBack = RACE_TUNNEL_BACK;
+    s_railUp = s_tunnels[k].Roof - RACE_TUNNEL_EYE < RACE_TUNNEL_UP ? s_tunnels[k].Roof - RACE_TUNNEL_EYE : RACE_TUNNEL_UP;
+    s_railLead = RACE_TUNNEL_AHEAD;
+    s_railSight = RACE_TUNNEL_SIGHT; s_railCeil = s_tunnels[k].Roof - RACE_TUNNEL_UNDER;
+    const S32 done = RailCamera(eye, target);
+    s_railBack = back; s_railUp = upKept; s_railLead = lead; s_railSight = 0; s_railCeil = -1;
+    return done;
+}
+
+// The camera at the roulette wheel (roulette=). In its bowl: behind the car and over the bowl's floor there (the camera that follows the car
+// knows nothing of the bowl, and went into it). Dropping through the hole: the eye kept where it was, looking at the car going down. On the
+// road under the wheel, out from its hole: the camera that follows the car lifts its eye over the road it is on, and the wheel's way over
+// it is that stretch -- the eye went up over the bowl and the car was hidden under it -- so behind the car and low, under the bowl,
+// RACE_WHEEL_CAM_BACK behind it (past the near plane, CLIP_NEAR 3,000: an eye nearer than that and the car isn't drawn) until the eye itself
+// is out from under it.
+#define RACE_WHEEL_CAM_BACK 4200.0
+#define RACE_WHEEL_CAM_UP 2000.0           // (was 1,000, looking at a point 900 ahead of the car: the car hid the road -- the user, 2026-10-10:
+#define RACE_WHEEL_CAM_AHEAD 4000.0        // "When Twinsen drops out of the roulette wheel it's very hard for him to see where he's going")
+#define RACE_WHEEL_BOWL_BACK 4600.0
+#define RACE_WHEEL_BOWL_UP 2200.0
+#define RACE_WHEEL_BOWL_OVER 1500.0
+static S32 WheelCamera(S32 *eye, S32 *target) {
+    if (!s_wheel.On || CubeMode != CUBE_EXTERIEUR || Comportement != C_BUGGY) return FALSE;
+    const T_OBJ_3D *car = &ListObjet[NUM_PERSO].Obj;
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0, hx = car->X + cx, hz = car->Z + cz;
+    const double a = (car->Beta & 4095) * 2 * RACE_PI / 4096.0, fx = sin(a), fz = cos(a);
+    if (s_wheel.DropOn) {
+        eye[0] = s_wheel.Eye[0]; eye[1] = s_wheel.Eye[1]; eye[2] = s_wheel.Eye[2];
+        target[0] = car->X; target[1] = car->Y + 300; target[2] = car->Z;
+        return TRUE;
+    }
+    if (s_arcOn < 0 && OnWheel(hx, car->Y, hz)) {
+        const double ex = hx - fx * RACE_WHEEL_BOWL_BACK, ez = hz - fz * RACE_WHEEL_BOWL_BACK, re = WheelR(ex, ez);
+        const double floorE = WheelFloorAt(re < s_wheel.Rim ? re : s_wheel.Rim) + (re < s_wheel.Rim ? 0 : 600);
+        double ey = car->Y + RACE_WHEEL_BOWL_UP;
+        if (ey < floorE + RACE_WHEEL_BOWL_OVER) ey = floorE + RACE_WHEEL_BOWL_OVER;
+        eye[0] = (S32)(ex - cx); eye[1] = (S32)ey; eye[2] = (S32)(ez - cz);
+        target[0] = (S32)(car->X + fx * 900); target[1] = car->Y + 400; target[2] = (S32)(car->Z + fz * 900);
+        s_wheel.Eye[0] = eye[0]; s_wheel.Eye[1] = eye[1]; s_wheel.Eye[2] = eye[2];
+        return TRUE;
+    }
+    const double under = WheelUnderAt(s_wheel.Hole);
+    if (s_arcOn >= 0 || car->Y > under - 600) return FALSE;
+    const double ex = hx - fx * RACE_WHEEL_CAM_BACK, ez = hz - fz * RACE_WHEEL_CAM_BACK;
+    const double r = WheelR(ex, ez);
+    if (r > s_wheel.Outer + 600 && WheelR(hx, hz) > s_wheel.Outer) return FALSE;
+    double ey = car->Y + RACE_WHEEL_CAM_UP;
+    if (r < s_wheel.Outer + 600) { const double ceiling = WheelUnderAt(r) - 250; if (ey > ceiling) ey = ceiling; }
+    eye[0] = (S32)(ex - cx); eye[1] = (S32)ey; eye[2] = (S32)(ez - cz);
+    // (looking down the road over the car, at a place well ahead of it on the road)
+    target[0] = (S32)(car->X + fx * RACE_WHEEL_CAM_AHEAD); target[1] = car->Y + 200; target[2] = (S32)(car->Z + fz * RACE_WHEEL_CAM_AHEAD);
+    return TRUE;
+}
+
+static S32 RaceCameraEye(S32 *eye, S32 *target) { return ArcCamera(eye, target) || JumpCamera(eye, target) || LoopCamera(eye, target) || TunnelCamera(eye, target) || WheelCamera(eye, target) || RailCamera(eye, target); }
 
 S32 RaceMod_Rescue(void) {
     if (!RaceMod_Active() || !s_rescueOn || Comportement != C_BUGGY || !Guide() || s_safeIndex < 0) return 0;
@@ -3033,6 +3675,12 @@ static void Rescue(void) {
     // under the super jet-pack, off the end of a road that turned, 2026-10-06 -- back into it, at that place)
     if (s_safeScene >= 0 && (S32)NumCube != s_safeScene) {
         if (NewCube != -1 || s_rescueArrive >= 0 || s_safeIndex < 0 || s_safeIndex >= o->Count) return;
+        // (the game clock's bracket opened here: ChangeCube opens it only on FlagChgCube -- which the frame's end clears before a change
+        // asked for from here is made -- but always closes it, and without this its RestoreTimer closed the one a loaded game leaves
+        // open, and the clock went back to the load. The user's race, 2026-10-09, played from Play's save: Twinsen off the roulette
+        // wheel's south rim into the next cube, rescued back, the clock 153 s back -- his car held stopped by a stun now 153 s off, and
+        // Baldino lapping every few frames, his oil skid's speed run away)
+        SaveTimer();
         NewCube = s_safeScene;
         s_rescueArrive = s_safeIndex;
         Log_Info("[racemod] off the road out of scene %d (in %d): back to it", s_safeScene, (int)NumCube);
@@ -3066,7 +3714,8 @@ static void FallenBelow(S32 now) {
     T_OBJET *hero = &ListObjet[NUM_PERSO];
     const T_RACE_OPPONENT *o = Guide();
     if (!s_nbRaised || !s_rescueOn || !o || Comportement != C_BUGGY || CubeMode != CUBE_EXTERIEUR || s_flying >= 0 || s_arcOn >= 0 || s_loopOn >= 0
-            || now < s_jetUntil || s_rescue || s_rescueArrive >= 0 || (hero->WorkFlags & FALLING) || s_safeIndex < 0) { s_belowSince = 0; return; }
+            || now < s_jetUntil || s_rescue || s_rescueArrive >= 0 || (hero->WorkFlags & FALLING) || s_safeIndex < 0
+            || s_wheel.DropOn || OnWheel(hero->Obj.X + CurrentCubeX * 32768.0, hero->Obj.Y, hero->Obj.Z + CurrentCubeY * 32768.0)) { s_belowSince = 0; return; }
     const double wx = hero->Obj.X + CurrentCubeX * 32768.0, wz = hero->Obj.Z + CurrentCubeY * 32768.0;
     double near2 = 1e30;
     S32 nearY = 0;
@@ -3090,12 +3739,18 @@ static void FallenBelow(S32 now) {
 static int MushroomActor(T_RACE_MUSHROOM *m) {
     if (m->Scene != NumCube || m->Actor <= 0 || m->Actor >= NbObjets) return -1;
     if (!m->HasY && ListObjet[m->Actor].Obj.Y > -10000) { m->Y = ListObjet[m->Actor].Obj.Y; m->HasY = 1; }
+    if (s_fakeIconBody < 0 && ListObjet[m->Actor].Obj.Body.Num >= 0) s_fakeIconBody = ListObjet[m->Actor].Obj.Body.Num;
     return m->HasY ? m->Actor : -1;
 }
 
 static int Near(const T_OBJET *a, S32 x, S32 y, S32 z, S32 reach) {
     const double dx = a->Obj.X - x, dz = a->Obj.Z - z;
     return dx * dx + dz * dz < (double)reach * reach && abs(a->Obj.Y - y) < 900;
+}
+
+// Whether a race is running: after the grid's GO, alone or against others (not qualifying, nor waiting).
+static int RaceRunning(void) {
+    return s_phase == PHASE_RACE && (s_nbSpots ? s_goAt && TimerRefHR >= s_goAt : 1);
 }
 
 // Whether a race is on: other cars on the lap, after the grid's GO (not qualifying, nor the others waiting in the pits).
@@ -3148,6 +3803,7 @@ static int RandomPowerUp(double back) {
     for (int i = 0; i < PU_COUNT; i++) {
         w[i] = s_puWeight[i] * (back < 0 ? 1 : s_puLead[i] + (s_puLast[i] - s_puLead[i]) * back);
         if (i == PU_FUEL && s_fuelAlways) w[i] = 0;   // (every car has it all race)
+        if (i == PU_FAKE && !s_nbFakeActors) w[i] = 0;  // (a track built before them has no copies of the mushroom to show one)
         total += w[i];
     }
     double r = RaceRandom() * total;
@@ -3349,9 +4005,18 @@ static void UseItem(int pu, S32 now) {
     T_OBJET *hero = &ListObjet[NUM_PERSO];
     switch (pu) {
     case PU_FUEL: s_boostUntil = now + RACE_BOOST_MS; break;
+    case PU_GOLD: {
+        // (its time from the first use; each use a burst of Gazogem's boost and a kick)
+        if (!s_goldUntil) s_goldUntil = now + RACE_GOLD_MS;
+        s_goldLast = now;
+        if (s_boostUntil < now + RACE_GOLD_BURST_MS) s_boostUntil = now + RACE_GOLD_BURST_MS;
+        if (ListBuggy[0].Speed >= 0) ListBuggy[0].Speed += RACE_GOLD_INJECT;
+        Log_Info("[racemod] the golden Gazogem: %d km/h", (int)((ListBuggy[0].Speed * 36 + 2560) / 5120));
+        break;
+    }
     case PU_PROTECT:
         // (the game's own protection spell round him, its sprites and its hum -- taking no magic while it lasts: EXTRA.CPP)
-        s_protectUntil = now + RACE_PROTECT_MS; s_shrunkUntil = 0;
+        s_protectUntil = now + RACE_PROTECT_MS;
         if (!ProtectActif) { ToggleSortProtection(); s_protectSpell = 1; }
         break;
     case PU_LIGHTNING: {
@@ -3380,13 +4045,25 @@ static void UseItem(int pu, S32 now) {
         if (pu == PU_OIL) DropOil(x, hero->Obj.Y, z); else DropPenguin(x, hero->Obj.Y, z, -1);
         break;
     }
+    case PU_BALL_YELLOW:
+    case PU_BALL_GREEN:
+    case PU_BALL_RED:
+    case PU_BALL_FIRE:
+        Attack(pu, -1, hero->Obj.X + CurrentCubeX * 32768.0, hero->Obj.Y, hero->Obj.Z + CurrentCubeY * 32768.0, hero->Obj.Beta * 2 * 3.14159265358979 / 4096, now);
+        break;
+    case PU_FAKE: {
+        // dropped behind the car, where it is now
+        const double b = hero->Obj.Beta * 2 * 3.14159265358979 / 4096;
+        DropFake(hero->Obj.X + CurrentCubeX * 32768.0 - sin(b) * 1300, hero->Obj.Y, hero->Obj.Z + CurrentCubeY * 32768.0 - cos(b) * 1300, -1, now);
+        break;
+    }
     case PU_SUPERJET:
         // (nothing touches it: a skid, a blast's stop, a shrinking are over)
         s_jetUntil = now + RACE_JETPACK_MS; s_jetFactor = s_puJet[pu]; s_autoIndex = -1;
         s_skidUntil = 0; s_hitUntil = 0; s_shrunkUntil = 0;
         break;
     }
-    Message(s_puName[pu]);
+    // (its name not said on the screen: the item box shows it -- the user, 2026-10-10: "We also don't need a message for each pickup")
     Log_Info("[racemod] Twinsen uses %s%s", s_puName[pu], s_puJet[pu] > 0 && !Guide() ? " (no line: a boost, the keys his)" : "");
 }
 
@@ -3412,13 +4089,15 @@ static void ForgetPowerUps(const char *why) {
     s_boostUntil = s_protectUntil = s_shrunkUntil = s_jetUntil = 0;
     s_skidUntil = s_hitUntil = 0; s_autoIndex = -1; s_boltUntil = 0; s_nbBolts = 0;
     for (int k = 0; k < RACE_ITEM_SLOTS; k++) s_item[k] = -1;
-    s_sel = 0; s_takeAt = 0;
+    s_sel = 0; s_takeAt = 0; s_goldUntil = 0; s_goldLast = 0; s_slotOn = 0;
     for (int n = 0; n < RACE_MAX_OPPONENTS; n++) {
         T_RACE_OPPONENT *o = &s_opp[n];
         o->BoostUntil = o->HitUntil = o->JetUntil = o->ShoveUntil = o->SkidUntil = o->ShrunkUntil = 0;
     }
     for (int i = 0; i < RACE_MAX_PENGUINS; i++) s_penguins[i].On = 0;
     for (int i = 0; i < RACE_MAX_SLICKS; i++) s_slicks[i].On = 0;
+    for (int i = 0; i < RACE_MAX_FAKES; i++) s_fakes[i].On = 0;
+    for (int i = 0; i < RACE_MAX_SHOTS; i++) s_shots[i].On = 0;
     for (int i = 0; i < s_nbMush; i++) s_mush[i].Back = 0;
     if (s_heroHidden) { ListObjet[NUM_PERSO].Flags &= ~INVISIBLE; s_heroHidden = 0; }
     if (s_heroIsSmall && Comportement == C_BUGGY) InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
@@ -3464,7 +4143,12 @@ static void OpponentMushrooms(int n, T_OBJET *car) {
         if (now - o->TakeAt < RACE_ROW_MS) continue;
         o->TakeAt = now;
         const int pu = RandomPowerUp(BackShare(n));
-        if (pu == PU_PENGUIN || pu == PU_OIL) {
+        if (pu >= PU_BALL_YELLOW && pu <= PU_BALL_FIRE) {
+            Attack(pu, n, car->Obj.X + CurrentCubeX * 32768.0, car->Obj.Y, car->Obj.Z + CurrentCubeY * 32768.0, car->Obj.Beta * 2 * 3.14159265358979 / 4096, now);
+        } else if (pu == PU_FAKE) {
+            const double b = car->Obj.Beta * 2 * 3.14159265358979 / 4096;
+            DropFake(car->Obj.X + CurrentCubeX * 32768.0 - sin(b) * 1300, car->Obj.Y, car->Obj.Z + CurrentCubeY * 32768.0 - cos(b) * 1300, n, now);
+        } else if (pu == PU_PENGUIN || pu == PU_OIL) {
             const double b = car->Obj.Beta * 2 * 3.14159265358979 / 4096;
             const double x = car->Obj.X + CurrentCubeX * 32768.0 - sin(b) * 1300, z = car->Obj.Z + CurrentCubeY * 32768.0 - cos(b) * 1300;
             if (pu == PU_OIL) DropOil(x, car->Obj.Y, z); else DropPenguin(x, car->Obj.Y, z, n);
@@ -3476,9 +4160,6 @@ static void OpponentMushrooms(int n, T_OBJET *car) {
             const int protect = now < s_protectUntil;
             const S32 ms = ShrinkMs(BackShare(-1));
             if (!protect) s_shrunkUntil = now + ms;
-            char text[64];
-            snprintf(text, sizeof(text), protect ? "%s's lightning: protected!" : "%s's lightning: shrunk!", o->Name);
-            Message(text);
             if (protect) Log_Info("[racemod] %s's lightning strikes Twinsen's car: the protection spell holds", o->Name);
             else Log_Info("[racemod] Twinsen's car struck and shrunk by %s's lightning for %.1f s", o->Name, ms / 1000.0);
         } else if (s_puJet[pu] > 0) {
@@ -3517,7 +4198,6 @@ static void Slicks(S32 now, int driving) {
         if (driving && CubeMode == CUBE_EXTERIEUR && now >= s_skidUntil && now >= s_protectUntil && now >= s_jetUntil && Near(hero, lx, (S32)sl->Y, lz, RACE_OIL_REACH)) {
             s_skidUntil = now + RACE_SKID_MS; s_skidStart = now; s_skidBeta = hero->Obj.Beta; s_skidSpeed = ListBuggy[0].Speed;
             s_skidDir = RaceRandom() < 0.5 ? 1 : -1;
-            Message("Skidding on oil!");
             Log_Info("[racemod] Twinsen skids on oil");
             sl->On = 0;                     // (the car took it with it: a slick is one car's)
         } else if (driving && CubeMode == CUBE_EXTERIEUR && (now < s_protectUntil || now < s_jetUntil) && Near(hero, lx, (S32)sl->Y, lz, RACE_OIL_REACH)) {
@@ -3545,6 +4225,369 @@ static void Slicks(S32 now, int driving) {
         if (s_oilScene[k] == NumCube && s_oilActor[k] > 0 && s_oilActor[k] < NbObjets) ListObjet[s_oilActor[k]].Obj.Y = -20000;
 }
 
+// ---- the magic ball's attacks and the fake mushrooms -------------------------------------------------------------------------------
+
+// A car where it is (world units): -1 Twinsen's, else an opponent's -- its car where this scene has it in sight, else where its line has
+// it in the race. 0 when it isn't anywhere (an opponent waiting out of sight, no race).
+static int CarAt(int who, double *x, double *y, double *z) {
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    if (who < 0) {
+        if (CubeMode != CUBE_EXTERIEUR) return 0;
+        const T_OBJET *h = &ListObjet[NUM_PERSO];
+        *x = h->Obj.X + cx; *y = h->Obj.Y; *z = h->Obj.Z + cz;
+        return 1;
+    }
+    T_RACE_OPPONENT *op = &s_opp[who];
+    if (!op->Count || !op->Scenes) return 0;
+    const int a = OpponentActor(op);
+    if (a >= 0 && ListObjet[a].Obj.Y > -10000) { *x = ListObjet[a].Obj.X + cx; *y = ListObjet[a].Obj.Y; *z = ListObjet[a].Obj.Z + cz; return 1; }
+    if (!RaceOn()) return 0;
+    double v, dx, dz;
+    PathAt(op, op->S, x, z, y, &v, &dx, &dz);
+    return 1;
+}
+
+static const char *CarName(int who) { return who < 0 ? "Twinsen" : s_opp[who].Name; }
+
+// The car nearest ahead of `who` in the race (-2 none: it leads), by how far round each is.
+static int CarInFront(int who) {
+    const double mine = who < 0 ? PlayerProgress() : OpponentProgress(&s_opp[who]);
+    int best = -2;
+    double gap = 1e30;
+    if (who >= 0) { const double p = PlayerProgress(); if (p > mine && p - mine < gap) { gap = p - mine; best = -1; } }
+    for (int n = 0; n < RACE_MAX_OPPONENTS; n++) {
+        if (n == who || !s_opp[n].Count || !s_opp[n].Scenes) continue;
+        const double p = OpponentProgress(&s_opp[n]);
+        if (p > mine && p - mine < gap) { gap = p - mine; best = n; }
+    }
+    return best;
+}
+
+// Where a place is along the guide line (its S) and to the side of it -- the nearest point within `window` points of `hint` (a fresh
+// search with no hint).
+static double GuideS(const T_RACE_OPPONENT *o, double x, double y, double z, double hint, double *side) {
+    int best = -1;
+    double bd = 1e30;
+    if (hint >= 0) {
+        int i0 = 0;
+        while (i0 < o->Count - 1 && o->Cum[i0 + 1] < hint) i0++;
+        for (int k = -120; k <= 120; k++) {
+            const int i = ((i0 + k) % o->Count + o->Count) % o->Count;
+            const double d = LineDistance(o, i, x, y, z);
+            if (d < bd) { bd = d; best = i; }
+        }
+    }
+    if (best < 0 || bd > 12.0 * 512 * 12 * 512)
+        for (int i = 0; i < o->Count; i++) { const double d = LineDistance(o, i, x, y, z); if (d < bd) { bd = d; best = i; } }
+    const double s = o->Cum[best];
+    double lx, lz, ly, v, dx, dz;
+    PathAt(o, s, &lx, &lz, &ly, &v, &dx, &dz);
+    const double len = sqrt(dx * dx + dz * dz);
+    if (side) *side = len > 0 ? ((x - lx) * dz - (z - lz) * dx) / len : 0;
+    return s;
+}
+
+// A point of the guide line and to its side (the inverse of GuideS), its height the line's.
+static void GuideAt(const T_RACE_OPPONENT *o, double s, double side, double *x, double *y, double *z, double *hx, double *hz) {
+    double lx, lz, ly, v, dx, dz;
+    s = fmod(s, o->Length); if (s < 0) s += o->Length;
+    PathAt(o, s, &lx, &lz, &ly, &v, &dx, &dz);
+    const double len = sqrt(dx * dx + dz * dz);
+    *hx = len > 0 ? dx / len : 0; *hz = len > 0 ? dz / len : 1;
+    *x = lx + side * *hz; *z = lz - side * *hx; *y = ly;
+}
+
+// A car struck (a ball's hit, a fake mushroom's blast): -1 Twinsen's -- stopped as by a penguin's blast unless the protection spell or the
+// super jet-pack is on -- else an opponent's, stopped with its hit animation unless it is on a super jet-pack.
+static void CarStruckFor(int who, S32 now, const char *what, const char *by, S32 hold, const char *message);
+static void CarStruck(int who, S32 now, const char *what, const char *by) { CarStruckFor(who, now, what, by, RACE_PENGUIN_HOLD, NULL); }
+
+// ... held `hold` ms, and Twinsen told `message` (NULL: "Hit by ...!") -- a gas monster's bite (Monsters).
+static void CarStruckFor(int who, S32 now, const char *what, const char *by, S32 hold, const char *message) {
+    if (who < 0) {
+        T_OBJET *hero = &ListObjet[NUM_PERSO];
+        if (now < s_protectUntil || now < s_jetUntil || (hero->Flags & NO_CHOC)) {
+            Log_Info("[racemod] %s hits Twinsen's car: %s", what, now < s_protectUntil ? "the protection spell holds" : now < s_jetUntil ? "the super jet-pack" : "he can't be hit");
+            return;
+        }
+        HitObj(PenguinHitter(), NUM_PERSO, RACE_SHOT_FORCE, -1);
+        ListBuggy[0].Speed = 0;
+        if (s_hitUntil < now + hold) s_hitUntil = now + hold;
+        // (not said on the screen: the car stopped, its stars, say it -- the user, 2026-10-10: "We don't need messages saying 'Hit by
+        // shuttle', 'bitten by gas monster', or 'Hit by gunner'"; the log has it)
+        (void)message;
+        Log_Info("[racemod] Twinsen's car hit by %s%s%s", by ? by : "", by ? "'s " : "", what);
+        return;
+    }
+    T_RACE_OPPONENT *op = &s_opp[who];
+    if (now < op->JetUntil) return;
+    if (op->HitUntil < now + hold) op->HitUntil = now + hold;
+    Log_Info("[racemod] %s hit by %s%s%s", op->Name, by ? by : "", by ? "'s " : "", what);
+    const int index = OpponentActor(op);
+    if (index < 0 || ListObjet[index].Obj.Y < -10000) return;
+    T_OBJET *car = &ListObjet[index];
+    InitAnim(GEN_ANIM_CHOC, ANIM_ALL_THEN, (U8)index);
+    InitHitExtraPof(car->Obj.X, car->Obj.Y + car->YMax + 1, car->Obj.Z, RACE_SHOT_FORCE);
+}
+
+// OBJECT.CPP HitObj: an opponent's car hit by Twinsen -- his own magic ball thrown from the car -- is stopped as the power-ups' balls stop
+// it (its armour took the game's hits without a flinch). 1 when it was one.
+S32 RaceMod_OpponentStruck(U8 num, U8 hitter) {
+    if (!RaceMod_Active() || hitter != NUM_PERSO || num == NUM_PERSO) return 0;
+    for (int n = 0; n < RACE_MAX_OPPONENTS; n++) {
+        if (!s_opp[n].Count || !s_opp[n].Scenes || OpponentActor(&s_opp[n]) != num) continue;
+        const S32 now = TimerRefHR;
+        if (now >= s_opp[n].HitUntil) CarStruck(n, now, "magic ball", "Twinsen");
+        return 1;
+    }
+    return 0;
+}
+
+static void LaunchShot(int kind, int owner, int target, double x, double y, double z, double hx, double hz, S32 now) {
+    int k = -1;
+    for (int i = 0; i < RACE_MAX_SHOTS && k < 0; i++) if (!s_shots[i].On) k = i;
+    if (k < 0) {
+        k = 0;
+        for (int i = 1; i < RACE_MAX_SHOTS; i++) if (s_shots[i].T0 < s_shots[k].T0) k = i;
+        if (s_shots[k].Extra >= 0 && s_shots[k].Extra < MAX_EXTRAS) ListExtra[s_shots[k].Extra].Sprite = -1;
+    }
+    T_RACE_SHOT *sh = &s_shots[k];
+    memset(sh, 0, sizeof(*sh));
+    sh->On = 1; sh->Kind = kind; sh->Owner = owner; sh->Target = target; sh->Extra = -1;
+    sh->Hx = hx; sh->Hz = hz;
+    sh->X = x + hx * 900; sh->Y = y + RACE_SHOT_RISE; sh->Z = z + hz * 900;      // (out in front of the car)
+    sh->T0 = now; sh->Trail = now;
+    const T_RACE_OPPONENT *o = Guide();
+    if (o) sh->S = GuideS(o, sh->X, y, sh->Z, -1, &sh->Side);
+    sh->SideV = RaceRandom() < 0.5 ? RACE_ROLL_ACROSS : -RACE_ROLL_ACROSS;
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    if (CubeMode == CUBE_EXTERIEUR && sh->X >= cx && sh->X < cx + 32768 && sh->Z >= cz && sh->Z < cz + 32768)
+        SampleMagicBall((S32)(sh->X - cx), (S32)sh->Y, (S32)(sh->Z - cz));
+}
+
+// A ball power-up used by a car (`owner` -1 Twinsen, else an opponent) at (x, y, z) facing `beta` (radians): each out of the front of
+// the car -- the yellow darts ahead, the green rolls ahead, the red goes after the car in front (with none, it darts ahead as far again),
+// the fire ball one after every other car, every one of them going forwards round the lap to its car (the ones after the cars behind
+// went back along the track: the user, 2026-10-10, "Make all magic balls exit the car forwards instead of being dropped behind").
+static void Attack(int pu, int owner, double x, double y, double z, double beta, S32 now) {
+    const double hx = sin(beta), hz = cos(beta);
+    switch (pu) {
+    case PU_BALL_YELLOW: LaunchShot(SHOT_YELLOW, owner, -2, x, y, z, hx, hz, now); break;
+    case PU_BALL_GREEN: LaunchShot(SHOT_GREEN, owner, -2, x, y, z, hx, hz, now); break;
+    case PU_BALL_RED: {
+        const int target = CarInFront(owner);
+        LaunchShot(SHOT_RED, owner, target, x, y, z, hx, hz, now);
+        Log_Info("[racemod] %s's red ball goes after %s", CarName(owner), target == -2 ? "no one (in the lead)" : CarName(target));
+        break;
+    }
+    case PU_BALL_FIRE: {
+        int count = 0;
+        if (owner >= 0) { LaunchShot(SHOT_FIRE, owner, -1, x, y, z, hx, hz, now); count++; }
+        for (int n = 0; n < RACE_MAX_OPPONENTS; n++)
+            if (n != owner && s_opp[n].Count && s_opp[n].Scenes) { LaunchShot(SHOT_FIRE, owner, n, x, y, z, hx, hz, now); count++; }
+        Log_Info("[racemod] %s's fire ball splits in %d", CarName(owner), count);
+        break;
+    }
+    }
+    if (owner >= 0) Log_Info("[racemod] %s uses %s", s_opp[owner].Name, s_puName[pu]);
+}
+
+// Every frame: the balls in flight -- moved, shown where they are in this scene (a sprite each, a trail behind it), and any car they reach
+// stopped.
+static void Shots(S32 now, int driving) {
+    const T_RACE_OPPONENT *o = Guide();
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    static S32 last = 0;
+    double dt = last ? (now - last) / 1000.0 : 0;
+    last = now;
+    if (dt < 0) dt = 0;
+    if (dt > 0.1) dt = 0.1;
+    static const char *const names[] = {"yellow magic ball", "green magic ball", "red magic ball", "fire ball", "green laser", "red laser"};
+    for (int i = 0; i < RACE_MAX_SHOTS; i++) {
+        T_RACE_SHOT *sh = &s_shots[i];
+        if (!sh->On) continue;
+        const S32 age = now - sh->T0;
+        const double fromX = sh->X, fromZ = sh->Z;      // (where it was: a car hit anywhere along its way since -- fast, it can pass one in a frame)
+        int done = 0;
+        const int laser = sh->Kind == SHOT_LASER_GREEN || sh->Kind == SHOT_LASER_RED;
+        if (sh->Kind == SHOT_YELLOW || (sh->Kind == SHOT_RED && sh->Target == -2) || laser || !o) {
+            // straight ahead, over the road
+            const double step = (laser ? RACE_LASER_SPEED : RACE_DART_SPEED) * dt;
+            sh->X += sh->Hx * step; sh->Z += sh->Hz * step; sh->Travelled += step;
+            if (o) { double side, y, x2, z2, hx, hz; sh->S = GuideS(o, sh->X, sh->Y, sh->Z, sh->S, &side); GuideAt(o, sh->S, side, &x2, &y, &z2, &hx, &hz); sh->Y = y + RACE_SHOT_RISE; }
+            if (sh->Travelled >= (laser ? RACE_LASER_RANGE : RACE_DART_RANGE * (sh->Kind == SHOT_RED ? 2 : 1))) done = 1;
+        } else if (sh->Kind == SHOT_GREEN) {
+            // along the track, from rail to rail, hopping
+            sh->S += RACE_ROLL_SPEED * dt;
+            sh->Side += sh->SideV * dt;
+            if (sh->Side > RACE_ROLL_SIDE) { sh->Side = RACE_ROLL_SIDE; sh->SideV = -fabs(sh->SideV); }
+            if (sh->Side < -RACE_ROLL_SIDE) { sh->Side = -RACE_ROLL_SIDE; sh->SideV = fabs(sh->SideV); }
+            double y, hx, hz;
+            GuideAt(o, sh->S, sh->Side, &sh->X, &y, &sh->Z, &hx, &hz);
+            sh->Y = y + 250 + 650 * fabs(sin(age * 3.14159265358979 / 450.0));
+            if (age >= RACE_GREEN_MS) done = 1;
+        } else {
+            // after its car: forwards along the track, round the lap to it however far behind the thrower it is, straight at it once near
+            // and ahead; until it hits it (a car not on the lap for the moment -- in another scene, not placed -- waited for)
+            double tx, ty, tz;
+            if (!CarAt(sh->Target, &tx, &ty, &tz)) {
+                if (sh->Target < -1 || age >= RACE_HOME_MS * 4) done = 1;
+                else {
+                    sh->S += RACE_HOME_SPEED * dt;
+                    double y, hx, hz;
+                    GuideAt(o, sh->S, sh->Side, &sh->X, &y, &sh->Z, &hx, &hz);
+                    sh->Y = y + RACE_SHOT_RISE;
+                }
+            } else {
+                const double dx = tx - sh->X, dz = tz - sh->Z, d = sqrt(dx * dx + dz * dz), step = RACE_HOME_SPEED * dt;
+                double tside;
+                double ahead = fmod(GuideS(o, tx, ty, tz, -1, &tside) - sh->S, o->Length);
+                if (ahead < 0) ahead += o->Length;
+                if (d < RACE_HOME_DIRECT && (ahead < RACE_HOME_DIRECT * 2 || age > 600)) {
+                    const double dy = ty + RACE_SHOT_RISE - sh->Y;
+                    const double f = d > step ? step / d : 1;
+                    sh->X += dx * f; sh->Z += dz * f; sh->Y += dy * (d > 1 ? (f < 1 ? f : 1) : 1);
+                    sh->S = GuideS(o, sh->X, sh->Y, sh->Z, sh->S, NULL);
+                } else {
+                    sh->S += ahead < step ? ahead : step;
+                    sh->Side += (tside - sh->Side) * (dt * 2 < 1 ? dt * 2 : 1);
+                    double y, hx, hz;
+                    GuideAt(o, sh->S, sh->Side, &sh->X, &y, &sh->Z, &hx, &hz);
+                    sh->Y = y + RACE_SHOT_RISE;
+                }
+            }
+        }
+        // a car it reaches (not its own: the red and the fire only their own targets)
+        if (!done && (age > 150 || sh->Kind >= SHOT_RED))
+            for (int who = -1; who < RACE_MAX_OPPONENTS && !done; who++) {
+                if (who == sh->Owner || (sh->Kind >= SHOT_RED && sh->Target != -2 && who != sh->Target)) continue;
+                if (who < 0 && !driving) continue;
+                if (who >= 0 && (!s_opp[who].Count || !s_opp[who].Scenes || now < s_opp[who].HitUntil)) continue;
+                double x, y, z;
+                if (!CarAt(who, &x, &y, &z)) continue;
+                const double wx = sh->X - fromX, wz = sh->Z - fromZ, w2 = wx * wx + wz * wz;
+                double along = w2 > 0 ? ((x - fromX) * wx + (z - fromZ) * wz) / w2 : 1;
+                if (along < 0) along = 0;
+                if (along > 1) along = 1;
+                const double dx = x - (fromX + wx * along), dz = z - (fromZ + wz * along);
+                const double reach = laser ? RACE_LASER_REACH : RACE_SHOT_REACH;
+                if (dx * dx + dz * dz > reach * reach || fabs(y + RACE_SHOT_RISE - sh->Y) > 1400) continue;
+                const S32 lx = (S32)(sh->X - cx), lz = (S32)(sh->Z - cz);
+                if (CubeMode == CUBE_EXTERIEUR && lx >= 0 && lx < 32768 && lz >= 0 && lz < 32768) {
+                    if (laser) InitHitExtraPof(lx, (S32)sh->Y, lz, RACE_SHOT_FORCE); else MagicBallExplo(lx, (S32)sh->Y, lz, 0);
+                }
+                CarStruck(who, now, names[sh->Kind], CarName(sh->Owner));
+                Log_Info("[racemod] (the %s hit after %.1f s)", names[sh->Kind], age / 1000.0);
+                done = 1;
+            }
+        // shown: its sprite in this scene, moved; a trail behind it
+        const S32 lx = (S32)(sh->X - cx), lz = (S32)(sh->Z - cz);
+        const int here = !done && CubeMode == CUBE_EXTERIEUR && lx >= 0 && lx < 32768 && lz >= 0 && lz < 32768;
+        const S16 sprite = laser ? (S16)(3 + 32768) : (S16)(8 + sh->Kind);
+        if (sh->Extra >= 0 && (sh->Extra >= MAX_EXTRAS || ListExtra[sh->Extra].Sprite != sprite)) sh->Extra = -1;
+        if (!here) {
+            if (sh->Extra >= 0) { ListExtra[sh->Extra].Sprite = -1; sh->Extra = -1; }
+        } else {
+            if (sh->Extra < 0) sh->Extra = laser ? LaserExtra(s_laserModel[sh->Kind == SHOT_LASER_RED], lx, (S32)sh->Y, lz)
+                                                 : InitExtraAnimSprite(255, lx, (S32)sh->Y, lz, sprite, sprite, RACE_HOME_MS + 1000, RACE_SHOT_SCALE, 0, 0);
+            if (sh->Extra >= 0) {
+                ListExtra[sh->Extra].PosX = lx; ListExtra[sh->Extra].PosY = (S32)sh->Y; ListExtra[sh->Extra].PosZ = lz;
+                if (laser) ListExtra[sh->Extra].Beta = (S16)((S32)(atan2(sh->Hx, sh->Hz) * 4096 / (2 * 3.14159265358979)) & 4095);
+            }
+        }
+        if (done) sh->On = 0;
+    }
+}
+
+// A laser's bolt in this scene: the model as a 3D extra (EXTRA.CPP AffSpecial's case 3 draws it, its Scale the pitch), moved by Shots
+// rather than flown by the extras' own code.
+static int LaserExtra(int model, S32 x, S32 y, S32 z) {
+    if (model < 0) return -1;
+    for (int n = 0; n < MAX_EXTRAS; n++) {
+        T_EXTRA *e = &ListExtra[n];
+        if (e->Sprite != -1) continue;
+        e->Body = (S16)model; e->PtrBody = (U8 *)GivePtrObjFix(model);
+        e->Sprite = (S16)(3 + 32768); e->Scale = 0; e->Flags = EXTRA_NO_SHADOW;
+        e->PosX = x; e->PosY = y; e->PosZ = z; e->Vx = e->Vy = e->Vz = 0;
+        e->Beta = 0; e->Owner = 255; e->Timer = TimerRefHR; e->TimeOut = 0; e->Divers = 0; e->HitForce = 0; e->Poids = 0; e->Info = 0;
+        return n;
+    }
+    return -1;
+}
+
+// Twinsen drives one of his laser cars (his own car: the user, 2026-10-08, "let's keep the look of his original car, it already has an
+// animation for firing bullets just make it so this gun fires the lasers instead").
+S32 RaceMod_LaserCar(void) {
+    return RaceMod_Active() && s_driveLaser > 0 && s_laserModel[s_driveLaser == 2] >= 0 && Comportement == C_BUGGY;
+}
+
+// FICHE.CPP F_THROW_MAGIC_EXTRA (the buggy's gun: a magic ball out of its muzzle on each shot of its firing animation): in a laser car,
+// a laser bolt instead, straight ahead out of the front of the car. Non-zero: fired, the animation's own ball left out.
+S32 RaceMod_LaserThrow(S32 numobj) {
+    if (numobj != NUM_PERSO || !RaceMod_LaserCar() || CubeMode != CUBE_EXTERIEUR) return 0;
+    static int told = 0;
+    if (!told) { told = 1; Log_Info("[racemod] Twinsen's car's gun fires %s lasers", s_driveLaser == 2 ? "red" : "green"); }
+    const T_OBJET *hero = &ListObjet[NUM_PERSO];
+    const double b = hero->Obj.Beta * 2 * 3.14159265358979 / 4096, hx = sin(b), hz = cos(b);
+    LaunchShot(s_driveLaser == 2 ? SHOT_LASER_RED : SHOT_LASER_GREEN, -1, -2, hero->Obj.X + CurrentCubeX * 32768.0 + hx * RACE_LASER_MUZZLE, hero->Obj.Y,
+               hero->Obj.Z + CurrentCubeY * 32768.0 + hz * RACE_LASER_MUZZLE, hx, hz, TimerRefHR);
+    return 1;
+}
+
+static void DropFake(double x, double y, double z, int dropper, S32 now) {
+    int k = -1;
+    for (int i = 0; i < RACE_MAX_FAKES && k < 0; i++) if (!s_fakes[i].On) k = i;
+    if (k < 0) { k = 0; for (int i = 1; i < RACE_MAX_FAKES; i++) if (s_fakes[i].Dropped < s_fakes[k].Dropped) k = i; }
+    T_RACE_FAKE *f = &s_fakes[k];
+    f->On = 1; f->Dropper = dropper; f->X = x; f->Y = y; f->Z = z; f->Dropped = now; f->Posed = -1;
+    Log_Info("[racemod] %s drops a fake mushroom", CarName(dropper));
+}
+
+// Every frame: the fake mushrooms -- shown by this scene's copies of the mushroom, on the road where they lie; a car that drives into one
+// (not the one that dropped it, for a moment) sets it off: a blast, the car stopped.
+static void Fakes(S32 now, int driving) {
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    int k = 0;
+    for (int i = 0; i < RACE_MAX_FAKES; i++) {
+        T_RACE_FAKE *f = &s_fakes[i];
+        if (!f->On) continue;
+        const S32 lx = (S32)(f->X - cx), lz = (S32)(f->Z - cz);
+        const int here = CubeMode == CUBE_EXTERIEUR && lx >= 0 && lx < 32768 && lz >= 0 && lz < 32768;
+        if (here && f->Posed != (S32)NumCube) {
+            int ok;
+            const S32 ground = SlickGround(lx, lz, (S32)f->Y, &ok);
+            if (ok) f->Y = ground;
+            f->Posed = NumCube;
+        }
+        if (here)
+            for (; k < s_nbFakeActors; k++) {
+                if (s_fakeScene[k] != NumCube || s_fakeActor[k] <= 0 || s_fakeActor[k] >= NbObjets) continue;
+                T_OBJET *a = &ListObjet[s_fakeActor[k]];
+                a->Obj.X = lx; a->Obj.Y = (S32)f->Y; a->Obj.Z = lz;
+                a->XMin = a->XMax = a->ZMin = a->ZMax = 0;
+                k++;
+                break;
+            }
+        // a car into it
+        int hit = -3;
+        for (int who = -1; who < RACE_MAX_OPPONENTS && hit == -3; who++) {
+            if (who == f->Dropper && now - f->Dropped < RACE_FAKE_ARM) continue;
+            if (who < 0 && !driving) continue;
+            if (who >= 0 && (!s_opp[who].Count || !s_opp[who].Scenes || !RaceOn())) continue;
+            double x, y, z;
+            if (!CarAt(who, &x, &y, &z)) continue;
+            if ((x - f->X) * (x - f->X) + (z - f->Z) * (z - f->Z) < (double)RACE_MUSHROOM_REACH * RACE_MUSHROOM_REACH && fabs(y - f->Y) < 900) hit = who;
+        }
+        if (hit == -3) continue;
+        if (here) DoImpact(RACE_PENGUIN_IMPACT, lx, (S32)f->Y, lz, 255);
+        CarStruck(hit, now, "a fake mushroom", NULL);
+        f->On = 0;
+    }
+    // the scene's copies not in use, out of sight
+    for (; k < s_nbFakeActors; k++)
+        if (s_fakeScene[k] == NumCube && s_fakeActor[k] > 0 && s_fakeActor[k] < NbObjets) ListObjet[s_fakeActor[k]].Obj.Y = -20000;
+}
+
 // Every frame: the mushrooms of this scene (gone while taken, grown back after), the player's car over one, the penguins going off.
 static void PowerUps(S32 now, int driving) {
     T_OBJET *hero = &ListObjet[NUM_PERSO];
@@ -3569,7 +4612,7 @@ static void PowerUps(S32 now, int driving) {
         s_takeAt = now;
         const double back = BackShare(-1);
         s_item[slot] = RandomPowerUp(back);
-        s_itemAt[slot] = now + RACE_ROLL_MS;
+        s_itemAt[slot] = now + RACE_ITEM_ROLL_MS;
         if (s_item[s_sel] < 0 || s_sel == slot) s_sel = slot;
         Log_Info("[racemod] Twinsen takes %s (slot %d; %.2f of the way back)", s_puName[s_item[slot]], slot + 1, back);
     }
@@ -3578,10 +4621,21 @@ static void PowerUps(S32 now, int driving) {
     const int shift = CheckKey(K_SHIFT) || CheckKey(K_SHIFT_RIGHT), q = CheckKey(K_Q);
     if (driving && q && !s_qWas && s_item[s_sel ^ 1] >= 0) { s_sel ^= 1; Log_Info("[racemod] item slot %d selected", s_sel + 1); }
     const int k = s_item[s_sel] >= 0 ? s_sel : s_sel ^ 1;
-    if (driving && s_item[k] >= 0 && now >= s_itemAt[k] && ((shift && !s_shiftWas) || (s_auto && s_autoDrop > 0 && now >= s_itemAt[k] + s_autoDrop))) {
+    // (the golden Gazogem's time over: gone from its slot)
+    for (int g = 0; g < RACE_ITEM_SLOTS; g++)
+        if (s_item[g] == PU_GOLD && s_goldUntil && now >= s_goldUntil) {
+            s_item[g] = -1; s_goldUntil = 0;
+            if (s_sel == g && s_item[g ^ 1] >= 0) s_sel = g ^ 1;
+            Log_Info("[racemod] the golden Gazogem is used up");
+        }
+    const int gold = s_item[k] == PU_GOLD;
+    if (driving && s_item[k] >= 0 && now >= s_itemAt[k] && ((shift && !s_shiftWas)
+            || (s_auto && s_autoDrop > 0 && now >= s_itemAt[k] + s_autoDrop && (!gold || now >= s_goldLast + RACE_GOLD_AUTO_MS)))) {
         const int pu = s_item[k];
-        s_item[k] = -1;
-        if (s_item[k ^ 1] >= 0) s_sel = k ^ 1;
+        if (!gold) {
+            s_item[k] = -1;
+            if (s_item[k ^ 1] >= 0) s_sel = k ^ 1;
+        }
         s_shiftBlock = shift;
         UseItem(pu, now);
     }
@@ -3600,8 +4654,8 @@ static void PowerUps(S32 now, int driving) {
     if (superJet || driveAs) { hero->Flags |= INVISIBLE; s_heroHidden = 1; }
     else if (s_heroHidden) { hero->Flags &= ~INVISIBLE; s_heroHidden = 0; }
     // shrunk by an opponent's lightning: Twinsen's car at half its size while it lasts
-    const int small = driving && s_heroSmall >= 0 && now < s_shrunkUntil && now >= s_protectUntil && now >= s_jetUntil;
-    s_driveSmallNow = driving && now < s_shrunkUntil && now >= s_protectUntil && now >= s_jetUntil;
+    const int small = driving && s_heroSmall >= 0 && now < s_shrunkUntil && now >= s_jetUntil;
+    s_driveSmallNow = driving && now < s_shrunkUntil && now >= s_jetUntil;
     if (small && hero->GenBody != s_heroSmall) { InitBody((U8)s_heroSmall, NUM_PERSO); s_heroIsSmall = 1; }
     else if (!small && s_heroIsSmall) { if (driving) InitBody(GEN_BODY_TUNIQUE, NUM_PERSO); s_heroIsSmall = 0; }
     // the protection spell's time up
@@ -3624,6 +4678,8 @@ static void PowerUps(S32 now, int driving) {
     Penguins(now, driving);
     if (now >= s_jetUntil && s_jetUntil) { s_jetUntil = 0; s_autoIndex = -1; }
     Slicks(now, driving);
+    Fakes(now, driving);
+    Shots(now, driving);
 }
 
 // A penguin goes off: the blast (where the player is) and every car near it stopped.
@@ -3647,7 +4703,6 @@ static void PenguinOff(int i, S32 now) {
             HitObj(PenguinHitter(), NUM_PERSO, RACE_BLAST_FORCE, -1);
             ListBuggy[0].Speed = 0;
             if (s_hitUntil < now + RACE_PENGUIN_HOLD) s_hitUntil = now + RACE_PENGUIN_HOLD;
-            Message("Blown up by a penguin!");
             Log_Info("[racemod] Twinsen's car blown up by a penguin: stopped");
         }
         for (int n = 0; n < RACE_MAX_OPPONENTS; n++) {
@@ -3803,6 +4858,13 @@ static S32 s_noCollideScene = -1;
 S32 RaceMod_NoCollide(S32 numobj) {
     // (the car lapping on its own, parade=: through Twinsen and his car alike -- it keeps to its line whatever is in its way)
     if (RaceMod_Active() && numobj > 0 && numobj == s_paradeActorNow) return 1;
+    // (a gas monster: its bite is the race-track mode's own -- Monsters)
+    if (RaceMod_Active() && numobj > 0)
+        for (int i = 0; i < s_nbMonsters; i++)
+            for (int k = 0; k < s_monsters[i].NbSeen; k++)
+                if (s_monsters[i].SeenScene[k] == (S32)NumCube && s_monsters[i].SeenActor[k] == numobj) return 1;
+    // (nothing runs into Twinsen's car on the super jet-pack either: a shuttle coming down onto it)
+    if (numobj == NUM_PERSO && RaceMod_JetGhost()) return 1;
     if (!RaceMod_Active() || !s_powerups || numobj <= 0 || numobj >= MAX_OBJETS) return 0;
     // (a super jet-pack goes through the cars: Twinsen's through any in its way -- it pushes them aside, RACE_SHOVE_* -- and an
     // opponent's through Twinsen's; on the same line, the jet-pack sat stuck behind the car in front)
@@ -3817,6 +4879,21 @@ S32 RaceMod_NoCollide(S32 numobj) {
         s_noCollideScene = NumCube;
     }
     return s_noCollide[numobj];
+}
+
+// EXTFUNC.CPP, OBJECT.CPP CheckObjCol: Twinsen's car on the super jet-pack goes through the island's objects and the scene's actors -- the
+// user, 2026-10-10: "Sometimes on this track our super jetpack can get stuck on things such as the fence on the start/finish line that
+// separates the track from the pit lane, or the side of one of the space shuttles that protrudes onto the track. The jet pack needs updating
+// so it doesn't get stuck on objects" (it steers the car back onto its line from wherever it is: from the pit lane, along the fence). The
+// road's own floor and rails, and the ground, still hold it.
+S32 RaceMod_JetGhost(void) {
+    return RaceMod_Active() && Comportement == C_BUGGY && TimerRefHR < s_jetUntil;
+}
+
+// BUGGY.CPP RaceSpeed: the golden Gazogem running -- from its first use till its time is up -- the car keeps whatever speed it has over
+// the gear's top (each use's 10 km/h on the last's); after it, the extra is lost as any is (RACE_OVERSPEED_DRAG, the coast).
+S32 RaceMod_NoTopSpeed(void) {
+    return RaceMod_Active() && Comportement == C_BUGGY && s_goldUntil && TimerRefHR < s_goldUntil;
 }
 
 // EXTFUNC.CPP DoAnimExt: an opponent's car, placed where it is on the lap, not kept inside the player's cube.
@@ -3834,6 +4911,17 @@ S32 RaceMod_BlocksInventory(void) {
 
 // BUGGY.CPP RaceSpeed: how much faster or slower the player's car is than its setup (its top speed and pull): Gazogem fuel and the
 // jet-pack, or shrunk by an opponent's lightning.
+// A boost panel's lift on the car's top speed now: RACE_PANEL_KMH for RACE_PANEL_HOLD_MS after it was last on one, then eased back to its own.
+static double PanelFactor(S32 now) {
+    const S32 since = now - s_panelAt;
+    if (since < 0 || since >= RACE_PANEL_HOLD_MS + RACE_PANEL_FADE_MS || s_car.Gears < 1) return 1;
+    const double full = RACE_PANEL_SPEED / s_car.GearTop[s_car.Gears - 1];
+    if (full <= 1) return 1;
+    if (since < RACE_PANEL_HOLD_MS) return full;
+    const double u = (double)(since - RACE_PANEL_HOLD_MS) / RACE_PANEL_FADE_MS;
+    return full + (1 - full) * u * u * (3 - 2 * u);
+}
+
 double RaceMod_SpeedFactor(void) {
     if (!RaceMod_Active()) return 1;
     const S32 now = TimerRefHR;
@@ -3841,7 +4929,10 @@ double RaceMod_SpeedFactor(void) {
     // (Gazogem fuel all race, fuel_always=: but the super jet-pack's own speed while it drives)
     if (now < s_boostUntil || (s_fuelAlways && now >= s_jetUntil)) f *= RACE_BOOST;
     else if (now < s_jetUntil) f *= JetFactor(s_jetUntil, s_jetFactor);
-    if (now < s_shrunkUntil && now >= s_protectUntil && now >= s_jetUntil) f *= RACE_SHRUNK;
+    // (a boost panel's, unless the rest lifts it more)
+    const double panel = PanelFactor(now);
+    if (panel > f) f = panel;
+    if (now < s_shrunkUntil && now >= s_jetUntil) f *= RACE_SHRUNK;
     return f;
 }
 
@@ -4002,7 +5093,6 @@ static void Jets(S32 now, int driving) {
                 HitObj(PenguinHitter(), NUM_PERSO, RACE_STEAM_FORCE, -1);
                 ListBuggy[0].Speed = 0;
                 if (s_hitUntil < now + RACE_STEAM_HOLD) s_hitUntil = now + RACE_STEAM_HOLD;
-                Message("Scalded by steam!");
                 Log_Info("[racemod] Twinsen's car hit by a steam jet");
             }
         }
@@ -4029,9 +5119,722 @@ static void Jets(S32 now, int driving) {
     }
 }
 
+// The game's lava at (x, y, z), cube-local: the mine's burst (impact 25) or its fall's spit (`spit`: impact 23's flow, thrown the way
+// `beta` says), its sparks and, when there are extras to spare, its little balls -- those only to see: the burst's own reach is what stops
+// a car (they bounce about the deck, and an opponent's car hit by one would be hurt as an actor is, not stopped as a car is).
+static void GameLava(S32 x, S32 y, S32 z, int spit, S32 beta, int balls) {
+    U8 before[MAX_EXTRAS];
+    int free = 0;
+    for (int i = 0; i < MAX_EXTRAS; i++) { before[i] = ListExtra[i].Sprite != -1; free += !before[i]; }
+    balls = balls && free >= RACE_LAVA_FREE;
+    if (!spit) {
+        if (balls) DoImpact(RACE_LAVA_BURST, x, y, z, 255);
+        else CreateParticleFlow(0, 255, 0, x, y, z, 0, RACE_LAVA_BURST_FLOW);
+    } else {
+        const S32 b = (beta - (TabPartFlow + RACE_LAVA_SPIT_FLOW)->Beta) & 4095;
+        CreateParticleFlow(0, 255, 0, x, y, z, b, RACE_LAVA_SPIT_FLOW);
+        if (balls) CreateExtraParticleFlow(FLOW_EXTRA_OBJ, 255, RACE_LAVA_MODEL, 0, x, y, z, b, RACE_LAVA_SPIT_FLOW, 10, 0, 0, 0);
+    }
+    for (int i = 0; i < MAX_EXTRAS; i++)
+        if (!before[i] && ListExtra[i].Sprite == (S16)(3 + 32768)) ListExtra[i].Flags &= ~(EXTRA_END_OBJ | EXTRA_HIT_ANY);
+}
+
+static int LaserExtra(int model, S32 x, S32 y, S32 z);
+
+// Every frame: the lava balls (lavaball=). A ball in the air is the game's lava ball tumbling along its arc, and the shadow at the place it
+// will land; landed, the game's lava burst and every car in its reach stopped -- Twinsen's as by a penguin's blast unless the protection
+// spell or the super jet-pack is on, an opponent's with its hit animation.
+static void LavaBalls(S32 now, int driving) {
+    if (CubeMode != CUBE_EXTERIEUR || !s_nbLava || !s_nbRaised) return;
+    // (the lava ball's faces are the objects' texture page's fire, black until something animates it -- the scene does only with animated
+    // textures of its own or the protection spell on: the balls flew black, 2026-10-10)
+    if (!AnimateTexture) DoTextureAnimation();
+    T_OBJET *hero = &ListObjet[NUM_PERSO];
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    const double hx = hero->Obj.X + cx, hz = hero->Obj.Z + cz;
+    const int n = s_raisedLoop ? s_nbRaised - 1 : s_nbRaised - 1;
+    for (int i = 0; i < s_nbLava; i++) {
+        T_RACE_LAVA *b = &s_lava[i];
+        if (!b->On) {
+            if (!b->Next) { b->Next = now + b->Phase % b->Every; continue; }
+            if (now < b->Next) continue;
+            b->Next = now + b->Every * 3 / 4 + (S32)(VentRandom() * b->Every / 2);
+            // a place along its stretch of the road, on the deck (not over a jump's gap), within its rails
+            const int span = ((b->To - b->From) % n + n) % n;
+            int k = -1;
+            for (int tries = 0; tries < 6 && k < 0; tries++) {
+                const int c = (b->From + (int)(VentRandom() * (span + 1))) % n;
+                if (s_raised[c].Half > 0 && s_raised[c + 1].Half > 0) k = c;
+            }
+            if (k < 0) continue;
+            const T_RACE_RAISED *a = &s_raised[k], *c = a + 1;
+            const double t = VentRandom(), dx = c->X - a->X, dz = c->Z - a->Z, len = sqrt(dx * dx + dz * dz);
+            if (len < 1) continue;
+            const double half = (a->Half + (c->Half - a->Half) * t) * 0.6, side = (VentRandom() * 2 - 1) * half;
+            b->DstX = a->X + dx * t - dz / len * side; b->DstZ = a->Z + dz * t + dx / len * side; b->DstY = a->Y + (c->Y - a->Y) * t;
+            // (only near Twinsen, and landing in his scene: the extras are the scene's)
+            if ((b->DstX - hx) * (b->DstX - hx) + (b->DstZ - hz) * (b->DstZ - hz) > (double)RACE_LAVA_NEAR * RACE_LAVA_NEAR) continue;
+            if (b->DstX < cx || b->DstX >= cx + 32768 || b->DstZ < cz || b->DstZ >= cz + 32768) continue;
+            const double far = sqrt((b->DstX - b->SrcX) * (b->DstX - b->SrcX) + (b->DstZ - b->SrcZ) * (b->DstZ - b->SrcZ));
+            b->Dur = 1500 + (S32)(far / 10);
+            b->T0 = now; b->On = 1; b->Trail = now;
+            b->Ball = LaserExtra(s_lavaModel >= 0 ? s_lavaModel : RACE_LAVA_MODEL, (S32)(b->SrcX - cx), (S32)b->SrcY, (S32)(b->SrcZ - cz));
+            b->Shadow = InitExtraAnimSprite(255, (S32)(b->DstX - cx), (S32)b->DstY + 40, (S32)(b->DstZ - cz), RACE_LAVA_SHADOW, RACE_LAVA_SHADOW, b->Dur + 100, 60, 1, 0);
+            if (b->Shadow >= 0) ListExtra[b->Shadow].Flags |= EXTRA_NO_SHADOW;
+            // (out of the lava: the game's burst where it leaves it -- in Twinsen's cube: the little balls fly by its ground)
+            if (b->SrcX >= cx && b->SrcX < cx + 32768 && b->SrcZ >= cz && b->SrcZ < cz + 32768)
+                GameLava((S32)(b->SrcX - cx), (S32)b->SrcY, (S32)(b->SrcZ - cz), 0, 0, 1);
+            continue;
+        }
+        const double u = (double)(now - b->T0) / b->Dur;
+        if (u < 1) {
+            // along its arc: up out of the lava, over and down onto the road
+            const double far = sqrt((b->DstX - b->SrcX) * (b->DstX - b->SrcX) + (b->DstZ - b->SrcZ) * (b->DstZ - b->SrcZ));
+            const double top = (b->SrcY > b->DstY ? b->SrcY : b->DstY) - (b->SrcY + (b->DstY - b->SrcY) * 0.5) + (far * 0.35 > 2500 ? far * 0.35 : 2500);
+            const double x = b->SrcX + (b->DstX - b->SrcX) * u, z = b->SrcZ + (b->DstZ - b->SrcZ) * u, y = b->SrcY + (b->DstY + 250 - b->SrcY) * u + 4 * top * u * (1 - u);
+            if (b->Ball >= 0 && ListExtra[b->Ball].Sprite == (S16)(3 + 32768)) {
+                T_EXTRA *e = &ListExtra[b->Ball];
+                e->PosX = (S32)(x - cx); e->PosY = (S32)y; e->PosZ = (S32)(z - cz);
+                // (tumbling as it flies)
+                e->Beta = (S16)(((now - b->T0) * 3) & 4095); e->Scale = ((now - b->T0) * 2) & 4095;
+            }
+            if (b->Shadow >= 0 && ListExtra[b->Shadow].Sprite == RACE_LAVA_SHADOW) ListExtra[b->Shadow].Scale = (S32)(60 - (60 - RACE_LAVA_SCALE) * u);
+            continue;
+        }
+        // landed: its burst, and the cars in it
+        b->On = 0;
+        if (b->Ball >= 0 && ListExtra[b->Ball].Sprite == (S16)(3 + 32768)) ListExtra[b->Ball].Sprite = -1;
+        if (b->Shadow >= 0 && ListExtra[b->Shadow].Sprite == RACE_LAVA_SHADOW) ListExtra[b->Shadow].Sprite = -1;
+        b->Ball = b->Shadow = -1;
+        const S32 lx = (S32)(b->DstX - cx), lz = (S32)(b->DstZ - cz), ly = (S32)b->DstY;
+        if (lx < 0 || lx >= 32768 || lz < 0 || lz >= 32768) continue;
+        GameLava(lx, ly, lz, 0, 0, 1);
+        if (driving && Near(hero, lx, ly, lz, RACE_LAVA_REACH)) {
+            if (now < s_protectUntil || now < s_jetUntil || (hero->Flags & NO_CHOC))
+                Log_Info("[racemod] a lava ball lands on Twinsen's car: %s", now < s_protectUntil ? "the protection spell holds" : now < s_jetUntil ? "the super jet-pack" : "he can't be hit");
+            else {
+                HitObj(PenguinHitter(), NUM_PERSO, RACE_LAVA_FORCE, -1);
+                ListBuggy[0].Speed = 0;
+                if (s_hitUntil < now + RACE_PENGUIN_HOLD) s_hitUntil = now + RACE_PENGUIN_HOLD;
+                Log_Info("[racemod] Twinsen's car hit by a lava ball");
+            }
+        }
+        for (int o = 0; o < RACE_MAX_OPPONENTS; o++) {
+            T_RACE_OPPONENT *op = &s_opp[o];
+            if (!op->Count || !RaceOn()) continue;
+            double x, z, y, v, ddx, ddz;
+            PathAt(op, op->S, &x, &z, &y, &v, &ddx, &ddz);
+            if ((x - b->DstX) * (x - b->DstX) + (z - b->DstZ) * (z - b->DstZ) > (double)RACE_LAVA_REACH * RACE_LAVA_REACH || fabs(y - b->DstY) > 1500) continue;
+            if (op->HitUntil < now + RACE_PENGUIN_HOLD) op->HitUntil = now + RACE_PENGUIN_HOLD;
+            Log_Info("[racemod] %s hit by a lava ball", op->Name);
+            const int index = OpponentActor(op);
+            if (index < 0) continue;
+            T_OBJET *car = &ListObjet[index];
+            InitAnim(GEN_ANIM_CHOC, ANIM_ALL_THEN, (U8)index);
+            InitHitExtraPof(car->Obj.X, car->Obj.Y + car->YMax + 1, car->Obj.Z, RACE_LAVA_FORCE);
+        }
+    }
+}
+
+// Every frame: the lava falls (lavafall=), near Twinsen -- sparks off a lip and down the face below it, at a height down it each time (a
+// flow's sparks die RACE_FALL_DROP under where they start), and the game's spit out of a foot.
+static void LavaFalls(S32 now) {
+    if (CubeMode != CUBE_EXTERIEUR || !s_nbFalls) return;
+    const T_OBJET *hero = &ListObjet[NUM_PERSO];
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0, hx = hero->Obj.X + cx, hz = hero->Obj.Z + cz;
+    for (int pass = 0; pass < 2; pass++) {
+        S32 *next = pass ? &s_fallFootNext : &s_fallLipNext;
+        const S32 every = pass ? RACE_FALL_FOOT_MS : RACE_FALL_LIP_MS;
+        if (now < *next) continue;
+        *next = now + every / 2 + (S32)(VentRandom() * every);
+        const T_RACE_FALL *f = &s_falls[(int)(VentRandom() * s_nbFalls) % s_nbFalls];
+        const double x = pass ? f->FootX : f->LipX, z = pass ? f->FootZ : f->LipZ;
+        if ((x - hx) * (x - hx) + (z - hz) * (z - hz) > (double)RACE_FALL_NEAR * RACE_FALL_NEAR) continue;
+        if (x < cx || x >= cx + 32768 || z < cz || z >= cz + 32768) continue;
+        if (pass) GameLava((S32)(x - cx), (S32)f->FootY, (S32)(z - cz), 1, f->Beta, 1);
+        else {
+            // (out from the face a little, at a height down it)
+            const double b = f->Beta * 2 * 3.14159265358979 / 4096, drop = (f->LipY - f->FootY) * VentRandom();
+            GameLava((S32)(x - cx + sin(b) * 160), (S32)(f->LipY - drop), (S32)(z - cz + cos(b) * 160), 1, f->Beta, 0);
+        }
+    }
+}
+
+// Every frame: the boost panels (boostpanel=) under Twinsen's car -- two of its wheels or more on one, and it is going at RACE_PANEL_KMH at
+// least (going forwards).
+static void BoostPanels(S32 now, int driving) {
+    if (CubeMode != CUBE_EXTERIEUR || !s_nbPanels) return;
+    const T_OBJET *hero = &ListObjet[NUM_PERSO];
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    for (int i = 0; i < s_nbPanels; i++) {
+        T_RACE_PANEL *p = &s_panels[i];
+        int on = 0;
+        if (driving && fabs(hero->Obj.Y - p->Y) <= RACE_PANEL_ABOVE)
+            for (int w = 0; w < 4; w++) {
+                const double dx = ListBuggy[0].Wheel[w].X + cx - p->X, dz = ListBuggy[0].Wheel[w].Z + cz - p->Z;
+                if (fabs(dx * p->Dx + dz * p->Dz) <= p->HalfLen && fabs(-dx * p->Dz + dz * p->Dx) <= p->HalfWidth) on++;
+            }
+        if (on >= 2 && ListBuggy[0].Speed >= 0) {
+            if (ListBuggy[0].Speed < RACE_PANEL_SPEED) ListBuggy[0].Speed = (S32)RACE_PANEL_SPEED;
+            if (!p->OnHero) Log_Info("[racemod] boost panel %d: %d of the car's wheels on it -- %d km/h", i + 1, on, (int)((ListBuggy[0].Speed * 36 + 2560) / 5120));
+            p->OnHero = 1; s_panelAt = now;
+        } else p->OnHero = 0;
+    }
+}
+
+// FICHE.CPP's throws (F_THROW_3D): a machine gunner's gun plays its firing animation for its kick and its rattle, the bullets it would
+// throw left out -- the race-track mode flies its own, onto its targets (Gunners). Non-zero: leave this throw out.
+S32 RaceMod_SilentThrow(S32 numobj) {
+    if (!RaceMod_Active()) return 0;
+    for (int i = 0; i < s_nbGunners; i++)
+        if (s_gunners[i].Scene == (S32)NumCube && s_gunners[i].Gun == numobj) return 1;
+    return 0;
+}
+
+// A bullet of a gunner's burst: from its muzzle to a place among its targets (a point in the disc round one), the gun and its Franco
+// turned to it; where the gunner's scene is the one drawn, the game's bullet thrown so that it comes down there -- its height the lower
+// of the two that do, at its speed and weight (flying in frames of 20 ms: its way v a frame, falling weight/16 a frame a frame).
+static void GunnerShot(T_RACE_GUNNER *g, S32 now) {
+    if (!g->NbTargets) return;
+    int b = -1;
+    for (int i = 0; i < RACE_MAX_BULLETS && b < 0; i++) if (!s_bullets[i].On) b = i;
+    if (b < 0) return;
+    T_RACE_BULLET *u = &s_bullets[b];
+    const int k = (int)(VentRandom() * g->NbTargets) % g->NbTargets;
+    const double a = VentRandom() * 2 * 3.14159265358979, r = sqrt(VentRandom()) * g->TR[k];
+    u->On = 1; u->T0 = now; u->Extra = -1; u->Owner = g->Gun > 0 ? g->Gun : 255;
+    u->FromX = g->MX; u->FromY = g->MY; u->FromZ = g->MZ;
+    u->ToX = g->TX[k] + cos(a) * r; u->ToZ = g->TZ[k] + sin(a) * r; u->ToY = g->TY[k] + 60;
+    // (its height: tan h from c R^2/v^2 T^2 - R T + (dy + c R^2/v^2) = 0, the lower root; out of reach, straight at it)
+    const double R = sqrt((u->ToX - u->FromX) * (u->ToX - u->FromX) + (u->ToZ - u->FromZ) * (u->ToZ - u->FromZ)), dy = u->ToY - u->FromY;
+    const double v = RACE_GUN_SPEED, c = RACE_GUN_WEIGHT / 16.0, q = c * R * R / (v * v);
+    const double disc = R * R - 4 * q * (dy + q);
+    const double h = q > 0 && disc >= 0 ? atan((R - sqrt(disc)) / (2 * q)) : atan2(dy, R);
+    u->Dur = (S32)(R / (v * cos(h)) * 20);
+    if (g->Scene != (S32)NumCube || CubeMode != CUBE_EXTERIEUR) return;
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    const S32 beta = (S32)(atan2(u->ToX - g->MX, u->ToZ - g->MZ) * 4096 / (2 * 3.14159265358979)) & 4095;
+    if (g->Gun > 0 && g->Gun < NbObjets) ListObjet[g->Gun].Obj.Beta = beta;
+    if (g->Franco > 0 && g->Franco < NbObjets) ListObjet[g->Franco].Obj.Beta = beta;
+    const S32 alpha = (S32)floor(h * 4096 / (2 * 3.14159265358979) + 0.5) & 4095;
+    // (thrown as the gun throws its own; its hits are the race-track mode's, where it lands, so it does no harm of the game's and nothing
+    // stops it on the way -- an actor, a rail)
+    u->Extra = ThrowExtra((U8)(g->Gun > 0 ? g->Gun : 255), (S32)(u->FromX - cx), (S32)u->FromY, (S32)(u->FromZ - cz), RACE_GUN_SPRITE, alpha, beta, RACE_GUN_SPEED, RACE_GUN_WEIGHT, 0);
+    if (u->Extra >= 0) ListExtra[u->Extra].Flags &= ~(EXTRA_END_OBJ | EXTRA_END_COL | EXTRA_IMPACT);
+}
+
+// Every frame: the machine gunners (gunner=). Between bursts the gun stands still, its Franco sitting at it; a burst every RACE_GUN_EVERY
+// ms or so while the race is on (a quarter either way), its bullets flown, and where each lands, the cars there hit.
+static void Gunners(S32 now, int driving) {
+    if (!s_nbGunners) return;
+    for (int i = 0; i < s_nbGunners; i++) {
+        T_RACE_GUNNER *g = &s_gunners[i];
+        const int here = g->Scene == (S32)NumCube && CubeMode == CUBE_EXTERIEUR;
+        if (!here) g->Ready = 0;
+        else if (!g->Ready) {
+            // (their own scripts stopped -- the builder emptied them: the guns' put them back by the road every frame)
+            if (g->Gun > 0 && g->Gun < NbObjets) { ListObjet[g->Gun].OffsetLife = -1; ListObjet[g->Gun].OffsetTrack = -1; InitAnim(GEN_ANIM_RIEN, ANIM_REPEAT, (U8)g->Gun); }
+            if (g->Franco > 0 && g->Franco < NbObjets) { ListObjet[g->Franco].OffsetLife = -1; ListObjet[g->Franco].OffsetTrack = -1; InitAnim(RACE_GUN_AT_IT, ANIM_REPEAT, (U8)g->Franco); }
+            g->Ready = 1;
+            Log_Info("[racemod] gunner: actor %d of scene %d at its gun (actor %d), %d places to fire at", (int)g->Franco, (int)g->Scene, (int)g->Gun, g->NbTargets);
+        }
+        if (!RaceRunning()) continue;
+        if (!g->Next) { g->Next = now + RACE_GUN_EVERY / 2 + i * 900; continue; }
+        if (!g->Firing && now >= g->Next) {
+            g->Firing = 1; g->Fired = 0; g->BurstAt = now;
+            if (here && g->Gun > 0 && g->Gun < NbObjets) InitAnim(RACE_GUN_FIRING, ANIM_REPEAT, (U8)g->Gun);
+        }
+        if (g->Firing) {
+            while (g->Fired < RACE_GUN_SHOTS && now >= g->BurstAt + g->Fired * RACE_GUN_GAP) { GunnerShot(g, now); g->Fired++; }
+            if (g->Fired >= RACE_GUN_SHOTS && now >= g->BurstAt + RACE_GUN_SHOTS * RACE_GUN_GAP) {
+                g->Firing = 0;
+                g->Next = now + RACE_GUN_EVERY * 3 / 4 + (S32)(VentRandom() * RACE_GUN_EVERY / 2);
+                if (here && g->Gun > 0 && g->Gun < NbObjets) InitAnim(GEN_ANIM_RIEN, ANIM_REPEAT, (U8)g->Gun);
+            }
+        }
+    }
+    // the bullets: along their way, and where each lands
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    for (int b = 0; b < RACE_MAX_BULLETS; b++) {
+        T_RACE_BULLET *u = &s_bullets[b];
+        if (!u->On) continue;
+        // (flown by the game, as its own are; taken away where it comes down)
+        const int shown = u->Extra >= 0 && u->Extra < MAX_EXTRAS && ListExtra[u->Extra].Sprite == RACE_GUN_SPRITE && ListExtra[u->Extra].Owner == (U8)u->Owner;
+        if (now - u->T0 < u->Dur) continue;
+        u->On = 0;
+        if (shown) ListExtra[u->Extra].Sprite = -1;
+        const S32 lx = (S32)(u->ToX - cx), lz = (S32)(u->ToZ - cz);
+        if (CubeMode == CUBE_EXTERIEUR && lx >= 0 && lx < 32768 && lz >= 0 && lz < 32768) InitHitExtraPof(lx, (S32)u->ToY, lz, RACE_SHOT_FORCE);
+        for (int who = -1; who < RACE_MAX_OPPONENTS; who++) {
+            if (who < 0 && !driving) continue;
+            if (who >= 0 && (!s_opp[who].Count || !s_opp[who].Scenes || now < s_opp[who].HitUntil)) continue;
+            double x, y, z;
+            if (!CarAt(who, &x, &y, &z)) continue;
+            if ((x - u->ToX) * (x - u->ToX) + (z - u->ToZ) * (z - u->ToZ) > (double)RACE_GUN_REACH * RACE_GUN_REACH || fabs(y - u->ToY) > 1400) continue;
+            CarStruck(who, now, "machine gun", "the Franco gunner");
+        }
+    }
+}
+
+// The roulette wheel's decors as a cube's are drawn (DECORS.CPP DecorPoseHook): its head's turned, its ball's moved to where it rolls (its
+// box with it: the engine leaves out a decor whose box is out of sight).
+static void WheelDecors(T_DECORS *list, S32 count) {
+    if (!s_wheel.On || !RaceMod_Active() || CubeMode != CUBE_EXTERIEUR) return;
+    for (S32 i = 0; i < count; i++) {
+        T_DECORS *d = &list[i];
+        const int body = d->Body & 0xFFFF;
+        if (s_wheel.BallShown && body >= s_wheel.Ball && body < s_wheel.Ball + s_wheel.NbBalls) {
+            const int k = body - s_wheel.Ball;
+            const S32 x = (S32)floor(s_wheel.BallX[k] - s_wheel.CubeX * 32768.0 + 0.5), y = (S32)floor(s_wheel.BallY[k] + 0.5), z = (S32)floor(s_wheel.BallZ[k] - s_wheel.CubeZ * 32768.0 + 0.5);
+            d->XMin += x - d->Xworld; d->XMax += x - d->Xworld; d->ZMin += z - d->Zworld; d->ZMax += z - d->Zworld; d->YMin += y - d->Yworld;
+            d->Xworld = x; d->Yworld = y; d->Zworld = z;
+            continue;
+        }
+        for (int p = 0; p < s_wheel.NbParts; p++)
+            if (body == s_wheel.Parts[p]) { d->Beta = (d->Beta & ~0xFFFF) | (s_wheel.Beta & 4095); break; }
+    }
+}
+
+// The wheel's pockets round it from its body's x axis towards its z (RaceTrackRoulette): roulette_pockets= of them (19 on 2026-10-10: the
+// user, "lose the numbers on the roulette wheel, half the segments, but double the width of the remaining ones. Red is win, black is lose,
+// and green is super jackpot"; then 18, "drop a segment ... and make all other slots slightly wider"), the first green, then red and black
+// in turn. A pocket's prize: 2 the green, 1 red, 0 black.
+static int PocketPrize(int k) { return k == 0 ? 2 : k % 2 ? 1 : 0; }
+
+// The slot machine the roulette wheel's red pockets spin (the user, 2026-10-10: "For red we spin three wheels at the top middle of the
+// screen like a fruit machine, and they spin stopping one at a time from left to right displaying a powerup, let's make it so roughly 75%
+// of the time the user wins a power up prize"): three reels of power-ups at the top of the screen, stopping left to right; three the same,
+// that power-up won (RACE_SLOT_WIN of the time), into a free item slot -- or the one not selected.
+#define RACE_SLOT_WIN 0.75
+#define RACE_SLOT_STOP0 1200               // ms: the first reel stops ...
+#define RACE_SLOT_STOP_GAP 700             // ... and each next this long after ...
+#define RACE_SLOT_SHOW 1800                // ... and the reels stay this long after the last
+#define RACE_SLOT_TURN 70                  // ms an item a reel turns over
+static int s_slotReel[3], s_slotWin = 0, s_slotPaid = 0;
+static S32 s_slotT0 = 0;
+
+// An item into Twinsen's item box, shown at once (no roulette): a free slot, or the one not selected.
+static void GiveItem(int pu, S32 now) {
+    int slot = -1;
+    for (int k = 0; k < RACE_ITEM_SLOTS && slot < 0; k++) if (s_item[k] < 0) slot = k;
+    if (slot < 0) slot = s_sel ^ 1;
+    if (s_item[slot] == PU_GOLD) s_goldUntil = 0;
+    s_item[slot] = pu;
+    s_itemAt[slot] = now;
+    if (s_item[s_sel] < 0 || s_sel == slot) s_sel = slot;
+    Log_Info("[racemod] Twinsen wins %s (slot %d)", s_puName[pu], slot + 1);
+}
+
+static void SlotSpin(S32 now) {
+    s_slotOn = 1; s_slotT0 = now; s_slotPaid = 0;
+    s_slotWin = RaceRandom() < RACE_SLOT_WIN;
+    const int prize = RandomPowerUp(BackShare(-1));
+    if (s_slotWin) s_slotReel[0] = s_slotReel[1] = s_slotReel[2] = prize;
+    else {
+        // (a miss: often the first two the same and the last not -- so near)
+        s_slotReel[0] = prize;
+        s_slotReel[1] = RaceRandom() < 0.6 ? prize : (prize + 1 + (int)(RaceRandom() * (PU_ROLLED - 1))) % PU_ROLLED;
+        do s_slotReel[2] = (int)(RaceRandom() * PU_ROLLED) % PU_ROLLED; while (s_slotReel[2] == s_slotReel[0] && s_slotReel[1] == s_slotReel[0]);
+    }
+    Log_Info("[racemod] slot machine: %s %s %s", s_puName[s_slotReel[0]], s_puName[s_slotReel[1]], s_puName[s_slotReel[2]]);
+}
+
+// Every frame: the slot machine -- its prize paid as its last reel stops, gone when it has been shown.
+static void SlotMachine(S32 now) {
+    if (!s_slotOn) return;
+    const S32 last = s_slotT0 + RACE_SLOT_STOP0 + 2 * RACE_SLOT_STOP_GAP;
+    if (!s_slotPaid && now >= last) {
+        s_slotPaid = 1;
+        if (s_slotWin) { GiveItem(s_slotReel[0], now); Message("Winner!"); }
+        else { Message("No luck"); Log_Info("[racemod] slot machine: no prize"); }
+    }
+    if (now >= last + RACE_SLOT_SHOW) s_slotOn = 0;
+}
+
+// What a reel shows: turning over until it stops, then its own.
+static int SlotShown(int r, S32 now) {
+    if (now >= s_slotT0 + RACE_SLOT_STOP0 + r * RACE_SLOT_STOP_GAP) return s_slotReel[r];
+    return (int)((now - s_slotT0) / RACE_SLOT_TURN + r * 4) % PU_ROLLED;
+}
+
+// The turning floor's speed (radians a second, round from x towards z, as the world's angles go: its head's Beta turns the other way).
+static double WheelOmega(void) { return -RACE_WHEEL_TURN * s_wheel.Spin * RACE_PI / 180.0; }
+
+// Every frame: the roulette wheel (roulette=) -- its turn; its balls rolled down the bowl, carried round by its turn, bounced off its wall,
+// the ridge round its hole, each other and the cars, and the cars they roll into knocked aside.
+static void Wheel(S32 now, int driving) {
+    T_RACE_ROULETTE *w = &s_wheel;
+    if (!w->On) return;
+    w->Beta = (S32)floor(fmod(now / 1000.0 * w->Spin * RACE_WHEEL_TURN, 360.0) * 4096 / 360.0) & 4095;
+    const int nb = w->NbBalls < 1 ? 1 : w->NbBalls;
+    const double om = WheelOmega(), inner = w->Hole + 2.0 * 512, outer = w->Rim - w->BallR;
+    double dt = w->BallT ? (now - w->BallT) / 1000.0 : 0;
+    w->BallT = now;
+    if (dt < 0) dt = 0; else if (dt > 0.05) dt = 0.05;
+    if (!w->BallsSet) {
+        // (spread round the bowl half way down, rolling round one way and the other, a little down the slope)
+        for (int k = 0; k < nb; k++) {
+            const double a = 2 * RACE_PI * k / nb, r = (inner + outer) / 2, v = (k % 2 ? -1 : 1) * 4000.0;
+            w->BallX[k] = w->X + r * cos(a); w->BallZ[k] = w->Z + r * sin(a);
+            w->BallVX[k] = -sin(a) * v - cos(a) * 800; w->BallVZ[k] = cos(a) * v - sin(a) * 800;
+        }
+        w->BallsSet = 1;
+    }
+    for (int k = 0; k < nb; k++) {
+        double dx = w->BallX[k] - w->X, dz = w->BallZ[k] - w->Z, r = sqrt(dx * dx + dz * dz);
+        if (r < 1) { dx = 1; dz = 0; r = 1; }
+        const double ux = dx / r, uz = dz / r, a = RACE_BALL_G * WheelSlopeAt(r);
+        // (down the slope; brought towards the floor's own speed there)
+        w->BallVX[k] -= ux * a * dt; w->BallVZ[k] -= uz * a * dt;
+        const double fvx = -uz * om * r, fvz = ux * om * r;
+        w->BallVX[k] += (fvx - w->BallVX[k]) * RACE_BALL_GRIP * dt; w->BallVZ[k] += (fvz - w->BallVZ[k]) * RACE_BALL_GRIP * dt;
+        const double damp = 1 - RACE_BALL_DAMP * dt, sp = sqrt(w->BallVX[k] * w->BallVX[k] + w->BallVZ[k] * w->BallVZ[k]);
+        const double cap = sp > RACE_BALL_TOP ? RACE_BALL_TOP / sp : 1;
+        w->BallVX[k] *= damp * cap; w->BallVZ[k] *= damp * cap;
+        w->BallX[k] += w->BallVX[k] * dt; w->BallZ[k] += w->BallVZ[k] * dt;
+        // (off the wall, and kicked back up off the ridge round the hole)
+        dx = w->BallX[k] - w->X; dz = w->BallZ[k] - w->Z; r = sqrt(dx * dx + dz * dz);
+        if (r > 1 && (r > outer || r < inner)) {
+            const double nx = dx / r, nz = dz / r, lim = r > outer ? outer : inner, vr = w->BallVX[k] * nx + w->BallVZ[k] * nz;
+            w->BallX[k] = w->X + nx * lim; w->BallZ[k] = w->Z + nz * lim;
+            const double e = r > outer ? RACE_BALL_BOUNCE : RACE_BALL_KICK;
+            if ((r > outer && vr > 0) || (r < inner && vr < 0)) { w->BallVX[k] -= (1 + e) * vr * nx; w->BallVZ[k] -= (1 + e) * vr * nz; }
+        }
+    }
+    // (off each other)
+    for (int i2 = 0; i2 < nb; i2++)
+        for (int j2 = i2 + 1; j2 < nb; j2++) {
+            const double dx = w->BallX[j2] - w->BallX[i2], dz = w->BallZ[j2] - w->BallZ[i2], d = sqrt(dx * dx + dz * dz), touch = 2.0 * w->BallR;
+            if (d >= touch || d < 1) continue;
+            const double nx = dx / d, nz = dz / d, push = (touch - d) / 2;
+            w->BallX[i2] -= nx * push; w->BallZ[i2] -= nz * push; w->BallX[j2] += nx * push; w->BallZ[j2] += nz * push;
+            const double vi = w->BallVX[i2] * nx + w->BallVZ[i2] * nz, vj = w->BallVX[j2] * nx + w->BallVZ[j2] * nz;
+            if (vi - vj <= 0) continue;
+            const double e = (vi - vj) * (1 + RACE_BALL_BOUNCE) / 2;
+            w->BallVX[i2] -= e * nx; w->BallVZ[i2] -= e * nz; w->BallVX[j2] += e * nx; w->BallVZ[j2] += e * nz;
+        }
+    for (int k = 0; k < nb; k++) w->BallY[k] = WheelFloorAt(WheelR(w->BallX[k], w->BallZ[k])) + w->BallR;
+    w->BallShown = 1;
+    // (the cars they roll into: knocked aside, the ball bounced off)
+    for (int who = -1; who < RACE_MAX_OPPONENTS; who++) {
+        if (who < 0 && !driving) continue;
+        if (who >= 0 && (!s_opp[who].Count || !s_opp[who].Scenes)) continue;
+        if (now < w->Again[who + 1]) continue;
+        double x, y, z;
+        if (!CarAt(who, &x, &y, &z)) continue;
+        const double reach = w->BallR + RACE_BALL_REACH;
+        for (int k = 0; k < nb; k++) {
+            const double dx = x - w->BallX[k], dz = z - w->BallZ[k], d = sqrt(dx * dx + dz * dz);
+            if (d > reach || fabs(y - (w->BallY[k] - w->BallR)) > 900) continue;
+            const double nx = d > 1 ? dx / d : 1, nz = d > 1 ? dz / d : 0, vn = w->BallVX[k] * nx + w->BallVZ[k] * nz;
+            if (vn > 0) { w->BallVX[k] -= (1 + RACE_BALL_BOUNCE) * vn * nx; w->BallVZ[k] -= (1 + RACE_BALL_BOUNCE) * vn * nz; }
+            w->Again[who + 1] = now + RACE_BALL_AGAIN;
+            if (who < 0) {
+                w->KnockT0 = now; w->KnockX = nx; w->KnockZ = nz;
+                ListBuggy[0].Speed = (S32)(ListBuggy[0].Speed * RACE_BALL_SLOW);
+                Log_Info("[racemod] Twinsen's car knocked aside by a roulette ball");
+            } else {
+                T_RACE_OPPONENT *o = &s_opp[who];
+                o->ShoveStart = now; o->ShoveUntil = now + RACE_SHOVE_MS; o->ShoveX = nx; o->ShoveZ = nz;
+                o->Speed *= RACE_BALL_SLOW;
+                Log_Info("[racemod] %s knocked aside by a roulette ball", o->Name);
+            }
+            break;
+        }
+    }
+}
+
+// For RaceMod_Loop, on Twinsen's car: in the roulette wheel's bowl (roulette=), drawn down it towards the hole -- as hard as it is steep --
+// and kept inside its wall; into the hole, dropped through it onto the road under it (carried: non-zero, its place this frame in *nx..*nz).
+static S32 WheelMove(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz) {
+    T_RACE_ROULETTE *w = &s_wheel;
+    if (!w->On || w->Landing < 0 || w->Landing + 1 >= s_nbRaised) return 0;
+    T_OBJET *hero = &ListObjet[NUM_PERSO];
+    T_OBJ_3D *obj = &hero->Obj;
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    const S32 now = TimerRefHR;
+    double dt = (now - w->MoveT) / 1000.0;
+    w->MoveT = now;
+    if (dt < 0) dt = 0; else if (dt > 0.1) dt = 0.1;
+    if (!w->DropOn) {
+        if (!OnWheel(ox + cx, oy, oz + cz)) return 0;
+        double tx = *nx + cx, tz = *nz + cz, tr = WheelR(tx, tz);
+        if (tr >= w->Hole + 64) {
+            // (drawn in, down the slope)
+            const double pull = RACE_WHEEL_PULL * WheelSlopeAt(tr) * dt;
+            if (tr > 1) { tx -= (tx - w->X) / tr * pull; tz -= (tz - w->Z) / tr * pull; }
+            // (carried round by the turning floor, its heading with it)
+            const double da = WheelOmega() * RACE_WHEEL_DRAG * dt, ca = cos(da), sa = sin(da), rx = tx - w->X, rz = tz - w->Z;
+            tx = w->X + rx * ca - rz * sa; tz = w->Z + rx * sa + rz * ca;
+            obj->Beta = (obj->Beta - (S32)floor(da * 4096 / (2 * RACE_PI) + 0.5)) & 4095;
+            // (knocked aside by a ball: RACE_BALL_KNOCK in all, quickly at first)
+            if (w->KnockT0 && now - w->KnockT0 < RACE_BALL_KNOCK_MS) {
+                const double kt = (double)(now - w->KnockT0) / RACE_BALL_KNOCK_MS, v = 2 * RACE_BALL_KNOCK / (RACE_BALL_KNOCK_MS / 1000.0) * (1 - kt);
+                tx += w->KnockX * v * dt; tz += w->KnockZ * v * dt;
+            }
+            // (and kept inside the wall, a car's half width in)
+            tr = WheelR(tx, tz);
+            const double room = w->Rim - RAISED_INSET;
+            if (tr > room) { tx = w->X + (tx - w->X) * room / tr; tz = w->Z + (tz - w->Z) * room / tr; }
+            *nx = (S32)floor(tx - cx + 0.5); *nz = (S32)floor(tz - cz + 0.5);
+            return 0;
+        }
+        // (into the hole: the drop, from here by the hole's middle to the road under the wheel, coming in along it)
+        const T_RACE_RAISED *l = &s_raised[w->Landing], *m = l + 1;
+        double ux = m->X - l->X, uz = m->Z - l->Z;
+        const double ul = sqrt(ux * ux + uz * uz);
+        if (ul > 0) { ux /= ul; uz /= ul; } else { ux = 0; uz = 1; }
+        w->D0x = tx; w->D0z = tz; w->D0y = WheelFloorAt(w->Hole);
+        w->D1x = tx + (w->X - tx) * 0.7; w->D1z = tz + (w->Z - tz) * 0.7;
+        w->DLx = l->X; w->DLy = l->Y; w->DLz = l->Z;
+        w->D2x = w->DLx - ux * 1024; w->D2z = w->DLz - uz * 1024;
+        w->DropBeta = (S32)floor(atan2(ux, uz) * 4096 / (2 * RACE_PI) + 0.5) & 4095;
+        w->DropV = ListBuggy[0].Speed > RACE_WHEEL_DROP_LEAST ? ListBuggy[0].Speed : RACE_WHEEL_DROP_LEAST;
+        const double length = sqrt((w->D1x - w->D0x) * (w->D1x - w->D0x) + (w->D1z - w->D0z) * (w->D1z - w->D0z))
+                             + sqrt((w->D2x - w->D1x) * (w->D2x - w->D1x) + (w->D2z - w->D1z) * (w->D2z - w->D1z))
+                             + sqrt((w->DLx - w->D2x) * (w->DLx - w->D2x) + (w->DLz - w->D2z) * (w->DLz - w->D2z));
+        w->DropMs = (S32)(length / w->DropV * 1000);
+        if (w->DropMs < RACE_WHEEL_DROP_MS) w->DropMs = RACE_WHEEL_DROP_MS;
+        w->DropT0 = now; w->DropOn = 1;
+        // (the pocket it goes in over: its angle on the turning head -- a body's point at angle a is drawn at a - Beta)
+        double a = atan2(tz - w->Z, tx - w->X) + (w->Beta & 4095) * 2 * RACE_PI / 4096.0;
+        a = fmod(a, 2 * RACE_PI); if (a < 0) a += 2 * RACE_PI;
+        const int pockets = w->Pockets > 2 ? w->Pockets : 18;
+        w->PrizeNumber = (int)(a / (2 * RACE_PI / pockets)) % pockets;
+        w->Prize = s_prizeForce >= 0 && s_prizeForce <= 2 ? s_prizeForce : PocketPrize(w->PrizeNumber);
+        Log_Info("[racemod] roulette wheel: Twinsen's car through its hole at (%.0f,%.0f) over %s (pocket %d), %d ms down onto the road", tx, tz,
+                 w->Prize == 2 ? "the green" : w->Prize ? "red" : "black", w->PrizeNumber, (int)w->DropMs);
+    }
+    double t = (double)(now - w->DropT0) / w->DropMs;
+    if (t > 1) t = 1;
+    const double u = 1 - t, b0 = u * u * u, b1 = 3 * u * u * t, b2 = 3 * u * t * t, b3 = t * t * t;
+    const double x = b0 * w->D0x + b1 * w->D1x + b2 * w->D2x + b3 * w->DLx, z = b0 * w->D0z + b1 * w->D1z + b2 * w->D2z + b3 * w->DLz;
+    const double y = w->D0y + (w->DLy - w->D0y) * pow(t, 1.6);
+    const double dx = 3 * u * u * (w->D1x - w->D0x) + 6 * u * t * (w->D2x - w->D1x) + 3 * t * t * (w->DLx - w->D2x);
+    const double dz = 3 * u * u * (w->D1z - w->D0z) + 6 * u * t * (w->D2z - w->D1z) + 3 * t * t * (w->DLz - w->D2z);
+    ListBuggy[0].Speed = (S32)w->DropV;
+    if (t >= 1) {
+        obj->Alpha = 0; obj->Gamma = 0; obj->Beta = w->DropBeta;
+        w->DropOn = 0;
+        s_forgetLap = 1;
+        Log_Info("[racemod] roulette wheel: down on the road at (%.0f,%.0f,%.0f)", x, y, z);
+        // (the pocket's prize: red the slot machine's spin, the green the golden Gazogem, black nothing; without power-ups, red and the
+        // green a boost)
+        if (w->Prize == 2) {
+            if (s_powerups) {
+                GiveItem(PU_GOLD, now);
+                Message("Super jackpot! A golden Gazogem!");
+            } else { s_boostUntil = now + RACE_WHEEL_ZERO_MS; Message("Super jackpot!"); }
+        } else if (w->Prize == 1) {
+            if (s_powerups) SlotSpin(now);
+            else { s_boostUntil = now + RACE_WHEEL_RED_MS; Message("Red: a boost!"); }
+        } else Message("Black: no luck");
+        Log_Info("[racemod] roulette wheel: %s", w->Prize == 2 ? "the green: super jackpot" : w->Prize ? "red: the slot machine" : "black: nothing");
+    } else {
+        const S32 beta = dx * dx + dz * dz > 1 ? (S32)floor(atan2(dx, dz) * 4096 / (2 * RACE_PI) + 0.5) & 4095 : obj->Beta;
+        CarPitch(obj, beta, 0.6 * sin(RACE_PI * t));
+    }
+    *nx = (S32)floor(x - cx + 0.5); *ny = (S32)floor(y + 0.5); *nz = (S32)floor(z - cz + 0.5);
+    return 1;
+}
+
+// A gas monster's jaws on its place on the road: the cars there bitten (not one just bitten).
+static void MonsterBites(const T_RACE_MONSTER *m, S32 now, int driving) {
+    for (int who = -1; who < RACE_MAX_OPPONENTS; who++) {
+        if (who < 0 && !driving) continue;
+        if (who >= 0 && (!RaceOn() || !s_opp[who].Count || !s_opp[who].Scenes)) continue;
+        double x, y, z;
+        if (!CarAt(who, &x, &y, &z) || fabs(y - m->BiteY) > 900) continue;
+        if ((x - m->BiteX) * (x - m->BiteX) + (z - m->BiteZ) * (z - m->BiteZ) > (double)RACE_MONSTER_BITE * RACE_MONSTER_BITE) continue;
+        if (now < s_bittenUntil[who + 1]) continue;
+        s_bittenUntil[who + 1] = now + RACE_MONSTER_STUN + RACE_MONSTER_GRACE;
+        CarStruckFor(who, now, "gas monster's bite", NULL, RACE_MONSTER_STUN, "Bitten by a gas monster!");
+    }
+}
+
+// Every frame: the gas monsters (gasmonster=) -- poised, striking now and then at random, biting; posed where their scene is the one about.
+static void Monsters(S32 now, int driving) {
+    if (!s_nbMonsters) return;
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    for (int i = 0; i < s_nbMonsters; i++) {
+        T_RACE_MONSTER *m = &s_monsters[i];
+        const S32 t = now - m->T0;
+        int anim = m->Anim0;
+        switch (m->State) {
+        case MONSTER_POISED:
+            // (the first strike any time in the first two waits, so that they don't strike together)
+            if (!m->Next) m->Next = now + (S32)(VentRandom() * 2 * RACE_MONSTER_EVERY);
+            if (now >= m->Next) { m->State = MONSTER_STRIKE; m->T0 = now; anim = m->Anim0 + 1; }
+            break;
+        case MONSTER_STRIKE:
+            anim = m->Anim0 + 1;
+            if (t >= RACE_MONSTER_HIT) {
+                // (its head down on its place: the cars there bitten)
+                m->State = MONSTER_BITE; m->T0 = now; anim = m->Anim0 + 2;
+                MonsterBites(m, now, driving);
+            }
+            break;
+        case MONSTER_BITE:
+            anim = m->Anim0 + 2;
+            // (and those driving into its jaws while they snap shut and hold)
+            if (t < RACE_MONSTER_HOLD) MonsterBites(m, now, driving);
+            if (t >= RACE_MONSTER_BACK) {
+                m->State = MONSTER_POISED; anim = m->Anim0;
+                m->Next = now + RACE_MONSTER_EVERY + (S32)(VentRandom() * RACE_MONSTER_EVERY);
+            }
+            break;
+        }
+        // posed where it has an actor in the scene about -- its own, or one it is seen from: standing at its place out of the gas (in that
+        // scene's cube's terms, past its edge for one of the next cube's), facing its place on the road
+        int actor = -1;
+        if (CubeMode == CUBE_EXTERIEUR)
+            for (int k = 0; k < m->NbSeen && actor < 0; k++)
+                if (m->SeenScene[k] == (S32)NumCube && m->SeenActor[k] > 0 && m->SeenActor[k] < NbObjets) actor = m->SeenActor[k];
+        if (actor < 0) { m->Shown = -1; continue; }
+        T_OBJET *monster = &ListObjet[actor];
+        {
+            const T_OBJ_3D *car = &ListObjet[NUM_PERSO].Obj;
+            const double hx = car->X + cx, hz = car->Z + cz;
+            if ((hx - m->RiseX) * (hx - m->RiseX) + (hz - m->RiseZ) * (hz - m->RiseZ) > RACE_MONSTER_SEEN_FAR * RACE_MONSTER_SEEN_FAR
+                    || s_wheel.DropOn || OnWheel(hx, car->Y, hz)) {
+                monster->Obj.Y = -20000;
+                continue;
+            }
+        }
+        if (m->Shown < 0 || m->ShownScene != (S32)NumCube) {
+            // (its own scripts stopped: it is the race-track mode's; its own body)
+            monster->OffsetLife = monster->OffsetTrack = -1;
+            InitBody((U8)m->Body, (U8)actor);
+            m->Shown = 0; m->ShownScene = (S32)NumCube; m->Anim = -1;
+        }
+        const double fx = m->BiteX - m->RiseX, fz = m->BiteZ - m->RiseZ;
+        const S32 beta = (S32)floor(atan2(fx, fz) * 4096 / (2 * RACE_PI) + 0.5) & 4095;
+        monster->Obj.X = (S32)(m->RiseX - cx); monster->Obj.Y = (S32)m->FootY; monster->Obj.Z = (S32)(m->RiseZ - cz);
+        CarPitch(&monster->Obj, beta, 0);
+        if (anim != m->Anim) { InitAnim((U16)anim, ANIM_REPEAT, (U8)actor); m->Anim = anim; }
+    }
+}
+
+// Every frame: the shuttles (shuttle=) of this scene, flown round their cycle. Its legs (the game's bodies: 58 down, 68 in, 64 60 65 61 66
+// 62 67 63 between, as its own take-off and landing scripts change them) come out on the way down and go in on the way up; its thrust
+// (body 59, every other fifth of a second against 58, as its scripts flicker it) while it hovers, touches down and lifts off.
+static const S32 s_legsOut[] = { 68, 63, 67, 62, 66, 61, 65, 60, 64, 58 };
+static double Ease(double u) { u = u < 0 ? 0 : u > 1 ? 1 : u; return u * u * (3 - 2 * u); }
+static void Shuttles(S32 now, int driving) {
+    for (int i = 0; i < s_nbShuttles; i++) {
+        T_RACE_SHUTTLE *sh = &s_shuttles[i];
+        if (sh->Scene != (S32)NumCube || sh->Actor >= NbObjets) { sh->Ready = 0; continue; }
+        T_OBJET *ship = &ListObjet[sh->Actor];
+        if (!sh->Ready) {
+            // its own scripts stopped, standing still: flown from here on
+            ship->OffsetLife = -1; ship->OffsetTrack = -1;
+            InitAnim(GEN_ANIM_RIEN, ANIM_REPEAT, (U8)sh->Actor);
+            sh->Ready = 1;
+            Log_Info("[racemod] shuttle: actor %d of scene %d flown over its pad (%d,%d,%d)", (int)sh->Actor, (int)sh->Scene, (int)sh->X, (int)sh->Y, (int)sh->Z);
+        }
+        const S32 cycle = RACE_SHUTTLE_AWAY + RACE_SHUTTLE_DOWN + RACE_SHUTTLE_HOVER + RACE_SHUTTLE_TOUCH + RACE_SHUTTLE_LANDED + RACE_SHUTTLE_RISE;
+        S32 t = (now + i * cycle / s_nbShuttles) % cycle;      // (several take turns)
+        double y;
+        S32 body = 58;
+        const int thrust = (now / 200) & 1;
+        if (t < RACE_SHUTTLE_AWAY) {
+            ship->Flags |= INVISIBLE | NO_SHADOW;
+            ship->Obj.X = sh->X; ship->Obj.Y = sh->Y + RACE_SHUTTLE_HIGH; ship->Obj.Z = sh->Z;
+            continue;
+        }
+        ship->Flags &= ~(INVISIBLE | NO_SHADOW);
+        if ((t -= RACE_SHUTTLE_AWAY) < RACE_SHUTTLE_DOWN) {
+            // down out of the sky, slowing to the hover; its legs out over the second half
+            const double u = (double)t / RACE_SHUTTLE_DOWN, k = 1 - (1 - u) * (1 - u);
+            y = RACE_SHUTTLE_HIGH + (RACE_SHUTTLE_HOVERY - RACE_SHUTTLE_HIGH) * k;
+            const int leg = u < 0.5 ? 0 : (int)((u - 0.5) * 2 * 10);
+            body = s_legsOut[leg > 9 ? 9 : leg];
+        } else if ((t -= RACE_SHUTTLE_DOWN) < RACE_SHUTTLE_HOVER) {
+            y = RACE_SHUTTLE_HOVERY + 90 * sin(t * 2 * 3.14159265 / 1800.0);
+            body = thrust ? 59 : 58;
+        } else if ((t -= RACE_SHUTTLE_HOVER) < RACE_SHUTTLE_TOUCH) {
+            y = RACE_SHUTTLE_HOVERY * (1 - Ease((double)t / RACE_SHUTTLE_TOUCH));
+            body = thrust ? 59 : 58;
+        } else if ((t -= RACE_SHUTTLE_TOUCH) < RACE_SHUTTLE_LANDED) {
+            y = 0;
+            body = 58;
+        } else {
+            // straight up, faster and faster; its legs in over the middle of it
+            t -= RACE_SHUTTLE_LANDED;
+            const double u = (double)t / RACE_SHUTTLE_RISE;
+            y = RACE_SHUTTLE_HIGH * u * u;
+            if (u < 0.25) body = thrust ? 59 : 58;
+            else { const int leg = (int)((u - 0.25) / 0.5 * 10); body = s_legsOut[9 - (leg > 9 ? 9 : leg)]; }
+        }
+        ship->Obj.X = sh->X; ship->Obj.Y = sh->Y + (S32)y; ship->Obj.Z = sh->Z;
+        if (ship->GenBody != body) InitBody((U8)body, (U8)sh->Actor);
+        if (y >= RACE_SHUTTLE_LOW || now < sh->Hit) continue;
+        // down: the cars that run into it
+        T_OBJET *hero = &ListObjet[NUM_PERSO];
+        if (driving && Near(hero, sh->X, sh->Y, sh->Z, RACE_SHUTTLE_REACH)) {
+            sh->Hit = now + RACE_PENGUIN_HOLD;
+            if (now < s_protectUntil || now < s_jetUntil || (hero->Flags & NO_CHOC))
+                Log_Info("[racemod] Twinsen's car runs into the shuttle: %s", now < s_protectUntil ? "the protection spell holds" : now < s_jetUntil ? "the super jet-pack" : "he can't be hit");
+            else {
+                HitObj(PenguinHitter(), NUM_PERSO, RACE_SHUTTLE_FORCE, -1);
+                ListBuggy[0].Speed = 0;
+                if (s_hitUntil < now + RACE_PENGUIN_HOLD) s_hitUntil = now + RACE_PENGUIN_HOLD;
+                Log_Info("[racemod] Twinsen's car hits the shuttle");
+            }
+        }
+        const double wx = sh->X + CurrentCubeX * 32768.0, wz = sh->Z + CurrentCubeY * 32768.0;
+        for (int o = 0; o < RACE_MAX_OPPONENTS; o++) {
+            T_RACE_OPPONENT *op = &s_opp[o];
+            if (!op->Count || !RaceOn() || now < op->HitUntil) continue;
+            double x, z, oy, v, ddx, ddz;
+            PathAt(op, op->S, &x, &z, &oy, &v, &ddx, &ddz);
+            if ((x - wx) * (x - wx) + (z - wz) * (z - wz) > (double)RACE_SHUTTLE_REACH * RACE_SHUTTLE_REACH || fabs(oy - sh->Y) > 1500) continue;
+            op->HitUntil = now + RACE_PENGUIN_HOLD;
+            Log_Info("[racemod] %s hits the shuttle", op->Name);
+            const int index = OpponentActor(op);
+            if (index < 0) continue;
+            T_OBJET *car = &ListObjet[index];
+            InitAnim(GEN_ANIM_CHOC, ANIM_ALL_THEN, (U8)index);
+            InitHitExtraPof(car->Obj.X, car->Obj.Y + car->YMax + 1, car->Obj.Z, RACE_SHUTTLE_FORCE);
+        }
+    }
+}
+
+// Where the cars are, for the editor's minimap while it plays a race (the console's racecars, asked over the control socket a few times a
+// second): Twinsen's, then each opponent's that races in a car -- "car <n> <x> <z> <beta> <name>", island units, n -1 for Twinsen, else
+// the opponent's number. An opponent's own car where this scene has it in sight, else where its line has it in the race; one waiting
+// out of sight (in another scene's pits, or a race not on) is left out. Returns how many lines.
+int RaceMod_Cars(char lines[][96], int most) {
+    if (!RaceMod_Active() || CubeMode != CUBE_EXTERIEUR || most <= 0) return 0;
+    const double cx = CurrentCubeX * 32768.0, cz = CurrentCubeY * 32768.0;
+    const T_OBJET *hero = &ListObjet[NUM_PERSO];
+    int n = 0;
+    snprintf(lines[n++], 96, "car -1 %d %d %d Twinsen", (int)(hero->Obj.X + cx), (int)(hero->Obj.Z + cz), (int)(hero->Obj.Beta & 4095));
+    for (int o = 0; o < RACE_MAX_OPPONENTS && n < most; o++) {
+        T_RACE_OPPONENT *op = &s_opp[o];
+        if (!op->Count || !op->Scenes) continue;
+        double x, z, y, v, dx, dz;
+        S32 beta = 0;
+        const int index = OpponentActor(op);
+        if (index >= 0 && ListObjet[index].Obj.Y > -10000) {
+            x = ListObjet[index].Obj.X + cx; z = ListObjet[index].Obj.Z + cz; beta = ListObjet[index].Obj.Beta & 4095;
+        } else if (RaceOn()) {
+            PathAt(op, op->S, &x, &z, &y, &v, &dx, &dz);
+            beta = (S32)(atan2(dx, dz) * 4096 / (2 * 3.14159265358979)) & 4095;
+        } else continue;
+        snprintf(lines[n++], 96, "car %d %d %d %d %s", o, (int)x, (int)z, (int)beta, op->Name);
+    }
+    return n;
+}
+
 void RaceMod_Frame(void) {
     if (!RaceMod_Active()) return;
     ListVarGame[RACE_GATE_VAR] = (S16)(ClosedGate() ? 1 : 0);
+    for (int i = 0; i < s_nbHeld; i++)
+        if (ListVarGame[s_held[i][0]] != s_held[i][1]) {
+            ListVarGame[s_held[i][0]] = (S16)s_held[i][1];
+            Log_Info("[racemod] game variable %d held at %d", s_held[i][0], s_held[i][1]);
+        }
     if (Comportement == C_BUGGY) TrackSafePlace();
     FallenBelow(TimerRefHR);
     if (s_rescue) { s_rescue = 0; Rescue(); }
@@ -4044,6 +5847,9 @@ void RaceMod_Frame(void) {
     if (!followed && s_nbLoops) { FollowCamera = TRUE; followed = 1; Log_Info("[racemod] loops: the camera follows the car"); }
     FaceTheCar();
     const S32 now = TimerRefHR;
+    // (the game clock gone back -- every time the race keeps, a stun's end, a skid's, a lap's start, then lies ahead of it: said, so
+    // that a race that goes strange afterwards can be read from the log)
+    if (s_oppLast && now < s_oppLast - 1000) Log_Info("[racemod] WARNING: the game clock went back %.1f s (%d to %d)", (s_oppLast - now) / 1000.0, (int)s_oppLast, (int)now);
     S32 dt = s_oppLast ? now - s_oppLast : 0;
     s_oppLast = now;
     if (dt < 0) dt = 0;
@@ -4066,6 +5872,14 @@ void RaceMod_Frame(void) {
     if (s_powerups) PowerUps(now, driving);
     Vents(now);
     Jets(now, driving);
+    LavaBalls(now, driving);
+    LavaFalls(now);
+    BoostPanels(now, driving);
+    Gunners(now, driving);
+    Wheel(now, driving);
+    SlotMachine(now);
+    Monsters(now, driving);
+    Shuttles(now, driving);
     if (!Opponents()) return;
     // the race starts at GO (without a grid: when the player first drives off); the opponents wait while he is out of his car
     if (!s_nbSpots && !s_oppStarted && driving && (Input & I_UP)) s_oppStarted = 1;
@@ -4510,8 +6324,8 @@ static void RestoreView(const T_RACE_VIEW *v) {
 // The item box (top left): a slot's item, or the roulette going by -- the items turning over, slowing to the one drawn.
 static int ShownItem(int k, S32 now) {
     if (s_item[k] < 0 || now >= s_itemAt[k]) return s_item[k];
-    const double t = 1.0 - (double)(s_itemAt[k] - now) / RACE_ROLL_MS, p = 20.0 * (1 - (1 - t) * (1 - t));
-    return ((s_item[k] + (int)floor(p) - 20) % PU_COUNT + 3 * PU_COUNT) % PU_COUNT;
+    const double t = 1.0 - (double)(s_itemAt[k] - now) / RACE_ITEM_ROLL_MS, p = RACE_ITEM_ROLL_STEPS * (1 - (1 - t) * (1 - t));
+    return ((s_item[k] + (int)floor(p) - RACE_ITEM_ROLL_STEPS) % PU_ROLLED + 6 * PU_ROLLED) % PU_ROLLED;
 }
 
 #define RACE_GOLD 244                      // the palette's gold, round the selected slot
@@ -4525,8 +6339,9 @@ static void ItemBox(S32 x0, S32 y0, S32 size, int pu, int selected, S32 now) {
     SetClip(x0, y0, x1, y1);
     BackupAngles(ClipXMin, ClipYMin, ClipXMax, ClipYMax);
     Box(ClipXMin, ClipYMin, ClipXMax, ClipYMax, 0);
-    const int model = pu < 0 ? -1 : s_puModel[pu] == -2 ? s_oilIcon : s_puModel[pu];
-    if (model >= 0) {
+    const int model = pu < 0 ? -1 : s_puModel[pu] == -2 ? s_oilIcon : s_puModel[pu] == -3 ? -1 : s_puModel[pu] == -4 ? (s_goldIcon >= 0 ? s_goldIcon : s_puModel[PU_FUEL]) : s_puModel[pu];
+    U8 *shape = model >= 0 ? (U8 *)GivePtrObjFix(model) : pu >= 0 && s_puModel[pu] == -3 && s_fakeIconBody >= 0 ? (U8 *)GivePtrBody(s_fakeIconBody) : NULL;
+    if (shape) {
         // (the scene's view kept whole -- its projection, its camera and its light -- and put back exactly as it was after the item is
         // drawn. The game's own found-object display resets the view instead (PtrInit3DView): the plain follow camera, without the
         // race-track mode's own eye or lift (FOLLOWCAM.CPP FollowCamReapplyLift), so a frame that drew only the objects over the last
@@ -4541,7 +6356,20 @@ static void ItemBox(S32 x0, S32 y0, S32 size, int pu, int selected, S32 now) {
         SetLightVector(OBJ_ALPHA_LIGHT, OBJ_BETA_LIGHT, 0);
         const S32 lf = 200 * size / 60;
         SetProjection(x0 + size / 2, y0 + size / 2, 128, lf, lf);
-        SetFollowCamera(0, 0, 0, 60 * MUL_ANGLE, 0, 0, 16000);
+        // (an object much smaller than the inventory's, round about 4,000 tall -- the fake mushroom, the lap's own, a few hundred -- drawn
+        // nearer, round its middle, to fill the box as they do: the user, 2026-10-08, of the item box, "The mushroom pick up is far too
+        // small to see". Its box: the body header's x, y and z extents, 8-31)
+        S32 lookY = 0, lookFrom = 16000;
+        {
+            S32 box[6];
+            memcpy(box, shape + 8, sizeof(box));
+            S32 half = box[1] - box[0];
+            if (box[3] - box[2] > half) half = box[3] - box[2];
+            if (box[5] - box[4] > half) half = box[5] - box[4];
+            half /= 2;
+            if (half > 0 && half < 1200) { lookY = (box[2] + box[3]) / 2; lookFrom = 16000 * half / 1900; }
+        }
+        SetFollowCamera(0, lookY, 0, 60 * MUL_ANGLE, 0, 0, lookFrom);
         // (drawn without the outside's fog -- 16,000 away it darkened the meca-penguin to a shadow -- and without its depth buffer,
         // which the scene's ground nearer than that would hide it behind; then the outside's way of drawing back)
         // ... and in the colours of things near: outside, the fog is the colour table each object is drawn with (OBJECT.CPP: SetCLUT,
@@ -4550,7 +6378,18 @@ static void ItemBox(S32 x0, S32 y0, S32 size, int pu, int selected, S32 now) {
         const U32 clut = PtrTruePal && PtrCLUTFog ? (U32)((PtrTruePal - PtrCLUTFog) >> 8) : (U32)PalLevel;
         Switch_Fillers(FILL_POLY_TEXTURES);
         if (CubeMode == CUBE_EXTERIEUR) SetCLUT(PalLevel);
-        BodyDisplay(0, 0, 0, 0, (now * 4) & 4095, 0, (U8 *)GivePtrObjFix(model));
+        // (from the objects' own texture page, as the inventory and the scene's objects are drawn (OBJECT.CPP), and back after)
+        // (the animated textures, as the inventory animates them while it shows its objects: the fire ball's faces are the fire, and the
+        // protection spell's its sparkles, which start black and move only while something animates them -- the scene does only with
+        // animated textures of its own or the protection spell on: in the item box both were black on black, empty boxes, 2026-10-08)
+        DoTextureAnimation();
+        const PTR_U8 map = PtrMap;
+        U8 *const objMap = ObjPtrMap;
+        const S32 rep = RepMask;
+        PtrMap = ObjPtrMap = BufferTexture;
+        RepMask = 0xFFFF;
+        BodyDisplay(0, 0, 0, 0, (now * 4) & 4095, 0, shape);
+        PtrMap = map; ObjPtrMap = objMap; RepMask = rep;
         if (CubeMode == CUBE_EXTERIEUR) SetCLUT(clut);
         Switch_Fillers(depth ? (keep ? (fog ? FILL_POLY_FOG_NZW : FILL_POLY_NZW) : (fog ? FILL_POLY_FOG_ZBUFFER : FILL_POLY_ZBUFFER)) : fog ? FILL_POLY_FOG : FILL_POLY_TEXTURES);
         RestoreCamera();
@@ -4621,8 +6460,21 @@ void RaceMod_Draw(void) {
     // the item box, top left: its two slots
     if (items) {
         const S32 size = height / 8 > 60 ? height / 8 : 60, gap = size / 5;
-        for (int k = 0; k < RACE_ITEM_SLOTS; k++)
+        for (int k = 0; k < RACE_ITEM_SLOTS; k++) {
             ItemBox(16 + k * (size + gap), top + 16, size, ShownItem(k, now), k == s_sel && s_item[k] >= 0, now);
+            // (the golden Gazogem in use: a gold bar under its slot, its time left)
+            if (s_item[k] == PU_GOLD && s_goldUntil > now) {
+                const S32 x0 = 16 + k * (size + gap), w = size * (s_goldUntil - now) / RACE_GOLD_MS;
+                Box(x0, top + 16 + size + 8, x0 + w, top + 16 + size + 13, RACE_GOLD);
+                BoxMovingAdd(x0, top + 16 + size + 8, x0 + size, top + 16 + size + 13);
+            }
+        }
+        // the slot machine, top middle: its three reels, the winning line ringed in gold once all three have stopped the same
+        if (s_slotOn) {
+            const S32 reel = size * 5 / 4, sgap = reel / 6, x0 = width / 2 - (3 * reel + 2 * sgap) / 2;
+            const int stopped = now >= s_slotT0 + RACE_SLOT_STOP0 + 2 * RACE_SLOT_STOP_GAP;
+            for (int r = 0; r < 3; r++) ItemBox(x0 + r * (reel + sgap), top + 16, reel, SlotShown(r, now), stopped && s_slotWin, now);
+        }
     }
     if (s_car.Hud) {
         char text[96], a[24], b[24];
@@ -4672,6 +6524,9 @@ void RaceMod_Draw(void) {
             BigText(width / 2, height / 3, count, k, count[0] == 'G' ? RACE_GREEN : RACE_RED);
         }
     }
+    // a message of the race-track mode's (Message: "Back on the road", the roulette wheel's prize), in the middle near the top -- set
+    // since the first tracks and never drawn till 2026-10-10
+    if (now < s_messageUntil && s_message[0]) HudLine(width / 2 - SizeFont(s_message) / 2, height / 5, s_message, -1);
 
     RestoreClipWindow();
     UnsetClip();
@@ -4706,21 +6561,25 @@ static void ResetTrack(void) {
     s_rescueOn = 1; s_fileIsland = -1; s_fileName[0] = 0;
     s_nbLoops = 0; s_nbJumpCams = 0; s_nbArcs = 0; s_nbCubeScenes = 0;
     s_nbVents = s_nbDrips = 0; memset(s_puffEnd, 0, sizeof(s_puffEnd));
-    s_nbJets = 0;
-    s_arcOn = s_arcLast = -1; s_arcS = s_arcV = s_arcAcross = 0; s_arcTime = s_arcLandedAt = 0;
+    s_nbFalls = 0; s_nbPanels = 0; s_lavaModel = -1; s_fallFootNext = s_fallLipNext = 0;
+    s_nbJets = 0; s_nbTunnels = 0; s_nbLava = 0; s_nbShuttles = 0; s_nbGunners = 0; memset(s_bullets, 0, sizeof(s_bullets));
+    memset(&s_wheel, 0, sizeof(s_wheel)); DecorPoseHook = NULL; s_nbMonsters = 0; memset(s_bittenUntil, 0, sizeof(s_bittenUntil));
+    s_arcOn = s_arcLast = -1; s_arcS = s_arcV = s_arcAcross = s_arcAcross1 = 0; s_arcTime = s_arcLandedAt = 0;
     s_flying = -1; s_landed = -1; s_landedAt = 0; s_statue = -1; s_raisedLoop = 0; s_gravity = 0;
     s_railBack = s_railUp = s_railLead = 0; s_railTouch = 0;
     s_jumpLo = 0.6; s_jumpHi = 4.0; s_jumpRate = 0; s_jumpFrac = 0; s_jumpOver = 0;
     s_autoIndex = -1;
     s_faced = 0; s_safeIndex = -1; s_safeScene = -1; s_rescueArrive = -1; s_rescue = 0; s_hitUntil = 0; s_belowSince = 0;
     memset(&s_ride, 0, sizeof(s_ride)); s_loopBeta = s_loopTime = 0; s_hinted = -1;
-    s_nbGates = 0; s_beatOpp = -1; s_nbBeatSet = 0; s_raceLaps = 0; s_nbWinSet = 0; s_place = s_racers = 0;
+    s_nbGates = 0; s_nbHeld = 0; s_beatOpp = -1; s_nbBeatSet = 0; s_raceLaps = 0; s_nbWinSet = 0; s_place = s_racers = 0;
     ListVarGame[209] = 0;
     s_beatText = -1; s_paradeOpp = -1; s_paradeVar = -1; s_nbParade = 0; s_paradeParkScene = -1; s_paradeS = s_paradeSpeed = 0; s_paradeActorNow = -1;
     s_main = -1; s_beatMain = 0; s_nbFinishSet = 0;
     s_sprint = 0; s_hasFinish = 0; s_endAt = 0; s_endWon = 0; s_wakeScene = s_wakeText = s_wakeActor = s_introText = s_loseText = -1; s_introShown = 0; s_pendLose = -1;
     s_nbAfterGears = 0; s_wakeFlight = 0;
-    s_powerups = 0; s_fuelAlways = 0; s_powerupOnly = -1; s_nbOnly = 0; s_nbMush = 0; s_nbOilActors = 0; memset(s_slicks, 0, sizeof(s_slicks)); s_skidUntil = 0;
+    s_powerups = 0; s_fuelAlways = 0; s_powerupOnly = -1; s_prizeForce = -1; s_nbOnly = 0; s_nbMush = 0; s_nbOilActors = 0; memset(s_slicks, 0, sizeof(s_slicks));
+    s_nbFakeActors = 0; s_fakeIconBody = -1; memset(s_fakes, 0, sizeof(s_fakes)); memset(s_shots, 0, sizeof(s_shots));
+    s_driveLaser = 0; s_laserModel[0] = s_laserModel[1] = -1; s_skidUntil = 0;
     s_carsScene = -1; for (int n = 0; n < RACE_MAX_OPPONENTS; n++) s_carActor[n] = -1;
     s_noCollideScene = -1;
     if (s_heroHidden) { ListObjet[NUM_PERSO].Flags &= ~INVISIBLE; s_heroHidden = 0; }

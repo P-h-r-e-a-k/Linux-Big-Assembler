@@ -17,9 +17,11 @@ internal static class RaceTrackScenes
     // x, y, z, turn] in its cube's world units. Twin: the same for the track of the island's other-weather file, when it has one of its own
     // (the scenes carry both).
     // Mushrooms: the small brown mushrooms along the lap with the power-ups in them, Penguins: a nitro penguin in each scene, and Oil: a few
-    // oil slicks in each (RaceTrackOil), out of sight until dropped, each [scene, actor] (RACEMOD.CPP's power-ups).
+    // oil slicks in each (RaceTrackOil), out of sight until dropped, each [scene, actor] (RACEMOD.CPP's power-ups); Fakes: a few copies of the
+    // mushroom in each, the fake mushrooms a car drops (since 2026-10-08).
     public sealed record Result(List<string> Log, int ScenesChanged, int ActorsRemoved, List<(RaceDriver Driver, Dictionary<int, int> Actors)> Drivers, int StartScene,
-        List<int[]> Grid, List<int[]> Pits, Result? Twin = null, List<int[]>? Mushrooms = null, List<int[]>? Penguins = null, List<int[]>? Oil = null);
+        List<int[]> Grid, List<int[]> Pits, Result? Twin = null, List<int[]>? Mushrooms = null, List<int[]>? Penguins = null, List<int[]>? Oil = null,
+        List<int[]>? Fakes = null, List<int[]>? Gunners = null, List<int[]>? GasMonsters = null);
 
     // The buggy's own script removes it until the quest that mends it is done (game variable 74 >= 3). The compare is
     //   IF VAR_GAME(74) >= 3   =   0C 0F 4A 03 03 00 ..
@@ -219,6 +221,8 @@ internal static class RaceTrackScenes
     // them as they should) and, as every actor the game itself draws that way (Twinsen's buggy: BUGGY.CPP), without a shadow -- the engine
     // draws a depth-buffered actor's shadow over it, a dark patch across the car.
     internal const uint OpponentFlags = 0x1A1000;
+    // how near a scene's cube a gas monster is to be one of its actors too (cells: seen from it)
+    private const double GasMonsterSeen = 40;
 
     public const int DesertIsland = 2;
     // The buggy's own scene on the Desert island: an island with no buggy of its own (Citadel) gets a copy of that actor on the grid.
@@ -242,9 +246,13 @@ internal static class RaceTrackScenes
         public List<(int X, int Z, int Beta, int Y)?> CarAt = new();
         // the power-ups: where the mushrooms go along the lap (island cells, the road's height), and the scenes' copies of them and of the penguin
         public List<(double X, double Z, double Y)> MushroomSpots = new();
-        public List<int[]> Mushrooms = new(), Penguins = new(), Oil = new();
+        public List<int[]> Mushrooms = new(), Penguins = new(), Oil = new(), Fakes = new();
+        // the machine guns on their knolls: each [scene, the gun's actor, its Franco's actor, its knoll in Report.Gunners, which gun on it]
+        public List<int[]> Gunners = new();
+        // the gas monsters: each [scene, its actor, its body, its place in Report.GasMonsters, 1 in its own scene's cube (0 seen from there)]
+        public List<int[]> GasMonsters = new();
         public Result Result(List<string> log, int changed, int removed, Result? twin = null) =>
-            new(log, changed, removed, Drivers.Select((d, k) => (d, Cars[k])).ToList(), StartScene, Grid, Pits, twin, Mushrooms, Penguins, Oil);
+            new(log, changed, removed, Drivers.Select((d, k) => (d, Cars[k])).ToList(), StartScene, Grid, Pits, twin, Mushrooms, Penguins, Oil, Fakes, Gunners, GasMonsters);
     }
 
     // Edits the outside scenes of the island as the options say, from what the build of the island found (start line, jump, road). With
@@ -537,6 +545,70 @@ internal static class RaceTrackScenes
                 }
                 t.CarAt.Clear();
             }
+            // the machine guns on their knolls (Report.Gunners): the scene's own guns (Otringal's Francos' machine guns, entity 200) moved up onto
+            // the knoll inside the corner, without their scripts -- the guns' life scripts put them on the scene's points beside the road
+            // every frame -- each manned by a Franco (entity 201, sitting at it) whose bursts the race-track mode fires (gunner=; the user,
+            // 2026-10-10, of the second gun standing there alone: "let's either remove a gun or add a second gunner")
+            foreach (var t in tracks)
+                foreach (var g in t.Report.Gunners)
+                {
+                    if ((int)Math.Floor(g.X / 64) != model.CubeX || (int)Math.Floor(g.Z / 64) != model.CubeY) continue;
+                    double kx = (g.X - model.CubeX * 64) * 512, kz = (g.Z - model.CubeY * 64) * 512;
+                    var guns = Enumerable.Range(1, model.Actors.Count - 1).Where(i => model.Actors[i].Entity == GunEntity)
+                        .OrderBy(i => Math.Abs(model.Actors[i].X - kx) + Math.Abs(model.Actors[i].Z - kz)).Take(2).ToList();
+                    if (guns.Count == 0) { log.Add($"scene {scene}: WARNING: no machine gun to put on the knoll at ({g.X:0.#}, {g.Z:0.#})"); continue; }
+                    // (facing the middle of where it fires; the second gun beside the first, the Franco behind the first's stock)
+                    double fx = g.FaceX - g.X, fz = g.FaceZ - g.Z, fl = Math.Max(1e-9, Math.Sqrt(fx * fx + fz * fz));
+                    fx /= fl; fz /= fl;
+                    var beta = (int)Math.Round(Math.Atan2(fx, fz) * 4096 / (2 * Math.PI)) & 4095;
+                    var y = (int)Math.Round(g.Top);
+                    for (var k = 0; k < guns.Count; k++)
+                    {
+                        var gun = model.Actors[guns[k]];
+                        double side = k == 0 ? 0 : 1.6 * 512, ahead = 0.8 * 512;
+                        gun.X = (int)Math.Round(kx + fx * ahead + fz * side); gun.Z = (int)Math.Round(kz + fz * ahead - fx * side);
+                        gun.Y = y; gun.Beta = beta; gun.Anim = 0; gun.Move = 0; gun.Life = new byte[] { 0 }; gun.Track = new byte[] { 0 };
+                    }
+                    var francos = new List<int>();
+                    for (var k = 0; k < guns.Count; k++)
+                    {
+                        var at = model.Actors[guns[k]];
+                        var franco = at.Clone();
+                        franco.Entity = FrancoEntity; franco.Body = 0; franco.Anim = FrancoAtTheGun;
+                        franco.X = (int)Math.Round(at.X - fx * FrancoBehind); franco.Z = (int)Math.Round(at.Z - fz * FrancoBehind); franco.Y = y;
+                        franco.Beta = beta; franco.Move = 0; franco.Life = new byte[] { 0 }; franco.Track = new byte[] { 0 };
+                        var fi = SceneOps.AddActor(model, franco);
+                        francos.Add(fi);
+                        t.Gunners.Add(new[] { scene, guns[k], fi, t.Report.Gunners.IndexOf(g), k });
+                    }
+                    log.Add($"scene {scene}: the machine guns (actors {string.Join(", ", guns)}) on the knoll at ({g.X:0.#}, {g.Z:0.#}), {y} high, a Franco at each (actors {string.Join(", ", francos)})");
+                }
+            // the gas monsters (Report.GasMonsters): the game's gas monster, made bigger (RaceTrackGasMonster), out of sight until the
+            // race-track mode raises it out of the gas (gasmonster=) -- an actor of each scene it can be seen from: its own, and every one
+            // whose cube comes within GasMonsterSeen of it (the engine draws a scene's actors only while it is the one about: the islets'
+            // monsters stood up out of nowhere as the car came into their scene -- the user, 2026-10-10: "Our gas monsters are invisible
+            // until we're right at them, which takes the user by surprise so they have no chance to dodge"); the race-track mode poses
+            // the one of the scene about
+            if (mushroomTemplate is not null)
+                foreach (var t in tracks)
+                    for (var gi = 0; gi < t.Report.GasMonsters.Count; gi++)
+                    {
+                        var g = t.Report.GasMonsters[gi];
+                        double ox = Math.Clamp(g.X, model.CubeX * 64.0, model.CubeX * 64.0 + 64), oz = Math.Clamp(g.Z, model.CubeY * 64.0, model.CubeY * 64.0 + 64);
+                        if ((ox - g.X) * (ox - g.X) + (oz - g.Z) * (oz - g.Z) > GasMonsterSeen * GasMonsterSeen) continue;
+                        if (model.Actors.Count + 1 + PenguinsPerScene + OilPerScene + FakesPerScene >= SceneValidator.MaxObjects) { log.Add($"scene {scene}: WARNING: no room for the gas monster at ({g.X:0.#}, {g.Z:0.#})"); continue; }
+                        var monster = mushroomTemplate.Clone();
+                        monster.Entity = RaceTrackGasMonster.Entity; monster.Body = 0; monster.Anim = Math.Max(0, g.FirstAnim);
+                        monster.Flags = OpponentFlags; monster.Move = 0; monster.Life = new byte[] { 0 }; monster.Track = new byte[] { 0 };
+                        // (its start in the cube -- a record's place is 16 bits, and one of the next cube's is past the edge: the race-track mode
+                        // stands it where it is, every frame)
+                        monster.X = Math.Clamp((int)Math.Round((g.X - model.CubeX * 64) * 512), 0, 32767); monster.Z = Math.Clamp((int)Math.Round((g.Z - model.CubeY * 64) * 512), 0, 32767);
+                        monster.Y = -20000; monster.Beta = 0;
+                        var actor = SceneOps.AddActor(model, monster);
+                        var home = (int)Math.Floor(g.X / 64) == model.CubeX && (int)Math.Floor(g.Z / 64) == model.CubeY;
+                        t.GasMonsters.Add(new[] { scene, actor, g.Body, gi, home ? 1 : 0 });
+                        log.Add($"scene {scene}: a gas monster (actor {actor}) in the gas at ({g.X:0.#}, {g.Z:0.#}){(home ? "" : ", in the next cube")}");
+                    }
             // the power-ups: the mushrooms of the lap in this scene's cube, on the road, and a penguin out of sight
             if (mushroomTemplate is not null && penguinTemplate is not null)
                 foreach (var t in tracks)
@@ -547,13 +619,14 @@ internal static class RaceTrackScenes
                         if ((int)Math.Floor(x / 64) != model.CubeX || (int)Math.Floor(z / 64) != model.CubeY) continue;
                         // (the scene's actors run out at the engine's hundred: the penguins and the slicks keep their room, and a row
                         // that doesn't fit is shorter)
-                        if (model.Actors.Count + PenguinsPerScene + OilPerScene >= SceneValidator.MaxObjects) { mushroomsLeftOut++; continue; }
+                        if (model.Actors.Count + PenguinsPerScene + OilPerScene + FakesPerScene >= SceneValidator.MaxObjects) { mushroomsLeftOut++; continue; }
                         // (out of sight, as the penguins and the slicks are, its height on the road kept with it: the race-track mode stands
                         // it there. A scene can be drawn with another island file than its track's -- Celebration Island's 95 is the statue's
                         // track's, and before the statue rises the game draws it without the raised road, as the editor draws the island's
                         // other file with it; Citadel Island's scenes carry both weathers' tracks -- and a mushroom standing on a road that
                         // isn't there hung in the air)
                         var mushroom = mushroomTemplate.Clone();
+                        mushroom.Body = RaceTrackOil.BigMushroom;      // (the game's mushroom half again its size: RaceTrackOil)
                         mushroom.Flags = OpponentFlags; mushroom.Move = 0; mushroom.Life = new byte[] { 0 }; mushroom.Track = new byte[] { 0 };
                         mushroom.X = (int)Math.Round((x - model.CubeX * 64) * 512); mushroom.Z = (int)Math.Round((z - model.CubeY * 64) * 512);
                         mushroom.Y = -20000; mushroom.Beta = 0;
@@ -575,6 +648,15 @@ internal static class RaceTrackScenes
                         oil.Flags = OpponentFlags; oil.Move = 0; oil.Life = new byte[] { 0 }; oil.Track = new byte[] { 0 };
                         oil.X = IslandFile.CubeSize / 2; oil.Z = IslandFile.CubeSize / 2; oil.Y = -20000; oil.Beta = 0;
                         t.Oil.Add(new[] { scene, SceneOps.AddActor(model, oil) });
+                    }
+                    // the fake mushrooms: copies of the mushroom itself -- a fake looks just as a real one does
+                    for (var k = 0; k < FakesPerScene; k++)
+                    {
+                        var fake = mushroomTemplate.Clone();
+                        fake.Body = RaceTrackOil.BigMushroom;          // (as big as the real ones)
+                        fake.Flags = OpponentFlags; fake.Move = 0; fake.Life = new byte[] { 0 }; fake.Track = new byte[] { 0 };
+                        fake.X = IslandFile.CubeSize / 2; fake.Z = IslandFile.CubeSize / 2; fake.Y = -20000; fake.Beta = 0;
+                        t.Fakes.Add(new[] { scene, SceneOps.AddActor(model, fake) });
                     }
                 }
             // (an island with a track in each weather: each jump only in its own file's -- the scenes are both's, and Citadel Island's
@@ -648,8 +730,12 @@ internal static class RaceTrackScenes
     // power-up in each (a car takes one from a row: the others it passes give way). And the nitro penguin a car drops: the shop's (scene
     // 14, actor 5: entity 46).
     public const int MushroomScene = 45, MushroomActor = 7, PenguinScene = 14, PenguinActor = 5;
+    // Otringal's machine gun (entity 200: its body faces +z, its muzzle 214 forward) and the Franco who mans it (entity 201, its generic
+    // animation 474 sitting at the gun, 1,072 behind the gun's middle as the game has him: scene 88's points 18 and 19)
+    public const int GunEntity = 200, FrancoEntity = 201, FrancoAtTheGun = 474;
+    private const double FrancoBehind = 1072;
     // (the oil slicks one scene can show at once: RACEMOD.CPP keeps six on the whole lap)
-    private const int OilPerScene = 5, PenguinsPerScene = 3;   // (oil 3 until 2026-10-07: the refinery's drips lie in slicks too)
+    private const int OilPerScene = 5, PenguinsPerScene = 3, FakesPerScene = 3;   // (oil 3 until 2026-10-07: the refinery's drips lie in slicks too)
     private const double MushroomSpacing = 40, MushroomFirst = 30, MushroomClear = 14;
     // (the gap is more than the engine's reach for taking one, RACEMOD.CPP RACE_MUSHROOM_REACH: 2 cells; a car down the middle of one takes
     // only that one)
@@ -926,7 +1012,7 @@ void comportement_1()
         var stood = groundBefore is null ? 0 : groundBefore(fromX, fromZ);
         if ((actor.Flags & Fallable) == 0 && stood <= 0) return;
         if (wasGround is not null && !wasGround(fromX, fromZ)) return;
-        if (distanceToRoad(fromX, fromZ) > clear) return;
+        if (distanceToRoad(fromX, fromZ) > clear) { PointsOffRoad(); return; }
         var offset = (actor.Flags & Fallable) != 0 || groundBefore is null ? 0 : actor.Y - stood;
         for (var out_ = 1.0; out_ <= 24; out_ += 0.5)
         for (var turn = 0; turn < 24; turn++)
@@ -938,10 +1024,58 @@ void comportement_1()
             if (wasGround is not null && !wasGround(ox + x / 512.0, oz + z / 512.0)) continue;   // not out onto the sea
             var y = ground is null ? actor.Y : (int)Math.Round(ground(ox + x / 512.0, oz + z / 512.0) + offset);
             log.Add($"scene {scene}: actor {index} (entity {actor.Entity}) stood on the road and is moved {out_:0.#} cells aside, to ({x},{y},{z})");
+            // (and the scene's points its life script stands it on -- pos_point -- where they are where it stood, moved with it: Otringal's
+            // machine guns, moved aside, were put back on the road by their scripts every frame, 2026-10-09)
+            foreach (var point in PosPoints(actor, index).Where(p => p < model.TrackPoints.Count))
+            {
+                var p = model.TrackPoints[point];
+                if (Math.Abs(p.X - actor.X) > 3 * 512 || Math.Abs(p.Z - actor.Z) > 3 * 512) continue;
+                var (px, pz) = (p.X + x - actor.X, p.Z + z - actor.Z);
+                var py = ground is null ? p.Y : (int)Math.Round(ground(ox + px / 512.0, oz + pz / 512.0) + (p.Y - actor.Y + offset));
+                model.TrackPoints[point] = p with { X = px, Y = py, Z = pz };
+                log.Add($"scene {scene}: ... and point {point}, where its script stands it, with it");
+            }
             actor.X = x; actor.Z = z; actor.Y = y;
+            PointsOffRoad();
             return;
         }
         log.Add($"scene {scene}: WARNING: actor {index} (entity {actor.Entity}) stands on the road and no clear place was found near it");
+
+        // (the points its life script stands it on that are on the road themselves -- wherever it stood: Otringal's spaceport man,
+        // kept for Twinsen's cutscenes, stood beside the road and his script put him on it, 2026-10-09 -- each moved to the nearest clear
+        // place)
+        void PointsOffRoad()
+        {
+            foreach (var point in PosPoints(actor, index).Where(p => p < model.TrackPoints.Count))
+            {
+                var p = model.TrackPoints[point];
+                if (distanceToRoad(ox + p.X / 512.0, oz + p.Z / 512.0) > clear) continue;
+                var moved = false;
+                for (var out_ = 1.0; out_ <= 24 && !moved; out_ += 0.5)
+                for (var turn = 0; turn < 24 && !moved; turn++)
+                {
+                    var angle = turn * Math.PI / 12;
+                    int x = (int)Math.Round(p.X + Math.Cos(angle) * out_ * 512), z = (int)Math.Round(p.Z + Math.Sin(angle) * out_ * 512);
+                    if (x < 512 || z < 512 || x > IslandFile.CubeSize - 512 || z > IslandFile.CubeSize - 512) continue;
+                    if (distanceToRoad(ox + x / 512.0, oz + z / 512.0) <= clear) continue;
+                    if (wasGround is not null && !wasGround(ox + x / 512.0, oz + z / 512.0)) continue;
+                    var b = groundBefore is null ? 0 : groundBefore(ox + p.X / 512.0, oz + p.Z / 512.0);
+                    var y = ground is null ? p.Y : (int)Math.Round(ground(ox + x / 512.0, oz + z / 512.0) + (p.Y - b));
+                    model.TrackPoints[point] = p with { X = x, Y = y, Z = z };
+                    log.Add($"scene {scene}: point {point}, where actor {index}'s (entity {actor.Entity}) script stands it, was on the road and is moved {out_:0.#} cells aside");
+                    moved = true;
+                }
+            }
+        }
+    }
+
+    // The scene's points an actor's life script puts it on (pos_point), read from the script's text.
+    private static IEnumerable<int> PosPoints(SceneActorModel actor, int index)
+    {
+        string text;
+        try { text = LbaScript.LifeText.Decompile(actor.Life, index, LbaScript.NoSymbols.Instance); }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException or InvalidOperationException) { return Array.Empty<int>(); }
+        return System.Text.RegularExpressions.Regex.Matches(text, @"pos_point\((\d+)\)").Select(m => int.Parse(m.Groups[1].Value)).Distinct().ToList();
     }
 
     private static void Reseat(SceneModel model, Func<double, double, double> before, Func<double, double, double> after, Func<double, double, bool> wasGround, int scene, List<string> log)

@@ -61,7 +61,7 @@ jobs:
       - name: Build the native renderer and engine
         working-directory: native/lba2-classic-community
         run: |
-          cmake --preset linux -DCMAKE_PREFIX_PATH="$HOME/sdl3" -DLBA2_BUILD_TESTS=OFF
+          cmake --preset linux -DCMAKE_PREFIX_PATH="$HOME/sdl3" -DLBA2_BUILD_TESTS=OFF -DLBA2_CONTROL_SERVER=ON
           ninja -C out/build/linux lba2_renderer lba2cc
 
       - name: Publish the single-file executable

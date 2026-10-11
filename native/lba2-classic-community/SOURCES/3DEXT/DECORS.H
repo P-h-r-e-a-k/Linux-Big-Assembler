@@ -12,6 +12,10 @@ extern void AffichageObjetDecorsZV(void);
 /*--------------------------------------------------------------------------*/
 extern void AffichageObjetDecorsZBuf(void);
 /*--------------------------------------------------------------------------*/
+// (LBA Assembler: decors a race track moves -- RACEMOD.CPP's roulette wheel, its turning head and its rolling ball -- posed as each cube's
+// decors are drawn; NULL: none)
+extern void (*DecorPoseHook)(T_DECORS *list, S32 count);
+/*--------------------------------------------------------------------------*/
 extern S32 TestZVDecors(S32 xw, S32 yw, S32 zw, T_DECORS *objet);
 
 #endif // DECORS_H

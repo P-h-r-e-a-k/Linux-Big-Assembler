@@ -271,6 +271,9 @@ void AffichageObjetDecorsZV(void) {
 
 // Version masques compris
 
+// A race track's moving decors (RACEMOD.CPP: the roulette wheel's head turned, its ball moved), posed before a cube's decors are drawn.
+void (*DecorPoseHook)(T_DECORS *list, S32 count) = NULL;
+
 void AffichageObjetDecorsZBuf(void) {
     S32 i;
     T_LIST_TRI *ptrtri;
@@ -280,6 +283,9 @@ void AffichageObjetDecorsZBuf(void) {
     S32 zr;
 
     ObjPtrMap = ObjTexture; // texture obj
+
+    if (DecorPoseHook && NbObjDecors > 0)
+        DecorPoseHook(ListDecors, NbObjDecors);
 
     ptrtri = ListTriExt;
     ptrobj = ListDecors;

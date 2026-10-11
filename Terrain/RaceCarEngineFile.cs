@@ -50,10 +50,38 @@ internal static class RaceCarEngineFile
         foreach (var loop in track?.Loops ?? new()) text.Append($"loop={string.Join(' ', loop)}\n");
         // (the Island of the Francos: every car on Gazogem fuel all race, none from a mushroom)
         if (info is not null && RaceTrackIsland.ByName(info.Island) is { FuelAlways: true }) text.Append("fuel_always=1\n");
+        // (game variables held while it races: travel cutscenes kept from playing -- Otringal's Dino-Fly landing)
+        if (info is not null) foreach (var (n, value) in RaceTrackIsland.ByName(info.Island).HeldVars) text.Append($"vargame={n} {value}\n");
         // the pipes over the road: their steam and the oil they drip onto it
         foreach (var steam in track?.Steam ?? new()) text.Append($"steam={string.Join(' ', steam)}\n");
         foreach (var drip in track?.Drips ?? new()) text.Append($"drip={string.Join(' ', drip)}\n");
         foreach (var jet in track?.Jets ?? new()) text.Append($"jet={string.Join(' ', jet)}\n");
+        foreach (var tunnel in track?.Tunnels ?? new()) text.Append($"tunnel={string.Join(' ', tunnel)}\n");
+        // the spaceships it flies over their pads on the road (Otringal's square island)
+        foreach (var shuttle in track?.Shuttles ?? new()) text.Append($"shuttle={string.Join(' ', shuttle)}\n");
+        // the lava's balls of fire (Volcano Island)
+        foreach (var ball in track?.LavaBalls ?? new()) text.Append($"lavaball={string.Join(' ', ball)}\n");
+        // (the game's lava ball, bigger, that they and the lava fall throw: RaceTrackOil.InstallLavaBall)
+        if (track?.LavaBallModel is { } lavaBall && (track.LavaBalls is { Count: > 0 } || track.LavaFalls is { Count: > 0 })) text.Append($"lava_ball_model={lavaBall}\n");
+        // ... its lava fall, across its face, and its boost panels (Volcano Island's, 2026-10-10)
+        foreach (var fall in track?.LavaFalls ?? new()) text.Append($"lavafall={string.Join(' ', fall)}\n");
+        foreach (var panel in track?.BoostPanels ?? new()) text.Append($"boostpanel={string.Join(' ', panel)}\n");
+        // the machine guns on their knolls, each followed by where its bullets land (Otringal's)
+        foreach (var g in track?.Gunners ?? new())
+        {
+            if (g.Length < 6) continue;
+            text.Append($"gunner={string.Join(' ', g.Take(6))}\n");
+            for (var k = 6; k + 3 < g.Length; k += 4) text.Append($"gunner_target={g[k]} {g[k + 1]} {g[k + 2]} {g[k + 3]}\n");
+        }
+        // the roulette wheel the lap runs through, its head turning and its ball rolling (Otringal's)
+        if (raisedFile is not null && track?.Roulette is { Length: >= 15 } wheel)
+        {
+            text.Append($"roulette={string.Join(' ', wheel)}\n");
+            if (track.RouletteBalls is > 1 and var balls) text.Append($"roulette_balls={balls}\n");
+            if (track.RoulettePockets is { } pockets) text.Append($"roulette_pockets={pockets}\n");
+        }
+        // the gas monsters that rise out of the gas beside the road to bite cars (Otringal's)
+        foreach (var monster in track?.GasMonsters ?? new()) text.Append($"gasmonster={string.Join(' ', monster)}\n");
         // where the camera stands while the car flies a drop
         foreach (var dropCam in track?.JumpCameras ?? new()) text.Append($"jumpcam={string.Join(' ', dropCam)}\n");
         // the jumps the engine carries the car over (places in the raised road's file), and the island's scenes by cube for the cube
@@ -118,8 +146,13 @@ internal static class RaceCarEngineFile
             foreach (var m in mushrooms) text.Append($"mushroom={string.Join(' ', m)}\n");
             foreach (var pg in track.Penguins ?? new()) text.Append($"penguin={pg[0]} {pg[1]}\n");
             foreach (var oil in track.Oil ?? new()) text.Append($"oil={oil[0]} {oil[1]}\n");
+            foreach (var fake in track.Fakes ?? new()) text.Append($"fake={fake[0]} {fake[1]}\n");
+            // (the laser cars' bolts: the game's own, whatever a track built before them noted -- RaceTrackLasers)
+            text.Append($"laser_models={RaceTrackLasers.Green} {RaceTrackLasers.Red}\n");
             // (the oil's drum, which the item box shows)
             if (track.OilIcon is { } icon) text.Append($"oil_icon={icon}\n");
+            // (the golden Gazogem, the roulette wheel's super jackpot)
+            if (track.GoldIcon is { } gold) text.Append($"gold_icon={gold}\n");
             // (the super jet-pack the car turns into while it drives it)
             if (track.SuperJetModel is { } jetModel) text.Append($"superjet_model={jetModel}\n");
             // (Twinsen's buggy at half its size, for an opponent's lightning)
@@ -185,13 +218,21 @@ internal static class RaceCarEngineFile
     // Null when the folder hasn't that car (built before it was made).
     internal static string? DriveAsLine(string gameDirectory, int number)
     {
+        // (Twinsen's laser cars: his own buggy, its gun firing laser bolts instead of magic balls -- RACEMOD.CPP drive_laser=)
+        if (number == RaceCarSetup.LaserGreen) return "# Twinsen's buggy firing green lasers\ndrive_laser=1\n";
+        if (number == RaceCarSetup.LaserRed) return "# Twinsen's buggy firing red lasers\ndrive_laser=2\n";
         if (number < 0) return null;
         var racer = Lba2EntityTable.Load(gameDirectory)?.Entities.FirstOrDefault(e => e.Id == RaceTrackScenes.RacerEntity);
         if (racer is null) return null;
         var anim = racer.Anims.Where(a => a.Generic == 1).Select(a => (int?)a.Anim).FirstOrDefault();
         if (anim is null) return null;
         if (RaceTrackCharacterCars.Catalogue(gameDirectory).FirstOrDefault(e => e.Number == number) is { } listed)
+        {
+            // (the laser cars as a folder built on 2026-10-08 lists them: his buggy firing lasers now)
+            if (listed.Name == RaceTrackCharacterCars.LaserGreenName) return DriveAsLine(gameDirectory, RaceCarSetup.LaserGreen);
+            if (listed.Name == RaceTrackCharacterCars.LaserRedName) return DriveAsLine(gameDirectory, RaceCarSetup.LaserRed);
             return $"# driving as car {number}, {listed.Name}\ndrive_as={listed.Body} {anim} {listed.Small}\n";
+        }
         var body = racer.Bodies.Where(b => b.Generic == number).Select(b => (int?)b.Body).FirstOrDefault();
         if (body is null) return null;
         var small = racer.Bodies.Where(b => b.Generic == RaceTrackSmallCars.SmallOf(number)).Select(b => b.Body).DefaultIfEmpty(-1).First();

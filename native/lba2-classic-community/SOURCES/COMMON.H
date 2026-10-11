@@ -311,6 +311,10 @@ S32 RaceMod_BlocksInventory(void);
 S32 RaceMod_FreeOfCube(S32 numobj);
 // The race's mushrooms, penguins and oil slicks: no car is stopped by them, or stands on them (OBJECT.CPP CheckObjCol).
 S32 RaceMod_NoCollide(S32 numobj);
+// Twinsen's car on the super jet-pack: through the island's objects and the scene's actors (EXTFUNC.CPP, OBJECT.CPP CheckObjCol).
+S32 RaceMod_JetGhost(void);
+// The golden Gazogem running: no top speed (BUGGY.CPP RaceSpeed: the car keeps the speed it is given over the gear's top).
+S32 RaceMod_NoTopSpeed(void);
 // The protection spell a race's power-up casts (EXTRA.CPP): it takes no magic while it lasts, and blinks as it runs out.
 S32 RaceMod_ProtectionFree(void);
 S32 RaceMod_ProtectionEnding(void);

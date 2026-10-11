@@ -22,7 +22,7 @@ ninja -C /tmp/SDL3/build && sudo ninja -C /tmp/SDL3/build install && sudo ldconf
 
 # the native renderer library and the playable engine (once, and after native changes)
 cd native/lba2-classic-community
-cmake --preset linux -DCMAKE_PREFIX_PATH=/usr/local -DLBA2_BUILD_TESTS=OFF
+cmake --preset linux -DCMAKE_PREFIX_PATH=/usr/local -DLBA2_BUILD_TESTS=OFF -DLBA2_CONTROL_SERVER=ON
 ninja -C out/build/linux lba2_renderer lba2cc
 cd ../..
 
@@ -34,6 +34,11 @@ dotnet run
 `dotnet build` copies `liblba2_renderer.so` and `lba2cc` from the native build tree next to the executable (and embeds
 them for a single-file publish); without them the editor still runs, using its own software terrain renderer and
 with "play scene" unavailable. Both need `libSDL3.so.0` at run time (installed above).
+
+`-DLBA2_CONTROL_SERVER=ON` compiles in the engine's `--listen` socket, which is how the editor talks to a running
+game: script breakpoints, the live resolution of the embedded window, the sound levels, and the minimap of a race.
+The engine still opens no socket unless it is started with `--listen <port>`, which only the editor does, and the
+socket binds 127.0.0.1 alone. Built without the flag the editor still plays scenes, silently without any of those.
 
 ## First run and game folders
 
