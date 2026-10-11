@@ -225,10 +225,21 @@ internal sealed record RaceTrackIsland(
     // Every car on Gazogem fuel all race, and no mushroom gives it (the race-track mode's fuel_always=): the Island of the Francos', where
     // the fuel is made (the user, 2026-10-07).
     public bool FuelAlways { get; init; }
+    // Game variables the race-track mode holds at a value while it runs (the car file's vargame=): travel cutscenes kept from playing --
+    // Otringal's square island's Dino-Fly landing, which holds Twinsen at its pad while variable 83 is under 2 (2026-10-08).
+    public (int Var, int Value)[] HeldVars { get; init; } = Array.Empty<(int, int)>();
+    // Shuttles the race-track mode flies (the car file's shuttle=): a scene's actor (its index and entity in the game's scene) and the pad
+    // on the road it comes down onto (cube-local x and z) -- Otringal's spaceship on the square island hovers over the road, lands on it a
+    // while and rises straight up again, over and over (the user, 2026-10-08).
+    public (int Scene, int Actor, int Entity, int X, int Z)[] Shuttles { get; init; } = Array.Empty<(int, int, int, int, int)>();
     public int[] MoreScenes { get; init; } = Array.Empty<int>();
-    // The island's outside scenes: FirstScene..LastScene, and MoreScenes when it is made bigger.
-    public IEnumerable<int> Scenes => Enumerable.Range(FirstScene, LastScene - FirstScene + 1).Concat(Scale > 1 ? MoreScenes : Array.Empty<int>());
-    public bool HasScene(int scene) => scene >= FirstScene && scene <= LastScene || Scale > 1 && MoreScenes.Contains(scene);
+    // Cubes of the island's ground the game has no scene for, that the lap drives over: a scene the build makes for each (IslandScaler
+    // .AddCubeScenes), numbered Scene, from a copy of Template (its actors inert stand-ins, cube changes to and from its neighbours) --
+    // Otringal's south-west islets, cube (6,9) (2026-10-08).
+    public (int CubeX, int CubeZ, int Scene, int Template)[] NewCubes { get; init; } = Array.Empty<(int, int, int, int)>();
+    // The island's outside scenes: FirstScene..LastScene, MoreScenes when it is made bigger, and its new cubes'.
+    public IEnumerable<int> Scenes => Enumerable.Range(FirstScene, LastScene - FirstScene + 1).Concat(Scale > 1 ? MoreScenes : Array.Empty<int>()).Concat(NewCubes.Select(c => c.Scene));
+    public bool HasScene(int scene) => scene >= FirstScene && scene <= LastScene || Scale > 1 && MoreScenes.Contains(scene) || NewCubes.Any(c => c.Scene == scene);
     // The scenes the build adds, as (original, copy) pairs.
     public IEnumerable<(int From, int To)> AddedScenes =>
         CopiesScenes is { } many ? Enumerable.Range(0, many.Count).Select(k => (many.First + k, FirstScene + k))
@@ -254,7 +265,38 @@ internal sealed record RaceTrackIsland(
         FuelAlways = true,
     };
 
-    public static readonly RaceTrackIsland[] All = { Desert, Citadel, CitadelStorm, Mosquibe, Celebration, CelebrationLava, Elevator, Sendell, Moon, Emerald, Polar, Knartas };
+    // Otringal (OTRINGAL.ILE, the game's island 4, scenes 87-92), from the user's sketch (2026-10-08): one raised road round the island,
+    // close over its ground (version 2, the same day) -- round the square island south-east of the town past its spaceships' pads, down the
+    // game's own slope into the building at its foot and through the bridge's tube (the game's tunnel) and on under the gatehouse, climbing
+    // into the town, up through it onto the straight along the palace's east side (the start line, the pit lane on its left between the
+    // race lanes and the palace), west along the island's north edge, south down its west side and a jump over the inlet, an S round the
+    // town's tanks, down through the west pier's yard over the sea to the south-west islets (cube (6,9): the game has its ground but no scene
+    // there -- NewCubes, scene 264), along the south coast and a jump over the sea back onto the square island. The plan:
+    // tools/RaceTrackPlan/otringal_design.py.
+    public static readonly RaceTrackIsland Otringal = new("Otringal", "OTRINGAL.ILE", "OTRINGAL.OBL", 4, 87, 92, 31, "RaceTrackPlan.Otringal.json", null)
+    {
+        Title = "Otringal: through the game's tunnel, through the town and round the palace",
+        NewCubes = new[] { (6, 9, 264, 87) },
+        // (Twinsen has arrived on Otringal: the square island's Dino-Fly landing doesn't play when the car flies into it off the jump)
+        HeldVars = new[] { (83, 3) },
+        // (its spaceships: scene 92's actor 2, on its pad on the road along the square island's north side -- its script's own pos_point(1)
+        // -- and actor 3, parked on the other pad, beside the road along its east side: the ground-level road runs into it, so it flies too)
+        Shuttles = new[] { (92, 2, 47, 19200, 9472), (92, 3, 47, 19104, 17632) },
+    };
+
+    // Volcano Island (SOUSCELB.ILE, the game's island 11 under Celebration Island, scenes 130-132; cube (7,8) isn't there), redesigned on
+    // 2026-10-10 round its new summit: the ground north of the main lava channel raised to 30,000, a lake of lava on top pouring down its
+    // south face in four tiers (RaceTrackLavaFall). The start and the pit lane (its boost panel) on the sand plateau's north straight; south
+    // under the summit's west cliff, between a crystal gate and down the canyon road along the falls; a drop jump off its end onto the east
+    // ridge, south along it under a crystal arch over the crystal field in the lava; a jump down to the south shore, along it and up the
+    // volcano's flank past its bowls of lava; round the plateau's crystal garden, under another arch (RaceTrackCrystals). The game's lava
+    // balls out of the falls' foot, the lava, the bowls (LavaBalls). The plan: tools/RaceTrackPlan/volcano_design.py.
+    public static readonly RaceTrackIsland Volcano = new("Volcano Island", "SOUSCELB.ILE", "SOUSCELB.OBL", 11, 130, 132, 38, "RaceTrackPlan.Volcano.json", null)
+    {
+        Title = "Volcano Island: over the lava", Roster = RaceDriver.Volcano,
+    };
+
+    public static readonly RaceTrackIsland[] All = { Desert, Citadel, CitadelStorm, Mosquibe, Celebration, CelebrationLava, Elevator, Sendell, Moon, Emerald, Polar, Knartas, Otringal, Volcano };
 
     public static RaceTrackIsland ByName(string name) => All.FirstOrDefault(i => string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase)) ?? Desert;
 

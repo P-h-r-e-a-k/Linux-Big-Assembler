@@ -254,7 +254,8 @@ internal sealed class CarDriver
 
     // What a polygon of the driver becomes in the car: its colour, how much light its points take (CarMesh.Light; Own: what each takes in the
     // character's own body) and its material (-1 lit, 0 unlit, CarMesh.SeeThrough); null leaves it out. A textured polygon keeps its texture
-    // whatever the colour.
+    // whatever the colour -- unless its material is Flat: then it is that colour, lit, its texture left off (Twinsen's tunic in his laser cars).
+    public const int Flat = -2;
     public const float Own = -1;
     public delegate (int Colour, float Light, int Material)? Painter(Face face, int[] bones);
 
@@ -282,7 +283,7 @@ internal sealed class CarDriver
             if (f.Points.All(p => place(posed[p]).Y < rim - 20)) continue;
             var (colour, light, material) = paint is null ? (f.Colour, Own, f.Material == 0 ? 0 : -1) : paint(f, bones) ?? (-1, 0f, 0);
             if (colour < 0) continue;
-            m.Raw(f.Points.Select(p => Point(p, light)).ToArray(), colour, material, f.Texture);
+            m.Raw(f.Points.Select(p => Point(p, light)).ToArray(), colour, material == Flat ? -1 : material, material == Flat ? null : f.Texture);
         }
         foreach (var l in body.Lines) if (keep.Contains(BoneOf(l.A)) && keep.Contains(BoneOf(l.B)) && !(Inside(l.A) && Inside(l.B))) m.Line(Point(l.A, Own), Point(l.B, Own), l.Colour);
         foreach (var s in body.Spheres) if (keep.Contains(BoneOf(s.Point)) && !Inside(s.Point)) m.Sphere(Point(s.Point, Own), (int)(s.Radius * scale), s.Colour);

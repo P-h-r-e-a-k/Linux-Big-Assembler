@@ -92,7 +92,46 @@ internal static class RaceTrackService
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Drips = null,
         // Jets: steam jets across the road (RaceTrackPipes.PlaceJets), each [x, y, z (the road's middle), its half width, the reach across,
         // blowing (ms), not (ms), phase (ms), its way x and z (a thousand long)] (RACEMOD.CPP jet=)
-        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Jets = null);
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Jets = null,
+        // Tunnels: tunnels over the raised road (RaceTrackTunnel), each [its first point, its last (the raised road's), its roof's height over
+        // the deck] (RACEMOD.CPP tunnel=), since 2026-10-08
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Tunnels = null,
+        // Shuttles: the scenes' actors the race-track mode flies (RaceTrackIsland.Shuttles), each [scene, actor (the built scene's), the pad
+        // it lands on: x, y (the road's surface there), z, cube-local] (RACEMOD.CPP shuttle=), since 2026-10-08
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Shuttles = null,
+        // LavaBalls: the lava's balls of fire (RaceTrackPlan.LavaBalls), each [x, y, z of the source (island units), the raised road's first
+        // and last point of the stretch they rain on, every (ms), phase (ms)] (RACEMOD.CPP lavaball=), since 2026-10-08
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? LavaBalls = null,
+        // Fakes: the scenes' copies of the mushroom that show the fake mushrooms cars drop, each [scene, actor] (RACEMOD.CPP fake=), since
+        // 2026-10-08
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Fakes = null,
+        // LaserModels: the laser cars' bolts in OBJFIX.HQR, [green, red] (RaceTrackLasers; RACEMOD.CPP laser_models=), since 2026-10-08
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int[]? LaserModels = null,
+        // Gunners: the machine guns on knolls (RaceTrackGunner; RACEMOD.CPP gunner=, gunner_target=), each [scene, the gun's actor, its
+        // Franco's, the muzzle's x, y, z (island units), then x, z, y and radius of each place its bullets land], since 2026-10-09
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? Gunners = null,
+        // Roulette: the roulette wheel the lap runs through (RaceTrackRoulette; RACEMOD.CPP roulette=): its decors' cube x and z, its middle's
+        // x and z (island units), how fast it turns (tenths of a degree a second), its ball's body (the island's) and radius, the place in
+        // the raised road's file where the drop through its hole lands, its floor's height at the hole's edge, its rise a cell outwards
+        // there and its steepening a cell a cell (hundredths), the hole's radius, the wall's and its outside's (units), how far its
+        // underside is under its floor, then its turning bodies; since 2026-10-09
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int[]? Roulette = null,
+        // GasMonsters: the gas monsters (RaceTrackGasMonster; RACEMOD.CPP gasmonster=), each [its scene, its actor there, its body, where it
+        // rises x and z, where it bites x and z and the road's height there, its foot's height (island units), its first animation, then
+        // the scene and actor of each other scene it is seen from], since 2026-10-09
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? GasMonsters = null,
+        // RouletteBalls: the roulette wheel's balls (bodies Roulette's ball on; RACEMOD.CPP roulette_balls=), since 2026-10-10
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? RouletteBalls = null,
+        // RoulettePockets: its pockets (RACEMOD.CPP roulette_pockets=); GoldIcon: the golden Gazogem's model in OBJFIX.HQR (gold_icon=), since 2026-10-10
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? RoulettePockets = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? GoldIcon = null,
+        // LavaBallModel: the game's lava ball made bigger in OBJFIX.HQR (RaceTrackOil.InstallLavaBall; RACEMOD.CPP lava_ball_model=); LavaFalls:
+        // across each lava fall's face, [its lip's x, y, z, the foot's x, y, z (island units), the way it looks] (RaceTrackLavaFall;
+        // lavafall=); BoostPanels: each [its middle's x, y, z, the road's way x and z (thousandths), half its length, half its width]
+        // (RACEMOD.CPP boostpanel=), since 2026-10-10
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? LavaBallModel = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? LavaFalls = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] List<int[]>? BoostPanels = null);
     // A dreamt sprint: its finish line (a line as the start line is), the car's top speed for it (km/h: the setup's gears scaled to it),
     // the intro and the loss's line (texts of the island's), and where a win wakes Twinsen up -- the scene, the text of its island's its
     // actor says there.
@@ -318,7 +357,8 @@ internal static class RaceTrackService
     public sealed class BuildSession
     {
         public bool CharacterCars, Baldino, SmallCars, Oil, CastCars;
-        public int? OilIcon, SuperJetModel, TwinsenSmall;
+        public int? OilIcon, SuperJetModel, TwinsenSmall, GoldIcon, LavaBallModel;
+        public int[]? LaserModels;
         public List<TrackInfo> Tracks { get; } = new();
     }
 
@@ -349,6 +389,8 @@ internal static class RaceTrackService
             scaled.AddRange(IslandScaler.ScaleScenes(gameDirectory, options.Island, island, anchor, options.Island.Scale));
             scaled.Add(IslandScaler.ScaleHolomap(gameDirectory, options.Island, anchor, options.Island.Scale));
         }
+        // (cubes of its ground the game has no scene for, that the lap drives over: a scene each -- Otringal's south-west islets)
+        if (options.Island.NewCubes.Length > 0) scaled.AddRange(IslandScaler.AddCubeScenes(gameDirectory, options.Island, island));
         var extra = Prepare(gameDirectory, options);
         extra.InsertRange(0, scaled);
         var themed = RaceTrackTextures.Import(island, options.Island, gameDirectory);
@@ -554,16 +596,32 @@ internal static class RaceTrackService
         if (!session.Oil)
         {
             log.Add(RaceTrackOil.Install(gameDirectory));
+            // (and the power-ups' mushroom made bigger, beside it in the mushroom's entity)
+            log.Add(RaceTrackOil.InstallBigMushroom(gameDirectory));
             // (and its drum in the item box)
             var (icon, iconLog) = RaceTrackOil.InstallIcon(gameDirectory);
             log.Add(iconLog);
             session.OilIcon = icon;
+            // (and the golden Gazogem, the roulette wheel's super jackpot)
+            var (gold, goldLog) = RaceTrackOil.InstallGoldIcon(gameDirectory);
+            log.Add(goldLog);
+            session.GoldIcon = gold;
+            // (and the game's lava ball, bigger, for the lava's balls)
+            var (lavaBall, lavaBallLog) = RaceTrackOil.InstallLavaBall(gameDirectory);
+            log.Add(lavaBallLog);
+            session.LavaBallModel = lavaBall;
             // ... and the super jet-pack the car turns into
             var (jet, jetLog) = RaceTrackSuperJet.Install(gameDirectory);
             log.Add(jetLog);
             session.SuperJetModel = jet;
+            // ... and the laser cars' bolts
+            var (green, red, laserLog) = RaceTrackLasers.Install(gameDirectory);
+            log.Add(laserLog);
+            session.LaserModels = new[] { green, red };
             session.Oil = true;
         }
+        // ... and each gas monster's moves, fitted to the road beside it
+        log.AddRange(RaceTrackGasMonster.InstallPoses(gameDirectory, report));
         return log;
     }
 
@@ -573,19 +631,59 @@ internal static class RaceTrackService
         StoryInfo? story = null, DreamInfo? dream = null)
     {
         session ??= new BuildSession();
-        var info = Info(report, options, scenes) with { Story = story, OilIcon = session.OilIcon, SuperJetModel = session.SuperJetModel, TwinsenSmall = session.TwinsenSmall, Dream = dream };
+        var info = Info(report, options, scenes) with { Story = story, OilIcon = session.OilIcon, GoldIcon = session.GoldIcon, SuperJetModel = session.SuperJetModel, TwinsenSmall = session.TwinsenSmall, Dream = dream,
+            LaserModels = session.LaserModels, LavaBallModel = session.LavaBallModel };
         if (info.ArcJumps is not null) info = info with { CubeScenes = RaceTrackScenes.CubeScenes(gameDirectory, options.Island) };
+        if (Shuttles(gameDirectory, report, options) is { Count: > 0 } shuttles) info = info with { Shuttles = shuttles };
         if (twin is { Own: true } && scenes.Twin is { } twinScenes)
         {
             // (the story belongs to the twin's track, which carries the race; either race clears its arrow once Twinsen drives)
             var fine = Info(twin.Report, twin.Options, twinScenes);
             // (the town circuit's own arrow, which the bed switches on)
             if (story is not null) fine = fine with { StoryArrow = story.TownArrow };
-            info = info with { Twin = fine with { OilIcon = session.OilIcon, SuperJetModel = session.SuperJetModel, TwinsenSmall = session.TwinsenSmall } };
+            info = info with { Twin = fine with { OilIcon = session.OilIcon, GoldIcon = session.GoldIcon, SuperJetModel = session.SuperJetModel, TwinsenSmall = session.TwinsenSmall, LaserModels = session.LaserModels,
+                LavaBallModel = session.LavaBallModel } };
         }
         session.Tracks.Add(info);
         var all = session.Tracks[0] with { Others = session.Tracks.Count > 1 ? session.Tracks.Skip(1).ToList() : null };
         File.WriteAllText(Path.Combine(gameDirectory, InfoFile), JsonSerializer.Serialize(all, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    // The island's shuttles (RaceTrackIsland.Shuttles) as the built scenes have them: each one's actor there (the scene's actor of its
+    // entity nearest where it stood -- removing the others renumbers the scene's actors, and the build moves one off the road) and its pad's
+    // height, the road's surface there.
+    private static List<int[]> Shuttles(string gameDirectory, RaceTrackReport report, RaceTrackOptions options)
+    {
+        var list = new List<int[]>();
+        if (options.Island.Shuttles.Length == 0) return list;
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, gameDirectory);
+        foreach (var (scene, actor, entity, x, z) in options.Island.Shuttles)
+        {
+            LBAAssembler.Scenes.SceneModel model;
+            try { model = store.Load(scene); } catch (Exception e) when (e is InvalidDataException or ArgumentException or IOException) { continue; }
+            var found = Enumerable.Range(1, Math.Max(0, model.Actors.Count - 1)).Where(i => model.Actors[i].Entity == entity)
+                .OrderBy(i => Math.Abs(i - actor)).ThenBy(i => Math.Abs(model.Actors[i].X - x) + Math.Abs(model.Actors[i].Z - z)).FirstOrDefault(-1);
+            if (found < 0) continue;
+            double cx = model.CubeX * 64 + x / 512.0, cz = model.CubeY * 64 + z / 512.0;
+            // (the deck there as the engine has it -- the raised road's file, world units: the nearest of its segments within its rails --
+            // else the ground)
+            double wx = cx * 512, wz = cz * 512, best = double.MaxValue;
+            double? y = null;
+            for (var i = 0; i + 1 < report.Raised.Count; i++)
+            {
+                int[] a = report.Raised[i], b = report.Raised[i + 1];
+                if (a.Length < 4 || b.Length < 4 || a[3] <= 0 || b[3] <= 0) continue;
+                double sx = b[0] - a[0], sz = b[1] - a[1], len2 = sx * sx + sz * sz;
+                if (len2 < 1) continue;
+                var t = Math.Clamp(((wx - a[0]) * sx + (wz - a[1]) * sz) / len2, 0, 1);
+                var d = Math.Sqrt((wx - a[0] - sx * t) * (wx - a[0] - sx * t) + (wz - a[1] - sz * t) * (wz - a[1] - sz * t));
+                if (d > a[3] + (b[3] - a[3]) * t || d >= best) continue;
+                best = d; y = a[2] + (b[2] - a[2]) * t;
+            }
+            y ??= report.GroundAfter?.Invoke(cx, cz) ?? model.Actors[found].Y;
+            list.Add(new[] { scene, found, x, (int)Math.Round(y.Value), z });
+        }
+        return list;
     }
 
     // A line across the road (island cells) as the engine has it: in the cube its middle is in.
@@ -628,9 +726,53 @@ internal static class RaceTrackService
                 : null,
             ArcJumps: raised && report.ArcRaised.Count > 0 ? report.ArcRaised.ToList() : null, Drivers: drivers.Count > 0 ? drivers : null,
             Mushrooms: scenes.Mushrooms is { Count: > 0 } mushrooms ? mushrooms : null, Penguins: scenes.Penguins is { Count: > 0 } penguins ? penguins : null,
-            Oil: scenes.Oil is { Count: > 0 } oil ? oil : null,
+            Oil: scenes.Oil is { Count: > 0 } oil ? oil : null, Fakes: scenes.Fakes is { Count: > 0 } fakes ? fakes : null,
             Steam: report.Steam.Count > 0 ? report.Steam.ToList() : null, Drips: report.Drips.Count > 0 ? report.Drips.ToList() : null,
-            Jets: report.Jets.Count > 0 ? report.Jets.ToList() : null);
+            Jets: report.Jets.Count > 0 ? report.Jets.ToList() : null,
+            Tunnels: raised && report.Tunnels.Count > 0
+                ? report.Tunnels.Select(t => new[] { report.RaisedSpan.IndexOf(t.From), report.RaisedSpan.IndexOf(t.To), (int)Math.Round(t.Roof) }).Where(t => t[0] >= 0 && t[1] >= 0).ToList()
+                : null,
+            LavaBalls: raised && report.LavaBalls.Count > 0
+                ? report.LavaBalls.Select(b => new[] { (int)Math.Round(b.X), (int)Math.Round(b.Y), (int)Math.Round(b.Z), report.RaisedSpan.IndexOf(b.From), report.RaisedSpan.IndexOf(b.To), b.Every, b.Phase })
+                    .Where(b => b[3] >= 0 && b[4] >= 0).ToList()
+                : null,
+            Gunners: scenes.Gunners is { Count: > 0 } gunners
+                ? gunners.Where(g => g[3] >= 0 && g[3] < report.Gunners.Count).Select(g => GunnerRecord(g, report.Gunners[g[3]])).ToList()
+                : null,
+            Roulette: raised && report.Roulette is { } wheel && report.RaisedSpan.IndexOf(wheel.Landing) is var landing and >= 0
+                ? new[] { wheel.CubeX, wheel.CubeZ, (int)Math.Round(wheel.X), (int)Math.Round(wheel.Z), (int)Math.Round(wheel.Spin * 10), wheel.Ball, wheel.BallRadius, landing,
+                          (int)Math.Round(wheel.HoleY), (int)Math.Round(wheel.Slope), (int)Math.Round(wheel.Steepen * 100), (int)Math.Round(wheel.Hole * 512),
+                          (int)Math.Round(wheel.Rim * 512), (int)Math.Round(wheel.Outer * 512), (int)Math.Round(wheel.Under) }
+                    .Concat(wheel.Turning).ToArray()
+                : null,
+            LavaFalls: report.LavaFalls.Count > 0 ? report.LavaFalls.ToList() : null,
+            BoostPanels: raised && report.BoostPanels.Count > 0 ? report.BoostPanels.ToList() : null,
+            RouletteBalls: raised && report.Roulette is { Balls: > 1 } balled ? balled.Balls : null,
+            RoulettePockets: raised && report.Roulette is { } pocketed ? pocketed.Pockets : null,
+            GasMonsters: scenes.GasMonsters is { Count: > 0 } monsters
+                ? monsters.Where(g => g[3] >= 0 && g[3] < report.GasMonsters.Count).GroupBy(g => g[3]).Select(pairs =>
+                {
+                    // (one line a monster: its own scene's actor first, then its actor in each scene it is seen from)
+                    var s = report.GasMonsters[pairs.Key];
+                    var home = pairs.OrderByDescending(g => g.Length > 4 ? g[4] : 1).ToList();
+                    return new[] { home[0][0], home[0][1], home[0][2],
+                            (int)Math.Round(s.X * 512), (int)Math.Round(s.Z * 512), (int)Math.Round(s.BiteX * 512), (int)Math.Round(s.BiteZ * 512), (int)Math.Round(s.BiteY), 0, s.FirstAnim }
+                        .Concat(home.Skip(1).SelectMany(g => new[] { g[0], g[1] })).ToArray();
+                }).ToList()
+                : null);
+    }
+
+    // A machine gun on its knoll as the car file has it: its scene and actors, the muzzle (the gun stands 0.8 cells towards where it fires
+    // from the knoll's middle, as RaceTrackScenes stands it; its muzzle 214 ahead of the gun's middle, 420 up), and where its bullets land.
+    private static int[] GunnerRecord(int[] placed, GunnerSpot g)
+    {
+        double fx = g.FaceX - g.X, fz = g.FaceZ - g.Z, fl = Math.Max(1e-9, Math.Sqrt(fx * fx + fz * fz));
+        fx /= fl; fz /= fl;
+        // (the second gun 1.6 cells beside the first, as RaceTrackScenes stands it)
+        var side = placed.Length > 4 && placed[4] > 0 ? 1.6 * 512 : 0;
+        double mx = g.X * 512 + fx * (0.8 * 512 + 214) + fz * side, mz = g.Z * 512 + fz * (0.8 * 512 + 214) - fx * side, my = g.Top + 420;
+        return placed.Take(3).Concat(new[] { (int)Math.Round(mx), (int)Math.Round(my), (int)Math.Round(mz) })
+            .Concat(g.Targets.SelectMany(t => new[] { (int)Math.Round(t.X), (int)Math.Round(t.Z), (int)Math.Round(t.Y), (int)Math.Round(t.R) })).ToArray();
     }
 
     private static int[] LoopRecord(LoopInfo l)

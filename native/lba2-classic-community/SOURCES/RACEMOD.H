@@ -94,6 +94,8 @@ S32 RaceMod_NewGameScene(S32 scene);
 // While racing, a hit on Twinsen in his car (a land mine) stops the car dead and holds it for a moment, and costs him no life:
 // non-zero when it is such a hit.
 S32 RaceMod_CarHit(void);
+S32 RaceMod_LaserCar(void);                 // Twinsen drives a laser car: his car's gun fires laser bolts
+S32 RaceMod_LaserThrow(S32 numobj);         // FICHE.CPP: the buggy's gun's shot, a laser bolt instead (non-zero: fired)
 
 // While racing, an island drawn from another file than its own (the car file's island_file=): that file's name, or NULL.
 const char *RaceMod_IslandFile(S32 island);

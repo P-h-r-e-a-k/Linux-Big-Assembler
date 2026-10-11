@@ -1296,6 +1296,10 @@ void TestCameraPosObjets(void) {
 
 /*──────────────────────────────────────────────────────────────────────────*/
 // Detecte collision avec le decors en un point (terrain + objets du decors)
+// A race-track mod's super jet-pack: the moving object Twinsen's car on it -- the island's objects aren't there for it (RACEMOD.CPP
+// RaceMod_JetGhost): it neither runs into them nor is pushed back out of them.
+static S32 JetGhost(void) { return APtObj == &ListObjet[NUM_PERSO] AND RaceMod_JetGhost(); }
+
 U8 WorldColBrickExt(S32 xw, S32 yw, S32 zw) {
     U32 i;
     S32 y = CalculAltitudeObjet(xw, zw, APtObj->CodeJeu >> 4);
@@ -1303,7 +1307,7 @@ U8 WorldColBrickExt(S32 xw, S32 yw, S32 zw) {
     PtrDecorsCol = ListDecors;
 
     // decors
-    for (i = 0; i < NbObjDecors; i++, PtrDecorsCol++) {
+    for (i = 0; i < (JetGhost() ? 0 : NbObjDecors); i++, PtrDecorsCol++) {
         if (TestZVDecors(xw, yw, zw, PtrDecorsCol)) {
             // verifie qu'il n'y ait pas de terrain au-dessus
             // de l'objet
@@ -1422,6 +1426,7 @@ U8 WorldColBrickDecors(S32 xpmin, S32 ypmin, S32 zpmin,
     U16 i;
 
     PtrDecorsCol = ListDecors;
+    if (JetGhost()) { PtrDecorsCol = NULL; return 0; }
 
     // decors
     for (i = 0; i < NbObjDecors; i++, PtrDecorsCol++) {
@@ -1681,6 +1686,9 @@ void ReajustPosExt(U8 col) {
 
 S32 DoCornerReajustDecors() {
     S32 xpmin, ypmin, zpmin, xpmax, ypmax, zpmax;
+
+    if (JetGhost())
+        return 0;
 
     if (Nxw < 0)
         return 0;

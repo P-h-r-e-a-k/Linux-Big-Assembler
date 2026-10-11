@@ -10,6 +10,10 @@ internal sealed class DriveThroughHut
 {
     public int Body { get; set; }
     public double Scale { get; set; } = 1.0;
+    // The passage's height over the deck, when not the usual Clearance, and its half width (cells, without Margin), when not the road's:
+    // Otringal's bridge is a tube whose roof is low over the road through it -- a lower passage keeps its roof (2026-10-08).
+    public double? Clearance { get; set; }
+    public double? Half { get; set; }
 }
 
 // The huts made drive-through, before the road's clearing: each of the building's pieces is
@@ -31,9 +35,11 @@ internal static class RaceTrackDriveThrough
         var made = new List<int>();
         if (o.SceneryObl is not { } obl || o.NewBodyBase < 0) { report.Notes.Add("WARNING: the island's OBL wasn't counted -- no hut made drive-through"); return made; }
         var hqr = HqrArchive.Open(obl);
-        var half = (road.Raised is not null ? o.RaisedHalfWidth : o.CurbHalfWidth) + Margin;
+        var roadHalf = (road.Raised is not null ? o.RaisedHalfWidth : o.CurbHalfWidth) + Margin;
         foreach (var hut in huts)
         {
+            var half = hut.Half is { } h ? h + Margin : roadHalf;
+            var clearance = hut.Clearance ?? Clearance;
             // the building: the decors sharing the origin of the first decor of that body
             IslandCube? cube = null; int cx = 0, cz = 0; IslandDecor? first = null;
             foreach (var (x, z, c) in IslandOps.CubeCells(island))
@@ -67,7 +73,7 @@ internal static class RaceTrackDriveThrough
                     var n = faces[f].Points.Length;
                     double wx = cx * 64 + (d.X + sx / n) / 512.0, wz = cz * 64 + (d.Z + sz / n) / 512.0, wy = d.Y + sy / n;
                     var (dist, deck, side) = Nearest(road, near, wx, wz);
-                    part[f] = dist < half ? (wy < deck + Clearance ? -1 : 2) : side > 0 ? 0 : 1;
+                    part[f] = dist < half ? (wy < deck + clearance ? -1 : 2) : side > 0 ? 0 : 1;
                     if (part[f] < 0) dropped++; else kept++;
                 }
                 pieces++;
@@ -99,7 +105,7 @@ internal static class RaceTrackDriveThrough
                             double px = (road.X[i] - cx * 64) * 512, pz = (road.Z[i] - cz * 64) * 512;
                             if (px >= x0 - half * 512 && px <= x1 + half * 512 && pz >= z0 - half * 512 && pz <= z1 + half * 512) top = Math.Max(top, road.H[i]);
                         }
-                        y0 = Math.Max(y0, top + Clearance);
+                        y0 = Math.Max(y0, top + clearance);
                     }
                     SetBox(body, lx0, lx1, ly0, ly1, lz0, lz1);
                     var nd = d.Clone();

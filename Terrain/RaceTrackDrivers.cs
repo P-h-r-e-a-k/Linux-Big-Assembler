@@ -89,5 +89,14 @@ internal sealed record RaceDriver(string Name, int Body, RaceTrackBuilder.Racing
         Of(RaceTrackCharacterCars.Pram, "The nurse", 2.0, 1.02, 0.97),
     };
 
+    // Volcano Island (2026-10-08): the island under Celebration's own -- the Mosquibee dissident in his car (the one to beat), the ferryman
+    // in his boat and a Mosquibee of the hide-out on a slab of lava
+    public static readonly List<RaceDriver> Volcano = new()
+    {
+        Of(RaceTrackCharacterCars.Rebel, "The dissident", 0, 1.0, 1.0, main: true),
+        Of(RaceTrackCharacterCars.Ferry, "The ferryman", -2.0, 0.99, 1.02),
+        Of(RaceTrackCharacterCars.LavaSlab, "The hide-out's Mosquibee", 2.0, 1.02, 0.97),
+    };
+
     // Otringal's palace has no track yet; its drivers are Stan, the pighead with the broom and the two-headed monster (CharactersForTrack.txt)
 }

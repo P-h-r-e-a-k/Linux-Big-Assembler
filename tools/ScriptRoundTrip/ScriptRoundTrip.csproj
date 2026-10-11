@@ -40,6 +40,8 @@
     <Compile Include="..\..\Lba1\Lba1PinkElf.cs" Link="Lba1\Lba1PinkElf.cs" />
     <Compile Include="..\..\Lba1\Lba1DialogueText.cs" Link="Lba1\Lba1DialogueText.cs" />
     <Compile Include="..\..\BodyStudio\Body.cs" Link="BodyStudio\Body.cs" />
+    <Compile Include="..\..\BodyStudio\Anim.cs" Link="BodyStudio\Anim.cs" />
+    <Compile Include="..\..\Lba1\Lba1Pose.cs" Link="Lba1\Lba1Pose.cs" />
     <Compile Include="..\..\Demo96\**\*.cs" Link="Demo96\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Lba1\Lba1SecretRoomExtras.cs" Link="Lba1\Lba1SecretRoomExtras.cs" />
     <Compile Include="..\..\Lba1\Lba1SurpriseChanges.cs" Link="Lba1\Lba1SurpriseChanges.cs" />
@@ -65,6 +67,8 @@
     <EmbeddedResource Include="..\..\docs\racetrack\moon_track_plan.json" LogicalName="RaceTrackPlan.Moon.json" />
     <EmbeddedResource Include="..\..\docs\racetrack\emerald_track_plan.json" LogicalName="RaceTrackPlan.Emerald.json" />
     <EmbeddedResource Include="..\..\docs\racetrack\knartas_track_plan.json" LogicalName="RaceTrackPlan.Knartas.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\otringal_track_plan.json" LogicalName="RaceTrackPlan.Otringal.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\volcano_track_plan.json" LogicalName="RaceTrackPlan.Volcano.json" />
     <EmbeddedResource Include="..\..\docs\racetrack\polar_track_plan.json" LogicalName="RaceTrackPlan.Polar.json" />
     <Compile Include="..\..\LiveDataRoot.cs" Link="LiveDataRoot.cs" />
     <Compile Include="..\..\AudioLevels.cs" Link="AudioLevels.cs" />

@@ -98,8 +98,12 @@ internal static class RaceTrackRaisedBody
         return n % 2 == 0 ? n : n + 1;
     }
 
+    // `boost`: the cells (from each section to the next) a boost panel covers -- how far across it reaches (world units, the way Across
+    // points) and how many cells into the panel the cell is -- its strips there a white arrow on orange in every cell, pointing the way the
+    // sections run (RACEMOD.CPP boostpanel=).
     public static byte[] Tile(IReadOnlyList<(Vector3 Mid, Vector3 Across)> sections, int firstBlock, double asphalt, double curb, double edge, bool arrow = false, int line = -1,
-        IReadOnlyList<double>? wider = null, double stripe = double.NaN, IReadOnlyList<bool>? striped = null, int strips = 0, DeckTheme? theme = null)
+        IReadOnlyList<double>? wider = null, double stripe = double.NaN, IReadOnlyList<bool>? striped = null, int strips = 0, DeckTheme? theme = null,
+        IReadOnlyList<(double Lo, double Hi, int Q)?>? boost = null)
     {
         var m = new Mesh();
         var (Asphalt, Red, White, RailTop, RailSide, Side, Under, Arrow) = theme is { } th
@@ -142,9 +146,28 @@ internal static class RaceTrackRaisedBody
             Strip(1, RailTop, up);
             Strip(2, RailSide, across);       // the rail's inner face
             Strip(3, block, up);              // the curb
+            // (a boost panel's strips: those whose middles are within its reach across)
+            int b0 = -1, b1 = -1;
+            if (boost is not null && j < boost.Count && boost[j] is { } bp)
+                for (var i = 0; i < strips; i++)
+                {
+                    var u = (-1 + (2.0 * i + 1) / strips) * (asphalt + Wider(j));
+                    if (u >= bp.Lo && u <= bp.Hi) { if (b0 < 0) b0 = i; b1 = i; }
+                }
             for (var i = 0; i < strips; i++)
             {
                 int qa = edges[j, i], qb = edges[j, i + 1], qc = edges[j + 1, i + 1], qd = edges[j + 1, i];
+                if (b0 >= 0 && i >= b0 && i <= b1 && boost![j] is { } panel)
+                {
+                    // (a white arrow in every cell, pointing the way the sections run: as wide as the panel at the cell's back, as its middle
+                    // strips at its front -- its sides the outer strips' diagonals, their outer halves orange; a panel one strip wide, white
+                    // and orange cells in turn)
+                    if (b0 == b1) m.Quad(qa, qb, qc, qd, panel.Q % 2 == 0 ? White : Arrow, up);
+                    else if (i == b0) { m.Tri(qa, qb, qc, White, up); m.Tri(qa, qc, qd, Arrow, up); }
+                    else if (i == b1) { m.Tri(qa, qb, qd, White, up); m.Tri(qb, qc, qd, Arrow, up); }
+                    else m.Quad(qa, qb, qc, qd, White, up);
+                    continue;
+                }
                 // (an arrow over the strips from the section's middle, w0 - j either side of it at section j, to its point: w0 strips about
                 // ArrowHalfWidth, ArrowStrips / 2 at the most -- on a wide deck its strips are wide, and its arrow shorter)
                 var c = strips / 2;

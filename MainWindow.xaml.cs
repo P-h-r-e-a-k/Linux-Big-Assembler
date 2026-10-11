@@ -442,6 +442,9 @@ public partial class MainWindow : Window
         else if (name == "KNARTAS") paletteIndex = 35;
         else if (name == "ILOTCX") paletteIndex = 36;
         else if (name == "ASCENCE") paletteIndex = 37;
+        else if (name == "SOUSCELB") paletteIndex = 38;
+        else if (name == "PALACE") paletteIndex = 31;          // (the Palace island: Otringal's palace made an island, Terrain/Palace)
+        else if (name == "CXTOWER") paletteIndex = 36;         // (Island CX with its control tower's lower level in 3D, Terrain/ControlTower)
         // island 1 (Sendell's Well, cut from the retail game: a SENDELL.ILE made for it), and the old copy of the Emerald Moon
         else if (name == "SENDELL") paletteIndex = 28;
         else if (name == "MOON") paletteIndex = 30;
@@ -2615,7 +2618,7 @@ public partial class MainWindow : Window
 
     private void UpdateMinimapMarker()
     {
-        if (sceneMinimapActive) return;
+        if (sceneMinimapActive || raceMinimapOn) return;
         MinimapMarkerCanvas.Children.Clear();
         if (currentIsland is null || MinimapImage.Source is null) return;
         var px = targetX / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels;
@@ -2641,7 +2644,7 @@ public partial class MainWindow : Window
     // jumping via a minimap click doesn't leave the marker scrolled off screen.
     private void CenterMinimapOnMarker()
     {
-        if (MinimapImage.Source is null) return;
+        if (MinimapImage.Source is null || raceMinimapOn) return;
         var px = targetX / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels;
         var pz = targetZ / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels;
         MinimapScrollViewer.ScrollToHorizontalOffset(px - MinimapScrollViewer.ViewportWidth / 2);
@@ -2733,6 +2736,7 @@ public partial class MainWindow : Window
                 MinimapImage.Source = task.Result;
                 UpdateMinimapMarker();
                 CenterMinimapOnMarker();
+                if (raceMinimapOn) FitRaceMinimap();
                 // Re-draw with the fresh crop offsets in case this finished
                 // after RenderNativeCamera() already drew actors using the
                 // previous island's (now stale) offsets.

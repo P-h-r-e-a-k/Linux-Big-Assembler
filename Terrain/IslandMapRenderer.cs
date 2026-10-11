@@ -48,7 +48,11 @@ internal sealed class IslandMapRenderer
         var index = islandName.ToUpperInvariant() switch
         {
             "CITABAU" => 42, "DESERT" => 29, "EMERAUDE" => 30, "OTRINGAL" => 31, "CELEBRAT" or "CELEBRA2" => 32, "PLATFORM" => 33,
-            "MOSQUIBE" => 34, "KNARTAS" => 35, "ILOTCX" => 36, "ASCENCE" => 37,
+            "MOSQUIBE" => 34, "KNARTAS" => 35, "ILOTCX" => 36, "ASCENCE" => 37, "SOUSCELB" => 38,
+            // the Palace island (Terrain/Palace: Otringal's palace made an island, drawn with Otringal's atlases)
+            "PALACE" => 31,
+            // Island CX with its control tower's lower level as a 3D building (Terrain/ControlTower), Island CX's atlases
+            "CXTOWER" => 36,
             // island 1 (Sendell's Well, cut from the retail game: a SENDELL.ILE made for it), and the old copy of the Emerald Moon
             "SENDELL" => 28, "MOON" => 30,
             // island 12, Polar Island (ported from LBA1: Terrain.Polar), its own slot -- an empty one in the retail file, filled when it is

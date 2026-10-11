@@ -228,11 +228,15 @@ internal sealed class RaceCarWindow : Window
     // retail racer's, Baldino's rocket car and the cars made after the characters (Terrain.RaceTrackCharacterCars) -- by name.
     private static List<(int Generic, string Name)> DrivableCars(string? gameDirectory)
     {
-        var list = new List<(int, string)> { (-1, "Twinsen's buggy") };
-        // (a folder built since 2026-10-05: every car by its number, the cast's too -- RACECARS.JSON)
+        // (his laser cars: his buggy, its gun firing lasers -- RaceCarSetup.LaserGreen/LaserRed)
+        var list = new List<(int, string)> { (RaceCarSetup.OwnBuggy, "Twinsen's buggy"), (RaceCarSetup.LaserGreen, "Twinsen's buggy, firing green lasers"),
+            (RaceCarSetup.LaserRed, "Twinsen's buggy, firing red lasers") };
+        // (a folder built since 2026-10-05: every car by its number, the cast's too -- RACECARS.JSON; a folder built on 2026-10-08 lists the
+        // laser cars as two cars of their own, left out: the two above are they)
         if (gameDirectory is not null && Terrain.RaceTrackCharacterCars.Catalogue(gameDirectory) is { Count: > 0 } listed)
         {
-            list.AddRange(listed.Select(e => (e.Number, $"{e.Number}: {e.Name} ({e.Driver})")));
+            list.AddRange(listed.Where(e => e.Name is not (Terrain.RaceTrackCharacterCars.LaserGreenName or Terrain.RaceTrackCharacterCars.LaserRedName))
+                .Select(e => (e.Number, $"{e.Number}: {e.Name} ({e.Driver})")));
             return list;
         }
         var racer = gameDirectory is null ? null : Lba2EntityTable.Load(gameDirectory)?.Entities.FirstOrDefault(e => e.Id == Terrain.RaceTrackScenes.RacerEntity);

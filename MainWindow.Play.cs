@@ -374,6 +374,8 @@ public partial class MainWindow
         if (!playing || playingGame != GameKind.Lba2 || lba2ControlScene != scene) { client?.Dispose(); return; }
         if (client is null) { DebugLog.Log("MainWindow: LBA2 control socket didn't come up; script breakpoints are unavailable this session."); return; }
         lba2Control = client;
+        // (a race: the minimap shows the lap and the cars on it)
+        StartRaceMinimap();
         // The socket only just came up, so this is the earliest a live resize could have taken effect -- check
         // now for drift between FitSize()'s original sample and the host's real area today (the launch this
         // connects for takes "a few seconds", during which the host area can genuinely have changed).
@@ -416,6 +418,7 @@ public partial class MainWindow
 
     private void StopLba2Control()
     {
+        StopRaceMinimap();
         ScriptBreakpoints.Changed -= SyncLba2Breakpoints;
         ScriptBreakpoints.ResumeRequested = null;
         lba2Control?.Dispose();

@@ -331,12 +331,14 @@ internal static class IslandOps
         private readonly IslandFile island;
         private readonly List<(IslandCube Cube, IslandDecor Decor, double[] Before)> tracked = new();
 
-        public DecorFollow(IslandFile island)
+        // (`stay`: bodies whose decors stay where they are whatever the ground does -- Otringal's gatehouse over the race track's tunnel)
+        public DecorFollow(IslandFile island, ISet<int>? stay = null)
         {
             this.island = island;
             foreach (var (cx, cz, cube) in CubeCells(island))
                 foreach (var decor in cube.Decors)
                 {
+                    if (stay?.Contains(decor.Body & 0xFFFF) == true) continue;
                     if (Altitude(island, cx * IslandFile.CubeSize + decor.X, cz * IslandFile.CubeSize + decor.Z) is not { } y) continue;
                     if (!StandsOnGround(island, cx, cz, decor)) continue;
                     tracked.Add((cube, decor, new[] { y }));
