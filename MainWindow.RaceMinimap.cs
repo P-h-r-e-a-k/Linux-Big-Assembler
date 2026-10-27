@@ -97,6 +97,23 @@ public partial class MainWindow
         // the road: its rails' width where the lap is a raised road (gaps -- the jumps -- left open), else the racing line
         raceMinimapLayer.Children.Clear();
         raceMinimapCars.Clear();
+        // (indoors -- a track with open areas, the Emperor's palace's rooms -- the island's picture is its roof: a dark panel over it, the
+        // rooms' floors on that, the road through them -- the user, 2026-10-16: "Clean up mini-map so it no longer shows outside")
+        if (track.OpenAreas is { Count: > 0 } areas)
+        {
+            var panel = new Rectangle { Width = raceMinimapArea.Width, Height = raceMinimapArea.Height, Fill = new SolidColorBrush(Color.FromRgb(24, 24, 30)) };
+            Canvas.SetLeft(panel, raceMinimapArea.X); Canvas.SetTop(panel, raceMinimapArea.Y);
+            raceMinimapLayer.Children.Add(panel);
+            var floor = new SolidColorBrush(Color.FromArgb(70, 200, 190, 160)); floor.Freeze();
+            foreach (var a in areas.Where(a => a.Length >= 4))
+            {
+                var (ax, az) = (a[0] / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels, a[1] / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels);
+                var (bx, bz) = (a[2] / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels, a[3] / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels);
+                var room = new Rectangle { Width = Math.Abs(bx - ax), Height = Math.Abs(bz - az), Fill = floor };
+                Canvas.SetLeft(room, Math.Min(ax, bx)); Canvas.SetTop(room, Math.Min(az, bz));
+                raceMinimapLayer.Children.Add(room);
+            }
+        }
         var edge = new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)); edge.Freeze();
         var asphalt = new SolidColorBrush(Color.FromArgb(235, 60, 60, 66)); asphalt.Freeze();
         foreach (var stretch in road)
@@ -110,12 +127,30 @@ public partial class MainWindow
     }
 
     // The road in minimap pixels, stretch by stretch: the raised road's middle and width (RACETRACK.JSON Raised: world units [x, z, y, half],
-    // a jump's gap a half of 0), else the racing line (Path: [x, z, ...]) four cells wide.
+    // a jump's gap a half of 0), else the racing line (Path: [x, z, ...]) four cells wide. Indoors (open areas: the rooms are no raised
+    // road, a half of 0 as a gap's) the racing line, and a sprint's only as far as its finish line -- the Emperor's palace's goes on out
+    // of the window in a leap over the sea, and the minimap showed that, the palace a speck in it.
     private List<List<(double X, double Z, double Width)>> RaceMinimapRoad(Terrain.RaceTrackService.TrackInfo track)
     {
         var stretches = new List<List<(double X, double Z, double Width)>>();
         var current = new List<(double X, double Z, double Width)>();
         (double, double) Px(int x, int z) => (x / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels, z / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels);
+        if (track.OpenAreas is { Count: > 0 } && track.Path is { Count: > 1 } line)
+        {
+            var upTo = line.Count - 1;
+            if (track.Dream?.Finish is { } finish)
+            {
+                double fx = finish.CubeX * 32768.0 + (finish.X0 + finish.X1) / 2.0, fz = finish.CubeZ * 32768.0 + (finish.Z0 + finish.Z1) / 2.0;
+                upTo = Enumerable.Range(0, line.Count).OrderBy(i => (line[i][0] - fx) * (line[i][0] - fx) + (line[i][1] - fz) * (line[i][1] - fz)).First();
+            }
+            foreach (var p in line.Take(upTo + 1))
+            {
+                var (x, z) = Px(p[0], p[1]);
+                current.Add((x, z, 6.0 * 512 / MinimapWorldUnitsPerPixel));
+            }
+            stretches.Add(current);
+            return stretches;
+        }
         if (track.Raised is { Count: > 1 } raised)
         {
             foreach (var p in raised)

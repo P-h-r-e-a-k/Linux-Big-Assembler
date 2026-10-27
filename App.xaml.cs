@@ -27,6 +27,8 @@ public partial class App : Application
         // purpose -- that would construct MainWindow as part of base.OnStartup itself, before this line
         // ever ran, so every {DynamicResource ThemeXxx} in it would resolve to nothing for one frame).
         ThemeManager.Apply(ThemeManager.Parse(EditorSettings.Current.Theme));
+        // (the temporary folder and the engine's user folder where the settings say: DataPaths)
+        DataPaths.Apply();
         // Point the native engine's own log at the same file (it stays silent without this).
         Environment.SetEnvironmentVariable("LBA2_EDITOR_DEBUG_LOG", DebugLog.LogFile);
         // ... and its native crash log (RENDERER_API.CPP: a native fault's code, address and stack) beside it, unless a test names its own

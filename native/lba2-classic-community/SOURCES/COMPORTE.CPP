@@ -6,6 +6,7 @@
 
  *══════════════════════════════════════════════════════════════════════════*/
 
+#include "RACEMOD.H"
 #include "C_EXTERN.H"
 
 #include "INPUT.H"
@@ -504,6 +505,22 @@ void MenuComportement(S32 affone) {
     }
 
     ptrobj->PtrFile3D = memoptrfile3d;
+
+    /* (driving as another car -- a race's drive_as, an island's own car -- that car in the driving box, not his buggy: RACEMOD.CPP) */
+    {
+        S32 anim = -1;
+        const S32 car = RaceMod_DrivenBody(&anim);
+        if (car >= 0 && GivePtrBody(car) && GivePtrAnim(anim)) {
+            ObjectClear(&InvObjTwinsen[C_BUGGY]);
+            InvObjTwinsen[C_BUGGY].Body.Num = -1;
+            ObjectInitBody(&InvObjTwinsen[C_BUGGY], (void *)(uintptr_t)(U32)car);
+            InvObjTwinsen[C_BUGGY].Texture = BufferTexture;
+            InvObjTwinsen[C_BUGGY].NextTexture = BufferTexture;
+            InvObjTwinsen[C_BUGGY].Anim.Num = -1;
+            ObjectInitAnim(&InvObjTwinsen[C_BUGGY], (void *)(uintptr_t)(U32)anim);
+            InvObjTwinsen[C_BUGGY].Status |= FLAG_BODY;
+        }
+    }
 
     InitMove(&RealRot, -1024);
 

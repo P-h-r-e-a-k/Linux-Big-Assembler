@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO;
 using System.Numerics;
 using LbaBodyStudio;
@@ -68,11 +69,22 @@ internal static class BrickBuilding
         Q(new(xb, ya, za), new(xb, ya, zb), new(xb, yb, zb), new(xb, yb, za), side, Vector3.UnitX);
     }
 
+    // A body's Info bit (unused by every retail body) that has LBA Assembler's engine draw its polygons up to 400 from the camera, not cut at
+    // the near plane, 3,000 away (AFF_OBJ.CPP, MASK_OBJECT_CLOSE): the palace's floor was cut there with the camera over it, and the ground
+    // under the rooms showed in a band along the screen's foot.
+    public const int CloseFlag = 1 << 11;
+
     // Each group's faces as bodies (a few where they are many), appended to `newBodies` (numbered from `firstBody` on), each a decor nothing
-    // touches. Returns the bodies, the faces, and the decors left out (a cube full).
+    // touches. Returns the bodies, the faces, and the decors left out (a cube full: `maxPerCube` decors). (`everyCube`: a copy of each in every
+    // cube it reaches, as the race tracks' decks are -- the engine collides only with the decors of the cube the hero is in, and draws those
+    // of the cubes next to it too; and with `reach`, in every cube within that of it too: those it can be seen from (AddToCubes). `close`:
+    // the bodies drawn close to the camera, CloseFlag)
     public static (int Bodies, int Faces, int Left) AddBodies(IslandFile island, Dictionary<int, List<Face>> groups, List<byte[]> newBodies, int firstBody,
-        Func<int, string>? what = null)
+        Func<int, string>? what = null, int maxPerCube = IslandDecors.MaxPerCube, bool everyCube = false, bool close = false, double reach = 0,
+        Func<int, int?>? drawnFrom = null)
     {
+        // (`drawnFrom`: a group's box's bottom, when not its lowest point -- the engine draws a decor whose box's bottom corners are in sight,
+        // and a roof's, over the camera, never are: Island CX's ring's roof, drawn from its floor)
         int faceCount = 0, bodyCount = 0, left = 0;
         foreach (var (group, faces) in groups)
             foreach (var chunk in Chunks(faces))
@@ -81,6 +93,10 @@ internal static class BrickBuilding
                 foreach (var f in chunk) foreach (var p in f.Quad) { lo = Vector3.Min(lo, p); hi = Vector3.Max(hi, p); }
                 // (the origin at the middle of the chunk: every point within what a body holds)
                 var origin = new Vector3((lo.X + hi.X) / 2, (lo.Y + hi.Y) / 2, (lo.Z + hi.Z) / 2);
+                // (a wall's outer face on a cube's far edge -- Island CX's control room's, the room the whole cube wide -- has its middle in
+                // the next cube, which may not be there: a unit back, in this one)
+                if (IslandDecors.Locate(island, origin.X, origin.Z) is null && IslandDecors.Locate(island, origin.X - 1, origin.Z - 1) is not null)
+                    origin = new Vector3(origin.X - 1, origin.Y, origin.Z - 1);
                 var pts = new List<Vector3>(); var bodyFaces = new List<LbaBodyStudio.Face>();
                 var shared = new Dictionary<Vector3, int>();
                 foreach (var (quad, colour, normal) in chunk)
@@ -94,26 +110,43 @@ internal static class BrickBuilding
                 var body = firstBody + newBodies.Count;
                 if (pts.Any(p => Math.Abs(p.X) > 32767 || Math.Abs(p.Y) > 32767 || Math.Abs(p.Z) > 32767))
                     throw new InvalidDataException($"{what?.Invoke(group) ?? $"group {group}"}: a body of {chunk.Count} faces from {lo} to {hi} is bigger than a body holds");
-                newBodies.Add(RaceTrackPipes.Write(pts, bodyFaces, lit: false));
+                var bytes = RaceTrackPipes.Write(pts, bodyFaces, lit: false);
+                if (close) BinaryPrimitives.WriteInt32LittleEndian(bytes, BinaryPrimitives.ReadInt32LittleEndian(bytes) | CloseFlag);
+                newBodies.Add(bytes);
                 faceCount += chunk.Count; bodyCount++;
-                if (IslandDecors.Locate(island, origin.X, origin.Z) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCube) { left++; continue; }
+                if (everyCube)
+                {
+                    left += AddToCubes(island, body, 0, origin.X, (int)Math.Round(origin.Y), origin.Z, lo.X, hi.X, (int)Math.Floor(lo.Y), NoBoxTop, lo.Z, hi.Z, maxPerCube,
+                        reach).Full;
+                    continue;
+                }
+                if (IslandDecors.Locate(island, origin.X, origin.Z) is not { } at || at.Cube.Decors.Count >= maxPerCube) { left++; continue; }
                 var d = IslandDecors.Blank(body, at.X, (int)Math.Round(origin.Y), at.Z);
                 d.XMin = (int)Math.Floor(at.X + lo.X - origin.X); d.XMax = (int)Math.Ceiling(at.X + hi.X - origin.X);
                 d.ZMin = (int)Math.Floor(at.Z + lo.Z - origin.Z); d.ZMax = (int)Math.Ceiling(at.Z + hi.Z - origin.Z);
-                d.YMin = (int)Math.Floor(lo.Y); d.YMax = NoBoxTop;     // (its Y the middle of its points: the body is drawn round it)
+                d.YMin = drawnFrom?.Invoke(group) ?? (int)Math.Floor(lo.Y); d.YMax = NoBoxTop;     // (its Y the middle of its points: the body is drawn round it)
                 at.Cube.Decors.Add(d);
             }
         return (bodyCount, faceCount, left);
     }
 
-    // The collision boxes (world units), each a decor with the empty body `empty`. Returns the boxes placed and those left out (a cube full).
-    public static (int Boxes, int Left) AddBoxes(IslandFile island, int empty, IEnumerable<(double X0, double Y0, double Z0, double X1, double Y1, double Z1)> boxes)
+    // The collision boxes (world units), each a decor with the empty body `empty`. Returns the boxes placed and those left out (a cube full:
+    // `maxPerCube` decors).
+    public static (int Boxes, int Left) AddBoxes(IslandFile island, int empty, IEnumerable<(double X0, double Y0, double Z0, double X1, double Y1, double Z1)> boxes,
+        int maxPerCube = IslandDecors.MaxPerCube, bool everyCube = false)
     {
         int count = 0, left = 0;
         foreach (var (bx0, by0, bz0, bx1, by1, bz1) in boxes)
         {
             double cx = (bx0 + bx1) / 2, cz = (bz0 + bz1) / 2;
-            if (IslandDecors.Locate(island, cx, cz) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCube) { left++; continue; }
+            if (everyCube)
+            {
+                var (placed, full) = AddToCubes(island, empty, 0, cx, (int)Math.Round(by0), cz, bx0, bx1, (int)Math.Floor(by0), (int)Math.Ceiling(by1), bz0, bz1, maxPerCube);
+                if (placed > 0) count++;
+                left += full;
+                continue;
+            }
+            if (IslandDecors.Locate(island, cx, cz) is not { } at || at.Cube.Decors.Count >= maxPerCube) { left++; continue; }
             var d = IslandDecors.Blank(empty, at.X, (int)Math.Round(by0), at.Z);
             d.XMin = (int)Math.Floor(at.X + bx0 - cx); d.XMax = (int)Math.Ceiling(at.X + bx1 - cx);
             d.ZMin = (int)Math.Floor(at.Z + bz0 - cz); d.ZMax = (int)Math.Ceiling(at.Z + bz1 - cz);
@@ -122,6 +155,32 @@ internal static class BrickBuilding
             count++;
         }
         return (count, left);
+    }
+
+    // One decor in every cube its box reaches into (world units), each copy in that cube's own frame (its place may then be outside
+    // 0..32767) -- RaceTrackBuilder's way for its decks. Returns the copies placed and the cubes too full to take one.
+    // (`reach`: in every cube that far round its box too -- the engine draws the decors of the cubes round the camera's own, the 3 x 3, so
+    // a thing seen from further, the Emperor's palace's turrets over its roof, has a copy in each cube it can be seen from; its box stays its
+    // own. The engine draws such copies once a frame: DECORS.CPP DrawnThisFrame)
+    public static (int Placed, int Full) AddToCubes(IslandFile island, int body, int beta, double wx, int y, double wz,
+        double minX, double maxX, int yMin, int yMax, double minZ, double maxZ, int maxPerCube = IslandDecors.MaxPerCube, double reach = 0)
+    {
+        var size = (double)IslandFile.CubeSize;
+        int placed = 0, full = 0;
+        for (var cz = (int)Math.Floor((minZ - reach) / size); cz <= (int)Math.Floor((maxZ + reach - 1e-6) / size); cz++)
+        for (var cx = (int)Math.Floor((minX - reach) / size); cx <= (int)Math.Floor((maxX + reach - 1e-6) / size); cx++)
+        {
+            if (island.CubeAt(cx, cz) is not { } cube) continue;
+            if (cube.Decors.Count >= maxPerCube) { full++; continue; }
+            var ox = cx * size; var oz = cz * size;
+            var d = IslandDecors.Blank(body, (int)Math.Round(wx - ox), y, (int)Math.Round(wz - oz), beta);
+            d.XMin = (int)Math.Floor(minX - ox); d.XMax = (int)Math.Ceiling(maxX - ox);
+            d.ZMin = (int)Math.Floor(minZ - oz); d.ZMax = (int)Math.Ceiling(maxZ - oz);
+            d.YMin = yMin; d.YMax = yMax;
+            cube.Decors.Add(d);
+            placed++;
+        }
+        return (placed, full);
     }
 
     // The nearest colour of a palette (6-bit or 8-bit) to `c`, weighted as the eye sees, entries 1-254; remembered in `cache`.
@@ -211,8 +270,8 @@ internal static class BrickBuilding
     }
 
     // A plane's faces merged into rectangles of one colour (u0, v0, u1, v1 inclusive): grown along u, then along v as far as the whole row
-    // matches.
-    public static IEnumerable<(int U0, int V0, int U1, int V1, int Colour)> Rectangles(Dictionary<(int U, int V), int> plane)
+    // matches -- at the most maxU cells along u and maxV along v (MaxRun when not given).
+    public static IEnumerable<(int U0, int V0, int U1, int V1, int Colour)> Rectangles(Dictionary<(int U, int V), int> plane, int maxU = MaxRun, int maxV = MaxRun)
     {
         var done = new HashSet<(int, int)>();
         foreach (var (u, v) in plane.Keys.OrderBy(k => k.V).ThenBy(k => k.U))
@@ -220,9 +279,9 @@ internal static class BrickBuilding
             if (done.Contains((u, v))) continue;
             var colour = plane[(u, v)];
             var u1 = u;
-            while (u1 - u + 1 < MaxRun && plane.TryGetValue((u1 + 1, v), out var c) && c == colour && !done.Contains((u1 + 1, v))) u1++;
+            while (u1 - u + 1 < maxU && plane.TryGetValue((u1 + 1, v), out var c) && c == colour && !done.Contains((u1 + 1, v))) u1++;
             var v1 = v;
-            while (v1 - v + 1 < MaxRun)
+            while (v1 - v + 1 < maxV)
             {
                 var row = v1 + 1; var ok = true;
                 for (var k = u; k <= u1 && ok; k++) ok = plane.TryGetValue((k, row), out var c) && c == colour && !done.Contains((k, row));

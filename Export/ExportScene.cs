@@ -29,8 +29,9 @@ internal sealed class ExportPrimitive
     public List<int> Indices { get; } = new();
 }
 
-// Geometry in the game's own coordinates (X right, Y up, Z forward: a left-handed system); the writers turn it into the right-handed
-// Y-up one every 3D tool uses. Triangles wind so that the plain cross product (b - a) x (c - a) points out of the surface.
+// Geometry in the game's own coordinates (X, Y up, Z): a right-handed system, as the games' own views show it (LBA1's iso view puts x - z
+// across the screen, LBA2's cameras are rotations, and the characters face +Z) -- the same handedness as the Y-up one every 3D tool uses,
+// so the writers only scale it. Triangles wind so that the plain cross product (b - a) x (c - a) points out of the surface.
 internal sealed class ExportMesh
 {
     public string Name { get; set; } = "mesh";
@@ -188,8 +189,10 @@ internal sealed class ExportScene
         return result;
     }
 
-    // The scene in the right-handed, Y-up coordinates of glTF / OBJ / PLY / STL, scaled (game units to metres by default): the
-    // Z axis is mirrored, so every triangle changes its winding, and each node's matrix is conjugated by the mirror.
+    // The scene in the right-handed, Y-up coordinates of glTF / OBJ / PLY / STL, scaled (game units to metres by default). The game's
+    // coordinates already are those, so nothing turns or mirrors: a character faces +Z, glTF's front. (Until 2026-10-18 this mirrored Z,
+    // taking the game for left-handed: every export came out as the mirror image of what the games show -- the toy truck's right-hand
+    // drive on its left, LBA1's maps the wrong way round.)
     public ExportScene ToRightHanded(float scale)
     {
         var result = new ExportScene { Name = Name };
@@ -201,14 +204,13 @@ internal sealed class ExportScene
             {
                 mesh = new ExportMesh(node.Mesh.Name, node.Mesh.Colors is not null);
                 for (var i = 0; i < node.Mesh.Positions.Count; i++)
-                    mesh.AddVertex(new Vector3(node.Mesh.Positions[i].X * scale, node.Mesh.Positions[i].Y * scale, -node.Mesh.Positions[i].Z * scale), node.Mesh.Uvs[i], node.Mesh.Colors?[i]);
+                    mesh.AddVertex(node.Mesh.Positions[i] * scale, node.Mesh.Uvs[i], node.Mesh.Colors?[i]);
                 foreach (var primitive in node.Mesh.Primitives)
                     for (var i = 0; i + 2 < primitive.Indices.Count; i += 3)
-                        mesh.AddTriangle(primitive.Material, primitive.Indices[i], primitive.Indices[i + 2], primitive.Indices[i + 1]);
+                        mesh.AddTriangle(primitive.Material, primitive.Indices[i], primitive.Indices[i + 1], primitive.Indices[i + 2]);
                 converted[node.Mesh] = mesh;
             }
             var m = node.Transform;
-            (m.M13, m.M23, m.M31, m.M32, m.M43) = (-m.M13, -m.M23, -m.M31, -m.M32, -m.M43);
             (m.M41, m.M42, m.M43) = (m.M41 * scale, m.M42 * scale, m.M43 * scale);
             result.Nodes.Add(new ExportNode { Name = node.Name, Mesh = mesh, Transform = m });
         }

@@ -42,6 +42,12 @@ internal sealed class EditorSettings
 
     public string Lba1Directory { get; set; } = "";
 
+    // Where what Windows would put in its per-user folders goes instead (DataPaths): AppDataDirectory laid out as AppData is (Roaming,
+    // Local under it), TempDirectory for temporary files -- the user's E:\AppData and E:\dump\TEMP (2026-10-22: nothing on C:\). Empty:
+    // Windows' own.
+    public string AppDataDirectory { get; set; } = "";
+    public string TempDirectory { get; set; } = "";
+
     // AppTheme's own name (ThemeManager.Save/Parse), not the enum cast to int -- so inserting a new theme
     // later doesn't renumber an already-saved choice out from under it.
     public string Theme { get; set; } = "Light";

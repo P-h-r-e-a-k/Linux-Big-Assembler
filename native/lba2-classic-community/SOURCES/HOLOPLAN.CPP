@@ -9,6 +9,7 @@
 #include <SYSTEM/LZ.H>
 #include <string.h>
 #include "AMBIANCE.H"
+#include "RACEMOD.H"
 
 #define ZOOM_A 2048 //	Big Islands
 #define ZOOM_B 1024 //	Islands with 4 cubes
@@ -203,7 +204,29 @@ typedef struct {
 
 //	Le buggy ne peut se trouver que dans le cube 49 sur la citadelle,
 //	et dans les cubes 55 a 73 sur le desert ( dans ce cas, on l'affiche ).
-S32 RecupCoorBuggy(S32 *xb, S32 *yb, S32 *zb) {
+// (and, a race-track mod's car, in any outside scene of the island the holomap shows: its cube read from the scene's head -- the
+// user, 2026-10-27: "We should also have the car position show on the holomap like it does on Desert island", Citadel Island's car
+// parked at Twinsen's house. Kept for the last cube asked about: the holomap asks every frame)
+static S32 BuggyCubeOn(S32 cube, S32 island, S32 *cx, S32 *cz) {
+    static S32 lastCube = -1, lastIsland = -1, lastX = 0, lastZ = 0, lastOutside = 0;
+    if (cube != lastCube) {
+        char path[ADELINE_MAX_PATH];
+        GetResPath(path, ADELINE_MAX_PATH, SCENE_HQR_NAME);
+        U8 *head = (U8 *)LoadMalloc_HQR(path, cube + 1);
+        if (!head) return 0;
+        lastCube = cube;
+        lastIsland = head[0];
+        lastX = (S8)head[1];
+        lastZ = (S8)head[2];
+        lastOutside = head[5] == CUBE_EXTERIEUR;
+        Free(head);
+    }
+    *cx = lastX * SCE;
+    *cz = lastZ * SCE;
+    return lastOutside AND lastIsland == island;
+}
+
+S32 RecupCoorBuggy(S32 island, S32 *xb, S32 *yb, S32 *zb) {
     S32 cube, cx, cz;
 
     if ((!NumBuggy)
@@ -213,11 +236,11 @@ S32 RecupCoorBuggy(S32 *xb, S32 *yb, S32 *zb) {
 
     cube = ListBuggy[0].Cube;
 
-    if ((cube < 55) OR(cube > 73))
+    if (island == 2 AND cube >= 55 AND cube <= 73) {
+        cx = (7 + (cube - 54) / 5) * SCE;
+        cz = (7 + (cube - 54) % 5) * SCE;
+    } else if (!RaceMod_Active() OR !BuggyCubeOn(cube, island, &cx, &cz))
         return (0);
-
-    cx = (7 + (cube - 54) / 5) * SCE;
-    cz = (7 + (cube - 54) % 5) * SCE;
 
     *xb = ListBuggy[0].X + cx;
     *yb = ListBuggy[0].Y;
@@ -351,8 +374,7 @@ void DrawListHoloPlan() {
 
     //----- Here I must (eventually) add the Buggy to ListTri...
 
-    if ((ZoomedIsland == 2)                 //	Separe cause Debug
-        AND(RecupCoorBuggy(&xb, &yb, &zb))) //	Desert + Buggy
+    if (RecupCoorBuggy(ZoomedIsland, &xb, &yb, &zb)) //	Desert + Buggy (and a race-track mod's car on any island)
     {
         LongWorldRotatePoint(xb, yb, zb);
         ptt->Num = 3; //	Type Buggy

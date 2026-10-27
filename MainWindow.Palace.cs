@@ -29,8 +29,10 @@ public partial class MainWindow
             var ok = MessageBox.Show(this,
                 "Make the Emperor's palace on Otringal an island of its own?\n\n" +
                 "Its sixteen rooms and the last room (the chest and the window Twinsen leaves by) are joined as the doors between them put them, every block " +
-                $"of them made {PalaceIsland.Across} times as wide and {PalaceIsland.Up} times as high -- room for the cars -- with a roof over each room, " +
-                "on a paved island in the sea. It is drawn with Otringal's colours. No scenes or track yet: a race track through it comes later.\n\n" +
+                $"of them made {PalaceIsland.Across} times as wide and {PalaceIsland.Up} times as high -- room for the cars -- under a rocky hill like Otringal's " +
+                "palace hill, cliffs falling to the cloud sea. Otringal's own palace -- its domes, towers and arch -- stands on the hilltop over the rooms, the " +
+                "long hall's round window opens onto the cliff, and each room has its furniture (columns, plants, fireplaces, portraits, windows, chests...) " +
+                "in 3D. A harbour lies at the hill's foot. It is drawn with Otringal's colours. No scenes or track yet: a race track through it comes later.\n\n" +
                 $"Folder: {gameRoot}\nNew: {PalaceIsland.IleFile}, {PalaceIsland.OblFile} (nothing else changes; this menu takes them out again)",
                 PalaceTitle, MessageBoxButton.OKCancel, MessageBoxImage.Question);
             if (ok != MessageBoxResult.OK) return;

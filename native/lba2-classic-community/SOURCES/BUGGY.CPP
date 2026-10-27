@@ -38,9 +38,20 @@ void InitBuggy(U8 numobj, U32 flaginit) {
     // par le buggy (tant pis, il sera poussé)
     ptrobj->Flags |= (PUSHABLE | CHECK_CODE_JEU);
 
+    // (a first initialisation too where the car there is is parked on another island -- it never crosses the sea without Twinsen in
+    // it: a race-track mod's new game makes its car in the dream's race, and Citadel Island's house never had its own, the user,
+    // 2026-10-27: "Twinsen's car no longer spawns on the track, this is correct, but it wasn't under the car port either")
+    S32 offIsland = FALSE;
+#ifndef LBA_EDITOR
+    if (flaginit AND NumBuggy AND ptb->Cube != NumCube
+        AND ListObjet[NUM_PERSO].Move != MOVE_BUGGY_MANUAL AND ListObjet[NUM_PERSO].Move != MOVE_BUGGY) {
+        const S32 island = LoadSceneIsland(ptb->Cube);
+        offIsland = island >= 0 AND island != Island;
+    }
+#endif
     if ((flaginit == 2) // on force le repositionnement du buggy
         OR(flaginit
-               AND !NumBuggy)) // premiere initialisation
+               AND (!NumBuggy OR offIsland))) // premiere initialisation
                                // car le buggy vide ne peut pas etre Twinsen
     {
         ptb->Cube = NumCube; // Port-Ludo (Désert)
@@ -253,10 +264,11 @@ static void RaceSpeedOnSlope(S_BUGGY *ptb, S32 deltatimer, S32 flagattack, doubl
     double v = ptb->Speed;
 
     // (over the top gear's speed the car steers as much quicker as it goes faster: its tightest turn stays what it is; and a banked
-    // bend turns it; and skidding on oil it turns round -- RACEMOD.CPP)
+    // bend turns it; and skidding on oil it turns round; and the handbrake held, it turns quicker -- RACEMOD.CPP)
     const double fastest = car->GearTop[car->Gears - 1];
     const double quick = v > fastest ? v / fastest : 1, jet = RaceMod_JetSteer();
-    ptb->SpeedRot = (S32)(car->Steer * (quick > jet ? quick : jet) * (1 + RACE_BANK_STEER * bank) * RaceMod_SkidSteer());
+    const S32 handbrake = RaceMod_Handbrake();
+    ptb->SpeedRot = (S32)(car->Steer * (quick > jet ? quick : jet) * (1 + RACE_BANK_STEER * bank) * RaceMod_SkidSteer() * RaceMod_HandbrakeSteer(handbrake));
     const S32 touched = RaceMod_RailTouched();
 
     if (RaceMod_Held()) {
@@ -267,7 +279,13 @@ static void RaceSpeedOnSlope(S_BUGGY *ptb, S32 deltatimer, S32 flagattack, doubl
     // the slope's own pull, the way the car faces
     v -= dt * gravity * RACE_GRAVITY * slope / sqrt(1 + slope * slope);
 
-    if ((Input & I_UP) AND !flagattack) {
+    // (the handbrake held: a brake gentler than the pedal's, RACEMOD.CPP RaceMod_Handbrake -- none by default since 2026-10-21, when the
+    // accelerator drives on through the slide)
+    if (handbrake AND RaceMod_HandbrakeBrake() > 0 AND !((Input & I_DOWN) AND !flagattack) AND v > 0) {
+        v -= dt * car->Brake * RaceMod_HandbrakeBrake();
+        if (v < 0)
+            v = 0;
+    } else if ((Input & I_UP) AND !flagattack) {
         if (v <= engineTop) {
             double pull = (double)RACE_REF_TOP / gearTop;
             if (pull > 4.0)
@@ -324,10 +342,11 @@ static void RaceSpeed(S_BUGGY *ptb, S32 deltatimer, S32 flagattack) {
     // (over the top gear's speed -- Gazogem fuel, a jet-pack -- it steers as much quicker as it goes faster: its tightest turn stays what
     // it is, as on a slope, RaceSpeedOnSlope; the jet-pack drives the line at twice the speed round its bends -- and steers as much
     // quicker below the top gear's speed too, RaceMod_JetSteer: through a hairpin taken at twice the line's speed, still under the top
-    // speed, it turned on a circle twice as wide)
+    // speed, it turned on a circle twice as wide) -- and the handbrake held, it turns quicker (RACEMOD.CPP RaceMod_Handbrake)
     const double fastest = car->GearTop[car->Gears - 1];
     const double quick = ptb->Speed > fastest ? ptb->Speed / fastest : 1, jet = RaceMod_JetSteer();
-    ptb->SpeedRot = (S32)(car->Steer * (quick > jet ? quick : jet) * RaceMod_SkidSteer());
+    const S32 handbrake = RaceMod_Handbrake();
+    ptb->SpeedRot = (S32)(car->Steer * (quick > jet ? quick : jet) * RaceMod_SkidSteer() * RaceMod_HandbrakeSteer(handbrake));
 
     // on the grid until the count-down's GO
     if (RaceMod_Held()) {
@@ -335,7 +354,13 @@ static void RaceSpeed(S_BUGGY *ptb, S32 deltatimer, S32 flagattack) {
         return;
     }
 
-    if ((Input & I_UP) AND !flagattack) {
+    // (the handbrake held: a brake gentler than the pedal's, the pedal's still the stronger -- none by default since 2026-10-21, the
+    // accelerator driving on through the slide)
+    if (handbrake AND RaceMod_HandbrakeBrake() > 0 AND !((Input & I_DOWN) AND !flagattack) AND ptb->Speed > 0) {
+        ptb->Speed -= (S32)(deltatimer * car->Brake * RaceMod_HandbrakeBrake() / 1000);
+        if (ptb->Speed < 0)
+            ptb->Speed = 0;
+    } else if ((Input & I_UP) AND !flagattack) {
         if (ptb->Speed <= top) {
             double pull = (double)RACE_REF_TOP / top;
             if (pull > 4.0)
@@ -457,7 +482,7 @@ void MoveBuggy(T_OBJET *ptrobj) {
             RaceMod_Skid(&ptb3d->Beta, &ptb->Speed);
         } else if ((Input & I_UP) // j'accelere
                    AND !flagattack) {
-            ptb->Speed += deltatimer * 4;
+            ptb->Speed += deltatimer * 4 * RaceMod_StoryAccel() / 100;   // (an island's own car slower away: RACEMOD.CPP ISLANDCARS.TXT)
 
             if (!TimerGear)
                 TimerGear = TimerRefHR + TEMPO_GEAR;
@@ -554,6 +579,8 @@ void MoveBuggy(T_OBJET *ptrobj) {
     ptb->SpeedInc = speedinc;
 
     if (RaceMod_Active()) {
+        // (the handbrake's slide: the way the car goes lagging the way it points, swinging back as the grip returns -- RACEMOD.CPP)
+        RaceMod_Slide(ptb3d->Beta, &ptb->Speed, deltatimer, (ptrobj->WorkFlags & (FALLING | ANIM_MASTER_GRAVITY)) != 0);
         RaceMod_Lap(ptb3d->X, ptb3d->Z);
     }
 
@@ -634,6 +661,22 @@ static S32 BuggyFloorY(T_OBJET *ptrobj, S32 x, S32 z) {
     return y;
 }
 
+// The floor under a point the car's pitch and roll are measured by. In a race-track mode's race, a point whose floor is more than
+// RACE_TILT_STEP off the car's own is taken as level with it: on a raised road a point past its rail is over the ground far below the deck
+// -- the car driven into the rail, a boost panel's speed taking it further -- and the car stood on its nose (Wannies Island, 2026-10-15:
+// "After using the boost panels on platform.ile and driving into the side wall it tips the car up on its nose"). No road climbs or falls
+// that much over the 400 the points are from the car's middle (the steepest, the Elevator Platform's drop, 500), and none is banked that much
+// across (the steepest bank, 0.40: 160).
+S32 BuggyPitchProbe[3] = {0, 0, 0};
+#define RACE_TILT_PITCH 700
+#define RACE_TILT_ROLL 250
+static S32 TiltFloorY(T_OBJET *ptrobj, S32 x, S32 z, S32 own, S32 most) {
+    const S32 y = BuggyFloorY(ptrobj, x, z);
+    if (RaceMod_Active() AND (y > own + most OR y < own - most))
+        return own;
+    return y;
+}
+
 //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 
 void DoAnimBuggy(T_OBJET *ptrobj) {
@@ -659,7 +702,7 @@ void DoAnimBuggy(T_OBJET *ptrobj) {
         return;
     }
 
-    LongRotate(0, ptb->SpeedInc * 1024, RaceMod_MoveBeta(ptb3d->Beta));   // (skidding on oil it slides on the way it was going: RACEMOD.CPP)
+    LongRotate(0, ptb->SpeedInc * 1024, RaceMod_MoveBeta(ptb3d->Beta));   // (skidding on oil, or the handbrake's slide, it goes the way it was going: RACEMOD.CPP)
     Nxw = ptb3d->X + X0 / 1024;
     Nzw = ptb3d->Z + Z0 / 1024;
 
@@ -790,17 +833,19 @@ void DoAnimBuggy(T_OBJET *ptrobj) {
     LongRotate(0, -400, ptb3d->Beta);
 
     if (Nxw + x1 >= 0 AND Nxw + x1 < 32768 AND Nzw + z1 >= 0 AND Nzw + z1 < 32768) {
-        y = BuggyFloorY(ptrobj, Nxw + x1, Nzw + z1);
+        y = TiltFloorY(ptrobj, Nxw + x1, Nzw + z1, yw, RACE_TILT_PITCH);
     } else
         y = yw;
 
     if (Nxw + X0 >= 0 AND Nxw + X0 < 32768 AND Nzw + Z0 >= 0 AND Nzw + Z0 < 32768) {
-        y1 = BuggyFloorY(ptrobj, Nxw + X0, Nzw + Z0);
+        y1 = TiltFloorY(ptrobj, Nxw + X0, Nzw + Z0, yw, RACE_TILT_PITCH);
     } else
         y1 = yw;
 
     ptb3d->CurrentFrame[1].Alpha = (S16)(1024 - GetAngle2D(0, y, 800, y1));
     ptb->Alpha = ptb3d->CurrentFrame[1].Alpha;
+    // (for a race-track mod's cartrace: the floor the pitch was taken from, ahead and behind, and the car's own -- RACEMOD.CPP)
+    BuggyPitchProbe[0] = y; BuggyPitchProbe[1] = y1; BuggyPitchProbe[2] = yw;
 
     // inclinaison voiture (roll)
     LongRotate(400, 0, ptb3d->Beta);
@@ -809,12 +854,12 @@ void DoAnimBuggy(T_OBJET *ptrobj) {
     LongRotate(-400, 0, ptb3d->Beta);
 
     if (Nxw + X0 >= 0 AND Nxw + X0 < 32768 AND Nzw + Z0 >= 0 AND Nzw + Z0 < 32768) {
-        y = BuggyFloorY(ptrobj, Nxw + X0, Nzw + Z0);
+        y = TiltFloorY(ptrobj, Nxw + X0, Nzw + Z0, yw, RACE_TILT_ROLL);
     } else
         y = yw;
 
     if (Nxw + x1 >= 0 AND Nxw + x1 < 32768 AND Nzw + z1 >= 0 AND Nzw + z1 < 32768) {
-        y1 = BuggyFloorY(ptrobj, Nxw + x1, Nzw + z1);
+        y1 = TiltFloorY(ptrobj, Nxw + x1, Nzw + z1, yw, RACE_TILT_ROLL);
     } else
         y1 = yw;
 

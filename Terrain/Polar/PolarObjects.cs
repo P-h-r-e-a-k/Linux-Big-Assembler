@@ -23,6 +23,10 @@ internal static class PolarObjects
     // textures are all on one page of the island's object pages, the decor's (IslandFile.DecorPageShift).
     private static uint TileEntry(int x, int y) => 0x1F1F0000u | (uint)(y * 256 + x);
 
+    // LBA1's sea: the water bricks' layer (its top the surface), the engine's sea at its bottom
+    private const int SeaLayer = 1, MaxSunk = 11, GapFill = 2, MaxInside = 10;
+    private const double WholeDrawn = 0.8;
+
     public sealed record Built(List<byte[]> Bodies, int Decors, List<string> Log);
 
     public static Built Build(Lba1Game game, PolarLayout layout, IReadOnlyDictionary<(int X, int Z), PolarTerrain.Column> columns, IReadOnlySet<(int X, int Z)> rocks,
@@ -39,6 +43,87 @@ internal static class PolarObjects
         var cells = layout.Cells.Where(c => (Rock(c) || !PolarTerrain.IsGround(game, c.Value) && (!columns.TryGetValue((c.Key.X, c.Key.Z), out var col) || c.Key.Y > col.Top)) && !Mist(c.Value.Brick))
             .ToDictionary(c => c.Key, c => c.Value);
         log.Add($"{mist.Count(m => m.Value)} bricks of mist (dithered) left out");
+        // (what stands on the water -- a pier's posts, the crane's legs -- stands in LBA1 on its sea's surface, the top of the water bricks of
+        // layer SeaLayer; and the island's edges -- quays, decks, pillars -- have nothing under them at all in LBA1, its camera never
+        // showing beneath them, the void black: the engine's sea is at 0, that layer's bottom, and shows; a column's lowest brick over the
+        // sea, on the water or over nothing up to MaxSunk layers up, goes on down to it, not hanging over it (the user, 2026-10-27:
+        // "Polar island has a lot of bits floating in the air"). Not over land, not on LBA1's invisible bricks -- collision a deck rests on
+        // -- and not the rocky peak's heights.)
+        var sunk = 0;
+        foreach (var g in cells.Keys.GroupBy(k => (k.X, k.Z)).ToList())
+        {
+            var k = g.MinBy(c => c.Y);
+            if (columns.TryGetValue((k.X, k.Z), out var col) && !col.Water) continue;
+            var under = Enumerable.Range(-2, k.Y + 2).Where(y => layout.Cells.ContainsKey((k.X, y, k.Z))).Select(y => layout.Cells[(k.X, y, k.Z)]).ToList();
+            var onWater = k.Y == SeaLayer + 1 && under.All(u => u.Water);
+            var overNothing = under.Count == 0 && k.Y <= MaxSunk;
+            if (!onWater && !overNothing) continue;
+            for (var y = SeaLayer; y < k.Y; y++) if (cells.TryAdd((k.X, y, k.Z), cells[k])) sunk++;
+        }
+        log.Add($"{sunk} cells under what stands on the water or over nothing at the island's edges, down to the sea");
+        // (the insides under a roof over a floor LBA1 never drew (PolarTerrain.Holes): from the floor up to the roof, each cell the
+        // nearest wall brick's at its height along x or z)
+        // (only walls' bricks, whole cells drawn on both their sides -- a post, a pole, a fence's slats fill part of theirs, and a speck of a
+        // brick, a few pixels, has a whole footprint but nothing to show: the gaps between fence posts stay)
+        var whole = new Dictionary<int, bool>();
+        bool Whole(PolarLayout.Cell c)
+        {
+            if (whole.TryGetValue(c.Brick, out var w)) return w;
+            var sprite = PolarTextures.Sprite.Decode(game.ReadBrick(c.Brick));
+            return whole[c.Brick] = sprite.Footprint().IsFull && sprite.Coverage(PolarTextures.Face.SideX) >= WholeDrawn && sprite.Coverage(PolarTextures.Face.SideZ) >= WholeDrawn;
+        }
+        var inside = new Dictionary<(int X, int Y, int Z), PolarLayout.Cell>();
+        foreach (var ((x, z), col) in columns)
+        {
+            if (col.Water || layout.Cells.TryGetValue((x, col.Top, z), out var own) && own == col.Cell) continue;
+            var roof = layout.Cells.Keys.Where(c => c.X == x && c.Z == z && c.Y > col.Top).Select(c => c.Y).DefaultIfEmpty(-1).Min();
+            if (roof < 0 || roof - col.Top - 1 > MaxInside) continue;
+            for (var y = col.Top + 1; y < roof; y++)
+            {
+                if (cells.ContainsKey((x, y, z))) continue;
+                PolarLayout.Cell? nearest = null;
+                for (var n = 1; n <= PolarTerrain.HoleReach && nearest is null; n++)
+                    foreach (var (dx, dz) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+                        if (cells.TryGetValue((x + dx * n, y, z + dz * n), out var near) && Whole(near)) { nearest = near; break; }
+                if (nearest is { } brick) inside[(x, y, z)] = brick;
+            }
+        }
+        foreach (var (c, v) in inside) cells[c] = v;
+        log.Add($"{inside.Count} cells of buildings' insides under their roofs filled (no floor in LBA1: PolarTerrain.Holes)");
+        // (then the backs LBA1 never drew: its camera saw a building from the front, and a row behind a wall, under a roof's far edge, was
+        // left empty -- from behind, a slot into the building (the user, 2026-10-27: "some of our buildings have no back to them"). An empty
+        // cell in a run of at most GapFill cells along x or z, over its column's ground, closed in at both ends -- one a wall's brick standing
+        // end-on to the run (nothing of it behind: a wall across the run, not along it -- not a doorway in a wall), the other a wall's brick
+        // or ground up to that height -- is filled with the nearer wall brick's. Not over water, not on or beside LBA1's car tracks, not
+        // where LBA1 has any brick, even an invisible one.)
+        var filled = new Dictionary<(int X, int Y, int Z), PolarLayout.Cell>();
+        bool Ground((int X, int Y, int Z) c) => columns.TryGetValue((c.X, c.Z), out var gc) && !gc.Water && c.Y <= gc.Top;
+        bool NearTrack(int x, int z)
+        {
+            for (var dz = -2; dz <= 2; dz++)
+                for (var dx = -2; dx <= 2; dx++)
+                    if (PolarTerrain.TrackCells.Contains((x + dx, z + dz))) return true;
+            return false;
+        }
+        foreach (var k in cells.Keys.Where(k => Whole(cells[k])).ToList())
+            foreach (var (ax, az) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+                for (var len = 1; len <= GapFill; len++)
+                {
+                    // the run k+1 .. k+len along the axis, closed by k and the cell after it
+                    var end = (X: k.X + ax * (len + 1), k.Y, Z: k.Z + az * (len + 1));
+                    var run = Enumerable.Range(1, len).Select(n => (X: k.X + ax * n, k.Y, Z: k.Z + az * n)).ToList();
+                    if (run.Any(c => cells.ContainsKey(c) || layout.Cells.ContainsKey(c) || Ground(c))) continue;
+                    var endObject = cells.TryGetValue(end, out var endCell) && Whole(endCell);
+                    if (!endObject && !Ground(end)) continue;
+                    // (end-on: k with nothing of objects before it along the axis)
+                    if (cells.ContainsKey((k.X - ax, k.Y, k.Z - az))) continue;
+                    if (run.Any(c => !columns.TryGetValue((c.X, c.Z), out var rc) || rc.Water || c.Y <= rc.Top || NearTrack(c.X, c.Z))) continue;
+                    for (var n = 0; n < run.Count; n++)
+                        filled.TryAdd(run[n], endObject && n >= run.Count / 2.0 ? endCell : cells[k]);
+                    break;
+                }
+        foreach (var (c, v) in filled) cells[c] = v;
+        log.Add($"{filled.Count} cells of the backs of buildings LBA1's camera never showed filled (gaps of up to {GapFill} closed in at both ends)");
         // (objects standing on the car tracks: as LBA1 has them, but worth a look)
         var onTracks = cells.Keys.Where(k => PolarTerrain.TrackCells.Contains((k.X, k.Z)) && columns.TryGetValue((k.X, k.Z), out var col) && k.Y == col.Top + 1).ToList();
         log.Add($"{onTracks.Count} object cells stand on car track cells" + (onTracks.Count > 0 ? ": " + string.Join(" ", onTracks.Take(40).Select(k => $"({k.X},{k.Z}){cells[k].Brick}/{cells[k].Code:X2}")) : ""));

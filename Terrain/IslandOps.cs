@@ -331,14 +331,19 @@ internal static class IslandOps
         private readonly IslandFile island;
         private readonly List<(IslandCube Cube, IslandDecor Decor, double[] Before)> tracked = new();
 
-        // (`stay`: bodies whose decors stay where they are whatever the ground does -- Otringal's gatehouse over the race track's tunnel)
-        public DecorFollow(IslandFile island, ISet<int>? stay = null)
+        // (`stay`: bodies whose decors stay where they are whatever the ground does -- Otringal's gatehouse over the race track's tunnel;
+        // `near`: only the decors whose origin (island world x, z) it accepts -- the ones over the ground an edit will change, so a big island's
+        // thousands of others aren't measured for nothing: the heightmap import; `keep`: single decors that stay where they are -- the race
+        // track's door decor, whose inside scene brings Twinsen out at the height the game has it)
+        public DecorFollow(IslandFile island, ISet<int>? stay = null, Func<double, double, bool>? near = null, ISet<IslandDecor>? keep = null)
         {
             this.island = island;
             foreach (var (cx, cz, cube) in CubeCells(island))
                 foreach (var decor in cube.Decors)
                 {
                     if (stay?.Contains(decor.Body & 0xFFFF) == true) continue;
+                    if (keep?.Contains(decor) == true) continue;
+                    if (near is not null && !near(cx * (double)IslandFile.CubeSize + decor.X, cz * (double)IslandFile.CubeSize + decor.Z)) continue;
                     if (Altitude(island, cx * IslandFile.CubeSize + decor.X, cz * IslandFile.CubeSize + decor.Z) is not { } y) continue;
                     if (!StandsOnGround(island, cx, cz, decor)) continue;
                     tracked.Add((cube, decor, new[] { y }));
@@ -351,12 +356,17 @@ internal static class IslandOps
         private static bool StandsOnGround(IslandFile island, int cx, int cz, IslandDecor decor)
         {
             double ox = cx * (double)IslandFile.CubeSize, oz = cz * (double)IslandFile.CubeSize;
-            var under = double.MinValue;
+            // (at or under the highest ground = at or under any of it: the first such sample settles it, no need to measure the rest of a big
+            // building's footprint)
+            var known = false;
             for (var z = decor.ZMin; z <= decor.ZMax; z += 256)
             for (var x = decor.XMin; x <= decor.XMax; x += 256)
-                if (Altitude(island, ox + x, oz + z) is { } g && g > under) under = g;
-            if (under == double.MinValue) return true;           // nothing known under it: follow, as it always did
-            return decor.YMin <= under + StandsOn;
+                if (Altitude(island, ox + x, oz + z) is { } g)
+                {
+                    if (decor.YMin <= g + StandsOn) return true;
+                    known = true;
+                }
+            return !known;           // nothing known under it: follow, as it always did
         }
 
         // Moves the tracked decors by the change in ground height under them; returns how many moved.

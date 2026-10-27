@@ -13,6 +13,11 @@ extern "C" {
 //──────────────────────────────────────────────────────────────────────────
 extern S32 HQF_File;
 
+// When set, asked first for every entry HQF_Init opens: the entry's bytes (as stored, not compressed; kept by the hook until the next
+// call) and their size, or NULL for the file's own. LBA Assembler's maps (SOURCES/MAPPACK.CPP) serve SCENE.HQR's entries of their
+// scenes this way.
+extern U8 *(*HQF_Hook)(const char *name, S32 index, U32 *size);
+
 //──────────────────────────────────────────────────────────────────────────
 extern U32 HQF_Init(const char *name, S32 index);
 

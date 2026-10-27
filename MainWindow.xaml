@@ -125,6 +125,19 @@
     <DockPanel LastChildFill="True">
         <Menu DockPanel.Dock="Top" Background="{DynamicResource ThemeRaisedBrush}" Foreground="{DynamicResource ThemeTextBrush}" Padding="6,2" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="0,0,0,1">
             <MenuItem Header="_File" Foreground="{DynamicResource ThemeTextBrush}">
+                <MenuItem Header="_New map…" Click="NewMap_Click" ToolTip="A new LBA2 island, LBA2 interior or LBA1 interior, made from one of the game's own, in a map file of its own"/>
+                <MenuItem Header="Open _map…" Click="OpenMap_Click" ToolTip="A map file (.lbamap), or an LBA2 island (.ILE) from outside the game folder: opened in a copy of the game folder, to edit and play"/>
+                <MenuItem Header="Save m_ap" Click="SaveMap_Click"/>
+                <MenuItem Header="Save map a_s…" Click="SaveMapAs_Click"/>
+                <MenuItem Header="_Install map into game…" Click="InstallMap_Click" ToolTip="Puts the open map into your game folder: LBA2's as new scenes, LBA1's in the scene slot it takes"/>
+                <MenuItem Header="Map setti_ngs…" Click="MapSettings_Click" ToolTip="The open map's name and description and, an island's, its weather and whether its cliffs can be walked off (as LBA1's ledges)"/>
+                <MenuItem Header="Map _text…" Click="MapText_Click" ToolTip="The open map's own lines of dialogue: what its scenes' characters say (a script's message of that number)"/>
+                <MenuItem Header="Close ma_p" Click="CloseMap_Click"/>
+                <MenuItem Header="_Export map…" Click="ExportMap_Click" ToolTip="The island or interior scene in view, out of the game folder into a map file"/>
+                <Separator/>
+                <MenuItem Header="Import _heightmap…" Click="ImportHeightmap_Click" ToolTip="Shapes the open LBA2 island's ground from a greyscale picture: says what size it needs, shows the result live in the 3D view, one undo step (Build mode's terrain tools)"/>
+                <MenuItem Header="Export hei_ghtmap…" Click="ExportHeightmap_Click" ToolTip="The open LBA2 island's heights as a greyscale picture of exactly the size Import heightmap wants, to edit in a paint program"/>
+                <Separator/>
                 <MenuItem Header="_Open…" InputGestureText="Ctrl+O" Click="Open_Click"/>
                 <MenuItem Header="_Save" InputGestureText="Ctrl+S" Click="Save_Click"/>
                 <Separator/>
@@ -174,8 +187,8 @@
                     <MenuItem x:Name="GridEditorMenuItem" Header="LBA1 / LBA2: interior _grid editor…" Click="GridEditor_Click"/>
                     <MenuItem x:Name="ExportMenuItem" Header="LBA1 / LBA2: e_xport 3D models…" Click="Export3D_Click" ToolTip="Islands (with their objects and the Desert island race track), buildings, interiors, every actor and body, furniture and items, as glTF, OBJ, PLY or STL"/>
                     <Separator/>
-                    <MenuItem x:Name="Lba1EditorMenuItem" Header="LBA1: scene _editor…" Click="Lba1Editor_Click"/>
-                    <MenuItem x:Name="Lba2EditorMenuItem" Header="LBA2: scene e_ditor…" Click="Lba2Editor_Click"/>
+                    <MenuItem x:Name="SceneEditMenuItem" Header="LBA1 / LBA2: _scene: actors, zones, track points (in the view)" Click="SceneEdit_Click"
+                              ToolTip="Build > Actors and zones: the scene's actors, zones and track points, picked, dragged and placed in the view"/>
                     <MenuItem x:Name="IslandEditorMenuItem" Header="LBA2: island _terrain editor (Build mode)" Click="IslandEditor_Click"/>
                 </MenuItem>
                 <MenuItem Header="_Play" ToolTip="Plays a specific game's open scene regardless of which one the Game selector currently shows -- for the game that's already showing, the Play tab's own button does the same thing">
@@ -187,7 +200,10 @@
                     <MenuItem x:Name="Lba1SurpriseMenuItem" Header="LBA1: _Make surprise changes…" Click="Lba1SurpriseChanges_Click"/>
                 </MenuItem>
                 <MenuItem x:Name="Lba2RaceTrackMenuItem" Header="LBA2: _race track…" Click="Lba2RaceTrack_Click" ToolTip="Builds race tracks, one island&apos;s or several at once (levelled, banked road, pit lane, start gantry, a bridge or a jump where the lap crosses itself), or puts the folder back. Play races the track of the island that is open"/>
+                <MenuItem x:Name="Lba2TrackGeneratorMenuItem" Header="LBA2: race track _generator…" Click="Lba2TrackGenerator_Click" ToolTip="Draw a race track on an island&apos;s map -- the road green, jumps pink, loops blue, the pit lane orange -- or place track sections that snap together, or load a picture of the map you drew on; the track is made from it and built with the race track window"/>
                 <MenuItem x:Name="Lba2PolarIslandMenuItem" Header="LBA2: _Polar Island (from LBA1)…" Click="Lba2PolarIsland_Click" ToolTip="Adds LBA1&apos;s Polar Island to LBA2 as a new island (island 12) you can turn round, builds it again, or takes it out. Only the LBA Assembler&apos;s own engine (Play) loads it"/>
+                <MenuItem x:Name="Lba2TempleIslandMenuItem" Header="LBA2: _Temple of Bú (from LBA1)…" Click="Lba2TempleIsland_Click" ToolTip="Ports LBA1&apos;s Temple of Bú (its three scenes) to LBA2 as an island of its own, in LBA1&apos;s own colours: from LBA1&apos;s angle it looks as LBA1 draws it. Builds it again, or takes it out. The race track window builds its Halloween race on it"/>
+                <MenuItem x:Name="Lba2SnowIslandMenuItem" Header="LBA2: _Snow island (Hamalayi)…" Click="Lba2SnowIsland_Click" ToolTip="Builds a new snowy island, the Desert island&apos;s size, in the spirit of LBA1&apos;s Hamalayi Mountains -- ice cliffs and terraces, a canyon up to the prison gate, a frozen pond, the Rabbibunnies&apos; village, a ski slope with its chair lift, snowmen -- as a map of its own (SNOWISLE.lbamap), and opens it to explore and Play. Needs the LBA1 folder (its Hamalayi bricks texture the ground)"/>
                 <MenuItem x:Name="Lba2PalaceIslandMenuItem" Header="LBA2: P_alace island (Otringal's palace)…" Click="Lba2PalaceIsland_Click" ToolTip="Makes the Emperor&apos;s palace on Otringal -- its sixteen rooms and the last room -- a 3D building on an island of its own, scaled up for the cars, with a roof over each room: for a race track through it later"/>
                 <MenuItem x:Name="Lba2ControlTowerMenuItem" Header="LBA2: Island CX _control tower (3D)…" Click="Lba2ControlTower_Click" ToolTip="Island CX twice its size with its control tower&apos;s lower level -- the two halls round the control room, and the secret passage under their floor -- built in 3D where its buildings were, for a race track in through a door and out again later"/>
                 <Separator/>
@@ -246,6 +262,7 @@
                                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                                 <CheckBox x:Name="RotateViewCheckBox" Content="Rotate/tilt with mouse" IsChecked="True" Foreground="{DynamicResource ThemeTextMuted2Brush}" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0"/>
                                                 <CheckBox x:Name="SkyCheckBox" Content="Sky" IsChecked="True" Foreground="{DynamicResource ThemeTextMuted2Brush}" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0" Checked="SkyCheckBox_Changed" Unchecked="SkyCheckBox_Changed"/>
+                                                <CheckBox x:Name="SeaCheckBox" Content="Sea/gas" IsChecked="True" Foreground="{DynamicResource ThemeTextMuted2Brush}" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0" Checked="SkyCheckBox_Changed" Unchecked="SkyCheckBox_Changed" ToolTip="Untick to hide the sea or gas round the island (the flat sea and the ground's own water and gas), to see what's under it -- the control tower's halls under Island CX's gas"/>
                                                 <RepeatButton Content="−" Click="ZoomOut_Click" Style="{StaticResource IconRepeatButton}"/>
                                                 <TextBox x:Name="ZoomLabel" Text="100%" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="8,0" Width="40" TextAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource ThemeTextMuted2Brush}" KeyDown="ZoomLabel_KeyDown" LostFocus="ZoomLabel_LostFocus" GotFocus="ZoomLabel_GotFocus"/>
                                                 <RepeatButton Content="+" Click="ZoomIn_Click" Style="{StaticResource IconRepeatButton}"/>
@@ -416,18 +433,27 @@
                                         </StackPanel>
                                         <ContentControl x:Name="TerrainPanelHost" Grid.Row="1"/>
                                         <ScrollViewer x:Name="BuildScenePanel" Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                                            <StackPanel Margin="16,10,16,16">
-                                                <TextBlock x:Name="BuildSceneHelp" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="{DynamicResource ThemeTextMuted2Brush}"/>
-                                                <TextBlock Text="Editors" Style="{StaticResource Eyebrow}" Margin="0,16,0,6"/>
-                                                <Button x:Name="BuildSceneEditorButton" Content="Scene editor (actors, zones, points)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BuildSceneEditor_Click"/>
-                                                <Button x:Name="BuildGridButton" Content="Buildings and decor: interior map (grid editor)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="GridEditor_Click"
-                                                        ToolTip="Place, move, copy and remove the blocks (buildings, walls, furniture) of an interior or an LBA1 scene. Buildings on an LBA2 island are placed, moved and turned in the 3D view: pick the island, then Build > Buildings and decor"/>
-                                                <Button x:Name="BuildAssetButton" Content="Bricks and sprites…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AssetEditor_Click"/>
-                                                <Button x:Name="BuildExportButton" Content="Export 3D models (glTF, OBJ, PLY, STL)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="Export3D_Click"
-                                                        ToolTip="Export islands, buildings, interiors, actors, bodies, furniture and items to common 3D formats (for other tools, not for the game)"/>
-                                                <Button x:Name="BuildObjectButton" Content="Objects and bodies…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="ObjectBrowser_Click"/>
-                                                <Button Content="Body Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BodyStudio_Click"/>
-                                                <Button Content="Animation Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AnimationStudio_Click"/>
+                                            <StackPanel>
+                                            <!-- the scene panel (ScenePanel, MainWindow.SceneEdit.cs): the scene's actors, zones and track points, edited in the view -->
+                                            <ContentControl x:Name="ScenePanelHost" Margin="16,8,16,4"/>
+                                            <Expander Header="Help and other editors" Margin="16,4,16,8" Foreground="{DynamicResource ThemeTextBrush}">
+                                                <ScrollViewer VerticalScrollBarVisibility="Disabled">
+                                                    <StackPanel Margin="0,6,0,0">
+                                                        <TextBlock x:Name="BuildSceneHelp" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="{DynamicResource ThemeTextMuted2Brush}"/>
+                                                        <TextBlock Text="Editors" Style="{StaticResource Eyebrow}" Margin="0,12,0,6"/>
+                                                        <Button x:Name="BuildGridButton" Content="Buildings and decor: interior map (grid editor)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="GridEditor_Click"
+                                                                ToolTip="Place, move, copy and remove the blocks (buildings, walls, furniture) of an interior or an LBA1 scene. Buildings on an LBA2 island are placed, moved and turned in the 3D view: pick the island, then Build > Buildings and decor"/>
+                                                        <Button x:Name="BuildAssetButton" Content="Bricks and sprites…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AssetEditor_Click"/>
+                                                        <Button x:Name="BuildExportButton" Content="Export 3D models (glTF, OBJ, PLY, STL)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="Export3D_Click"
+                                                                ToolTip="Export islands, buildings, interiors, actors, bodies, furniture and items to common 3D formats (for other tools, not for the game)"/>
+                                                        <Button x:Name="BuildObjectButton" Content="Objects and bodies…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="ObjectBrowser_Click"/>
+                                                        <Button x:Name="BuildCharacterButton" Content="Character maker…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="CharacterMaker_Click"
+                                                                ToolTip="A character of the open map's own: a body from the game's or from nothing, parts added to it, its animations keyframe by keyframe -- for the scene's actors (Build > Actors and zones)"/>
+                                                        <Button Content="Body Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BodyStudio_Click"/>
+                                                        <Button Content="Animation Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AnimationStudio_Click"/>
+                                                    </StackPanel>
+                                                </ScrollViewer>
+                                            </Expander>
                                             </StackPanel>
                                         </ScrollViewer>
                                     </Grid>

@@ -59,7 +59,17 @@ internal sealed class Lba2ControlClient : IDisposable
                 tcp = new TcpClient();
                 await tcp.ConnectAsync(System.Net.IPAddress.Loopback, port, cancel);
                 var self = new Lba2ControlClient(tcp);
-                await self.SendAsync("stream on"); // enables the "! "-prefixed push events breakpoint hits arrive as
+                // enables the "! "-prefixed push events breakpoint hits arrive as -- answered at once by the game; something else
+                // listening on the port (the game couldn't open it: "[ctlsrv] bind ... 10013") never answers, and the wait for it never
+                // ended, nothing logged (2026-10-12)
+                var greeting = self.SendAsync("stream on");
+                if (await Task.WhenAny(greeting, Task.Delay(3000, cancel)) != greeting)
+                {
+                    self.Dispose();
+                    DebugLog.Log($"Lba2ControlClient: something on port {port} that isn't the game took the connection and didn't answer");
+                    return null;
+                }
+                await greeting;
                 return self;
             }
             catch (Exception error) when (error is SocketException or IOException or ObjectDisposedException)

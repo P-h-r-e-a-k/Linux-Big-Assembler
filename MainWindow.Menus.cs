@@ -32,14 +32,14 @@ public partial class MainWindow
         AssetEditorMenuItem.IsEnabled = eitherConfigured;
         GridEditorMenuItem.IsEnabled = eitherConfigured;
         ExportMenuItem.IsEnabled = eitherConfigured;
-        Lba1EditorMenuItem.IsEnabled = Lba1Configured;
-        Lba2EditorMenuItem.IsEnabled = Lba2Configured;
+        SceneEditMenuItem.IsEnabled = eitherConfigured;
         IslandEditorMenuItem.IsEnabled = Lba2Configured;
         Lba1PlayMenuItem.IsEnabled = Lba1Configured;
         Lba2PlayMenuItem.IsEnabled = Lba2Configured;
         Lba2FixScriptingMenuItem.IsEnabled = Lba2Configured;
         Lba2RaceTrackMenuItem.IsEnabled = Lba2Configured;
         Lba2PolarIslandMenuItem.IsEnabled = Lba2Configured;
+        Lba2SnowIslandMenuItem.IsEnabled = Lba2Configured;
         Lba1SurpriseMenuItem.IsEnabled = Lba1Configured;
         TestEditsStartMenuItem.IsEnabled = eitherConfigured && !TestEditsActive;
         TestEditsCommitMenuItem.IsEnabled = TestEditsActive;
@@ -164,7 +164,8 @@ public partial class MainWindow
     }
 
     // Opens an island (an .ILE file name, or the "Other" group) and, when given, one of its areas; the game plays on from here if it was playing.
-    private void OpenLba2Area(string islandDisplay, int? scene)
+    // (`reload`: the island read again though it is the one in view -- a map's workspace made again under it, its file of the same name new)
+    private void OpenLba2Area(string islandDisplay, int? scene, bool reload = false)
     {
         if (placing) CancelPlacement();
         var wasPlaying = playing;
@@ -178,7 +179,7 @@ public partial class MainWindow
         if (island is null) return;
         var already = IslandCombo.SelectedItem is FilterableComboBox.Option current && current.Index == island.Index;
         if (!already) IslandCombo.SelectedItem = island;          // (unsaved terrain edits may keep it where it was)
-        else if (scene is null && island.Display != OtherIslandLabel) LoadIsland(Path.Combine(gameRoot, island.Display));
+        else if ((scene is null || reload) && island.Display != OtherIslandLabel) LoadIsland(Path.Combine(gameRoot, island.Display));
         if (scene is { } wanted && IslandCombo.SelectedItem is FilterableComboBox.Option now && now.Index == island.Index && (sceneOptions.FirstOrDefault(o => o.Index == wanted) ?? Lba2OptionForScene(wanted)) is { } option)
         {
             SceneCombo.SelectedItem = null;                        // so choosing the same scene again shows it again

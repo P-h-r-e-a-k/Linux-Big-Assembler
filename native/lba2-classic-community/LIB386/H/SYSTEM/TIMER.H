@@ -24,6 +24,8 @@ void LockTimer();
 void UnlockTimer();
 void SaveTimer();
 void RestoreTimer();
+// The game time SaveTimer kept (what RestoreTimer will put back) while one is kept -- a menu open over the game; TimerRefHR otherwise.
+U32 Timer_SavedRefHR(void);
 void SetTimerHR(U32 time);
 
 // --- Fixed-dt deterministic clock (harness-only) -----------------------------

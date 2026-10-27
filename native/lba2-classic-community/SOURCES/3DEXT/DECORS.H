@@ -17,5 +17,8 @@ extern void AffichageObjetDecorsZBuf(void);
 extern void (*DecorPoseHook)(T_DECORS *list, S32 count);
 /*--------------------------------------------------------------------------*/
 extern S32 TestZVDecors(S32 xw, S32 yw, S32 zw, T_DECORS *objet);
+/*--------------------------------------------------------------------------*/
+// (an island's bodies just loaded -- LOADISLE.CPP LoadIsland: the boxes worked out for the last island's forgotten)
+extern void DecorsIslandLoaded(void);
 
 #endif // DECORS_H

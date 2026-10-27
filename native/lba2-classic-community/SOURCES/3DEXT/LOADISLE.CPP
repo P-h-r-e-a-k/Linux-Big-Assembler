@@ -1,6 +1,8 @@
 #include "DEFINES.H"
 
 #include "../DIRECTORIES.H"
+#include <SYSTEM/LOG.H>
+#include <time.h>
 
 // nom du HQR (citadele.hqr)
 
@@ -84,32 +86,37 @@ S32 InitExternalView() {
 
     /* 1024 (was 200) LRU slots, headroom so an object-dense island's distinct
        decor bodies stay resident rather than evicting; pairs with the larger
-       MAX_ISLE_OBJ_MEM. The block table is ~20 bytes/slot, so this is a few KB. */
-    HQR_Isle_Obj = HQR_Init_Ressource("", IsleObjMem, 1024);
+       MAX_ISLE_OBJ_MEM. The block table is ~20 bytes/slot, so this is a few KB.
+       ISLE_OBJ_SLOTS (4096) since 2026-10-18: LBA Assembler's Temple of Bu has
+       2,147 bodies (7 MB unpacked, MAX_ISLE_OBJ_MEM 16 MB), more than 1,024 slots
+       held, so every lap unpacked the lower hall's 220 bodies again on the way in
+       -- each one an LRU eviction moving the buffer up -- a 50-60 ms frame. */
+    HQR_Isle_Obj = HQR_Init_Ressource("", IsleObjMem, ISLE_OBJ_SLOTS);
     if (!HQR_Isle_Obj)
         TheEnd(NOT_ENOUGH_MEM, "HQR_Isle_Obj (3DExt)");
 
-    HQR_CubeInfos = HQR_Init_Ressource("", CubeInfosMem, MAX_CUBES_PER_ISLE);
+    // (the per-cube caches: a slot for each cube an island can have -- DEFINES.H's MAX_CUBE_INFOS_MEM comment)
+    HQR_CubeInfos = HQR_Init_Ressource("", CubeInfosMem, ISLE_CUBE_SLOTS);
     if (!HQR_CubeInfos)
         TheEnd(NOT_ENOUGH_MEM, "HQR_CubeInfos (3DExt)");
 
-    HQR_ListDecors = HQR_Init_Ressource("", ListDecorsMem, MAX_CUBES_PER_ISLE);
+    HQR_ListDecors = HQR_Init_Ressource("", ListDecorsMem, ISLE_CUBE_SLOTS);
     if (!HQR_ListDecors)
         TheEnd(NOT_ENOUGH_MEM, "HQR_ListDecors (3DExt)");
 
-    HQR_MapPGround = HQR_Init_Ressource("", MapPGroundMem, 200 /*MAX_CUBES_PER_ISLE*/);
+    HQR_MapPGround = HQR_Init_Ressource("", MapPGroundMem, ISLE_CUBE_SLOTS);
     if (!HQR_MapPGround)
         TheEnd(NOT_ENOUGH_MEM, "HQR_MapPGround (3DExt)");
 
-    HQR_ListTexDef = HQR_Init_Ressource("", ListTexDefMem, MAX_CUBES_PER_ISLE);
+    HQR_ListTexDef = HQR_Init_Ressource("", ListTexDefMem, ISLE_CUBE_SLOTS);
     if (!HQR_ListTexDef)
         TheEnd(NOT_ENOUGH_MEM, "HQR_ListTexDef (3DExt)");
 
-    HQR_MapSommetY = HQR_Init_Ressource("", MapSommetYMem, MAX_CUBES_PER_ISLE);
+    HQR_MapSommetY = HQR_Init_Ressource("", MapSommetYMem, ISLE_CUBE_SLOTS);
     if (!HQR_MapSommetY)
         TheEnd(NOT_ENOUGH_MEM, "HQR_MapSommetY (3DExt)");
 
-    HQR_MapIntensity = HQR_Init_Ressource("", MapIntensityMem, MAX_CUBES_PER_ISLE);
+    HQR_MapIntensity = HQR_Init_Ressource("", MapIntensityMem, ISLE_CUBE_SLOTS);
     if (!HQR_MapIntensity)
         TheEnd(NOT_ENOUGH_MEM, "HQR_MapIntensity (3DExt)");
 
@@ -146,6 +153,15 @@ void LoadIsland() {
     GetResPath(islandFilePath, ADELINE_MAX_PATH, islandFilename);
     if (!HQR_Change_Ressource(HQR_Isle_Obj, islandFilePath))
         TheEndCheckFile(islandFilePath);
+    DecorsIslandLoaded();
+    // (its bodies unpacked now, as many as the cache holds -- every island's, the Temple of Bu's 2,147 among them -- not the first time
+    // each comes into view: a 40-50 ms frame each time a lap came into a new part of a big island, LBA Assembler 2026-10-18)
+    {
+        const clock_t t0 = clock();
+        const S32 unpacked = HQR_Preload(HQR_Isle_Obj, 256 * 1024);
+        Log_Info("[island] %s: %d bodies unpacked as it loads (%d ms, %d KB)", islandFilename, (int)unpacked,
+                 (int)((clock() - t0) * 1000 / CLOCKS_PER_SEC), (int)((HQR_Isle_Obj->MaxSize - HQR_Isle_Obj->FreeSize) / 1024));
+    }
 
     snprintf(islandFilename, ADELINE_MAX_PATH, "%.*s.ile", (int)(ADELINE_MAX_PATH - 5), IslandName);
     GetResPath(islandFilePath, ADELINE_MAX_PATH, islandFilename);
@@ -288,6 +304,12 @@ S32 LoadCube(S32 x, S32 y) {
     MapSommetY = (S16 *)HQR_Get(HQR_MapSommetY, index + HQR_CUBE_Y);
 
     MapIntensity = (U8 *)HQR_Get(HQR_MapIntensity, index + HQR_CUBE_LUM);
+
+    // (the cube whose decors ListDecors now holds: a decor copied into several cubes is drawn once a frame, by its place in the island --
+    // DECORS.CPP DrawnThisFrame)
+    extern S32 DecorCubeX, DecorCubeZ;
+    DecorCubeX = x;
+    DecorCubeZ = y;
 
     return TRUE;
 }

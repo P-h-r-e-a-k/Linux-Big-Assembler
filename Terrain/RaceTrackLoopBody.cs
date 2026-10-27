@@ -21,12 +21,23 @@ internal static class RaceTrackLoopBody
     // ring each (its road in strips, it is more points than a body may have -- the engine's 550), all of them at the same origin.
     public const int Parts = 4;
 
-    public static List<byte[]> Ring(Vector3 along, double radius, double shift, double half, double gap) =>
+    // `legs`: how far under the foot each leg (LegAngles) reaches down, or null: 200, onto a deck under the ring (a road that steps
+    // sideways under it has none beside it: its legs reach the ground).
+    public static List<byte[]> Ring(Vector3 along, double radius, double shift, double half, double gap, double[]? legs = null) =>
         Enumerable.Range(0, Parts).Select(q => RingPart(along, radius, shift, half, gap, 2 * Math.PI * q / Parts,
             // (each quarter a little into the next: two bodies only meeting leave a crack of a pixel between them)
-            2 * Math.PI * (q + 1) / Parts + (q + 1 < Parts ? RaceTrackRaisedBody.PieceOverlap / radius : 0), q)).ToList();
+            2 * Math.PI * (q + 1) / Parts + (q + 1 < Parts ? RaceTrackRaisedBody.PieceOverlap / radius : 0), q, legs)).ToList();
 
-    private static byte[] RingPart(Vector3 along, double radius, double shift, double half, double gap, double from, double to, int part)
+    // The legs: ahead of the foot and behind it, at the ring's widest. Where one stands, from the foot (world units, level).
+    public static readonly double[] LegAngles = { Math.PI / 2, 3 * Math.PI / 2 };
+    public static Vector3 LegAt(Vector3 along, double radius, double shift, double t)
+    {
+        along = Vector3.Normalize(new Vector3(along.X, 0, along.Z));
+        var across = new Vector3(-along.Z, 0, along.X);
+        return along * (float)((radius + Thickness + LegHalf) * Math.Sin(t)) + across * (float)(-shift / 2 + shift * t / (2 * Math.PI));
+    }
+
+    private static byte[] RingPart(Vector3 along, double radius, double shift, double half, double gap, double from, double to, int part, double[]? legs)
     {
         var m = new RaceTrackRaisedBody.Mesh();
         along = Vector3.Normalize(new Vector3(along.X, 0, along.Z));
@@ -94,12 +105,13 @@ internal static class RaceTrackLoopBody
                 m.Quad(s[4], s[5], s[6], s[7], GreenDark, outward);
             }
         // the legs: from under the road up to the ring's outside at its widest, ahead of its foot and behind it
-        foreach (var t in new[] { Math.PI / 2, 3 * Math.PI / 2 })
+        for (var leg = 0; leg < LegAngles.Length; leg++)
         {
+            var t = LegAngles[leg];
             if (Math.Min(Parts - 1, (int)Math.Floor(t / (2 * Math.PI) * Parts + 1e-9)) != part) continue;
             var outside = -Inward(t);
             var top = Middle(t) + outside * (float)(Thickness + LegHalf);
-            var foot = new Vector3(top.X, -200, top.Z);
+            var foot = new Vector3(top.X, -(float)(legs?[leg] ?? 200), top.Z);
             Column(m, foot, top.Y + (float)LegHalf, along, across);
         }
         return m.Write();

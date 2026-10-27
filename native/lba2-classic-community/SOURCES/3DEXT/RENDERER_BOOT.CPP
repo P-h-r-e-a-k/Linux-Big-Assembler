@@ -26,6 +26,7 @@ int RendererBootAssets(void)
 {
     char path[ADELINE_MAX_PATH];
 
+    RendererShowHiddenActors = TRUE; // (the editor sees hidden actors: GLOBAL.CPP)
     GetResPath(path, ADELINE_MAX_PATH, RESS_HQR_NAME);
     PtrPalNormal = (U8 *)LoadMalloc_HQR(path, RESS_PAL);
     if (!PtrPalNormal) return 0;

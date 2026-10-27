@@ -449,7 +449,10 @@ U8	ExtraCheckObjCol( T_EXTRA *ptrextra, U8 owner )
 							}
 						}
 
+						// (an extra's hit, for a race-track mod: RACEMOD.CPP RaceMod_OpponentStruck)
+						RaceMod_ExtraHit = 1 ;
 						HitObj( owner, n, ptrextra->HitForce, -1 ) ;
+						RaceMod_ExtraHit = 0 ;
 					}
 					else	ptrobjt->HitBy = owner ;
 
@@ -577,7 +580,10 @@ U8	ExtraSearchCheckObjCol( T_EXTRA *ptrextra,
 							}
 						}
 
+						// (an extra's hit, for a race-track mod: RACEMOD.CPP RaceMod_OpponentStruck)
+						RaceMod_ExtraHit = 1 ;
 						HitObj( owner, n, ptrextra->HitForce, -1 ) ;
+						RaceMod_ExtraHit = 0 ;
 					}
 					else	ptrobjt->HitBy = owner ;
 

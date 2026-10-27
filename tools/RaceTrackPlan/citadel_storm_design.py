@@ -187,6 +187,9 @@ plan = {
     # shop under the take-off and the school by the switchback's east turn)
     'keepBodies': [32, 33, 30, 59, 60, 61, 62, 63, 64, 65, 72, 35],
     'keepGroundUnder': True,
+    # (the user's checkpoint adjustments, 2026-10-14, testing with the missed-checkpoint alert -- RaceTrackPlan.CheckpointTweaks: 3 moved
+    # round to its hairpin's middle, 4 a little further left)
+    'checkpointTweaks': [{'number': 3, 'at': [170.0, 82.3]}, {'number': 4, 'left': 1.5}],
 }
 json.dump(plan, open('E:/dump/LBAAssembler/docs/racetrack/citadel_storm_track_plan.json', 'w'))
 json.dump({'plan': plan, 'marks': {nm: int(at_of[pidx(nm)]) for nm in names}}, open('design.json', 'w'))

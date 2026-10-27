@@ -549,33 +549,67 @@ internal static class PolarStudy
         var name = Environment.GetEnvironmentVariable("VIEW_ISLAND") ?? "POLAR";   // (another island: VIEW_ISLAND=KNARTAS)
         var island = LBAAssembler.Terrain.IslandFile.Load(Path.Combine(game, name + ".ILE"));
         var y = LBAAssembler.Terrain.IslandOps.Altitude(island, x, z) ?? 0;
+        // (VIEW_Y=<height>: the point looked at that high -- an island whose objects stand over its ground, the Temple of Bú's)
+        if (Environment.GetEnvironmentVariable("VIEW_Y") is { Length: > 0 } viewY) y = double.Parse(viewY);
         using var lib = new RendererLibraryApi(dll);
         if (!lib.IsLoaded || !lib.SetDataRoot(game) || !lib.Initialize()) { Console.WriteLine("native init failed"); return 2; }
         if (lib.LoadIsland(name.ToLowerInvariant()) == 0) { Console.WriteLine("LoadIsland failed"); return 2; }
         lib.SetDrawSky(true); lib.SetDrawSea(true);
-        if (Environment.GetEnvironmentVariable("FAR") is { } far) { var f = int.Parse(far); lib.SetViewDistance(f * 4 / 5, f); }
-        lib.SetViewTarget(x, (int)y, z);
-        lib.SetCamera(alpha, beta, 0, distance);
+        if (Environment.GetEnvironmentVariable("FAR") is { } far && far != "editor") { var f = int.Parse(far); lib.SetViewDistance(f * 4 / 5, f); }
         // (AREA=x0,z0,x1,z1: those cubes whichever the camera is over, as the editor's view draws them)
-        var areaCubes = Environment.GetEnvironmentVariable("AREA")?.Split(',').Select(int.Parse).ToArray();
-        if ((areaCubes is { Length: 4 } a ? lib.RenderFrameArea(a[0], a[1], a[2], a[3]) : wide > 0 ? lib.RenderFrameWide(wide) : lib.RenderFrame()) == 0) { Console.WriteLine("render failed"); return 2; }
-        var p = lib.GetFramebuffer(out var w, out var h, out var pitch);
+        // (AREA=auto: the island's cubes and a ring of 2 round them, as the editor's IslandArea)
+        var areaText = Environment.GetEnvironmentVariable("AREA");
+        if (areaText == "auto")
+        {
+            int ax0 = 16, az0 = 16, ax1 = -1, az1 = -1;
+            for (var cz = 0; cz < 16; cz++)
+                for (var cx = 0; cx < 16; cx++)
+                    if (island.CubeAt(cx, cz) is not null) { ax0 = Math.Min(ax0, cx); az0 = Math.Min(az0, cz); ax1 = Math.Max(ax1, cx); az1 = Math.Max(az1, cz); }
+            areaText = $"{Math.Max(0, ax0 - 2)},{Math.Max(0, az0 - 2)},{Math.Min(15, ax1 + 2)},{Math.Min(15, az1 + 2)}";
+            Console.WriteLine($"area {areaText}");
+        }
+        var areaCubes = areaText?.Split(',').Select(int.Parse).ToArray();
+        // (DISTANCES=d1,d2,...: one frame at each distance in turn, in the one session -- as the editor's zoom does -- <out>_<n>.png each)
+        var distances = Environment.GetEnvironmentVariable("DISTANCES")?.Split(',').Select(int.Parse).ToArray() ?? new[] { distance };
         var palette = LBAAssembler.Terrain.IslandMapRenderer.LoadPalette(game, name);
+        for (var n = 0; n < distances.Length; n++)
+        {
+            // (FAR=editor: the view distance the editor's 3D view gives that camera -- RendererLibraryApi.EditorViewDistance)
+            if (Environment.GetEnvironmentVariable("FAR") == "editor")
+            {
+                var (startFog, clipFar) = RendererLibraryApi.EditorViewDistance(distances[n], x, z, areaCubes is { Length: 4 } c ? (c[0], c[1], c[2], c[3]) : null);
+                lib.SetViewDistance(startFog, clipFar);
+            }
+            lib.SetViewTarget(x, (int)y, z);
+            lib.SetCamera(alpha, beta, 0, distances[n]);
+            if ((areaCubes is { Length: 4 } a ? lib.RenderFrameArea(a[0], a[1], a[2], a[3]) : wide > 0 ? lib.RenderFrameWide(wide) : lib.RenderFrame()) == 0) { Console.WriteLine("render failed"); return 2; }
+            var outPath = distances.Length > 1 ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[2]))!, $"{Path.GetFileNameWithoutExtension(args[2])}_{n}.png") : args[2];
+            WriteView(lib, palette, outPath);
+            Console.WriteLine($"{outPath}: target ({x}, {y}, {z}), alpha {alpha} beta {beta} distance {distances[n]}");
+        }
+        return 0;
+    }
+
+    static void WriteView(RendererLibraryApi lib, byte[] palette, string outPath)
+    {
+        var p = lib.GetFramebuffer(out var w, out var h, out var pitch);
         var six = palette.Take(768).Max() <= 63;
         var px = new byte[w * h * 4];
         var row = new byte[w];
+        var nonZero = 0;
         for (var r = 0; r < h; r++)
         {
             System.Runtime.InteropServices.Marshal.Copy(p + r * pitch, row, 0, w);
             for (var c = 0; c < w; c++)
             {
+                if (row[c] != 0) nonZero++;
                 var i = (r * w + c) * 4; var k = row[c] * 3;
                 px[i] = (byte)(palette[k + 2] * (six ? 4 : 1)); px[i + 1] = (byte)(palette[k + 1] * (six ? 4 : 1)); px[i + 2] = (byte)(palette[k] * (six ? 4 : 1)); px[i + 3] = 255;
             }
         }
-        PngWriter.Write(args[2], px, w, h);
-        Console.WriteLine($"{args[2]}: {w}x{h}, target ({x}, {y}, {z}), alpha {alpha} beta {beta} distance {distance}");
-        return 0;
+        PngWriter.Write(outPath, px, w, h);
+        // (none: the editor's view takes such a frame for a failed render -- CommunityRendererBackend.RenderIslandDirect)
+        Console.Write($"[{nonZero} pixels not index 0] ");
     }
 
     // polarprobe <LBA1 folder> <x0> <x1> <z0> <z1>: the layout's columns there -- each cell from the top down: layer, scene, brick, code.

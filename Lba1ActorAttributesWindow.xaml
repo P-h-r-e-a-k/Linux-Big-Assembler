@@ -174,6 +174,8 @@
         <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,16,0,0">
             <Button x:Name="ApplyButton" Content="Apply" Click="Apply_Click" Style="{StaticResource PrimaryButton}"/>
             <Button Content="Edit Script&#8230;" Click="EditScript_Click" Style="{StaticResource QuietButton}"/>
+            <Button x:Name="BehaviourButton" Content="Apply a behaviour&#8230;" Click="Behaviour_Click" Style="{StaticResource QuietButton}"
+                    ToolTip="Ready-made scripts for this actor: the game's own actors of its kind, templates (stands, wanders, patrols, talks, attacks, keeps away), or none"/>
             <Button Content="Close" Click="Close_Click" Style="{StaticResource QuietButton}"/>
         </StackPanel>
     </Grid>

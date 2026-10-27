@@ -14,6 +14,11 @@
     <RootNamespace>ScriptRoundTrip</RootNamespace>
   </PropertyGroup>
 
+  <!-- the MP3 decoder Terrain/Temple/TempleMusicAudio.cs uses (LBAAssembler.csproj says why) -->
+  <ItemGroup>
+    <PackageReference Include="NLayer" Version="3.0.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <Compile Include="..\..\LbaScript\**\*.cs" Link="LbaScript\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\HqrArchive.cs" Link="HqrArchive.cs" />
@@ -69,13 +74,23 @@
     <EmbeddedResource Include="..\..\docs\racetrack\knartas_track_plan.json" LogicalName="RaceTrackPlan.Knartas.json" />
     <EmbeddedResource Include="..\..\docs\racetrack\otringal_track_plan.json" LogicalName="RaceTrackPlan.Otringal.json" />
     <EmbeddedResource Include="..\..\docs\racetrack\volcano_track_plan.json" LogicalName="RaceTrackPlan.Volcano.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\wannies_track_plan.json" LogicalName="RaceTrackPlan.Wannies.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\palace_track_plan.json" LogicalName="RaceTrackPlan.Palace.json" />
     <EmbeddedResource Include="..\..\docs\racetrack\polar_track_plan.json" LogicalName="RaceTrackPlan.Polar.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\cxtower_track_plan.json" LogicalName="RaceTrackPlan.CxTower.json" />
+    <EmbeddedResource Include="..\..\docs\racetrack\temple_track_plan.json" LogicalName="RaceTrackPlan.Temple.json" />
+    <!-- the race items' sounds, as the app carries them (Terrain/RaceSounds.cs) -->
+    <EmbeddedResource Include="..\..\sounds\**\*.mp3;..\..\sounds\**\*.wav" LogicalName="RaceSounds/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\LiveDataRoot.cs" Link="LiveDataRoot.cs" />
     <Compile Include="..\..\AudioLevels.cs" Link="AudioLevels.cs" />
     <Compile Include="..\..\RaceCarSetup.cs" Link="RaceCarSetup.cs" />
+    <Compile Include="..\..\RaceCarSetup.TrackSetups.cs" Link="RaceCarSetup.TrackSetups.cs" />
     <Compile Include="..\..\EditorSettings.cs" Link="EditorSettings.cs" />
+    <Compile Include="..\..\DataPaths.cs" Link="DataPaths.cs" />
     <Compile Include="..\..\Assets\**\*.cs" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Grids\**\*.cs" Link="Grids\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\Maps\**\*.cs" Link="Maps\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\Characters\**\*.cs" Link="Characters\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Lba1\Lba1GridRenderer.cs" Link="Lba1\Lba1GridRenderer.cs" />
     <Compile Include="..\..\Lba2Areas.cs" Link="Lba2Areas.cs" />
     <Compile Include="..\..\Lba2Interiors.cs" Link="Lba2Interiors.cs" />

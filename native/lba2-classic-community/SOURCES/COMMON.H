@@ -301,14 +301,46 @@ S32 RaceMod_StatueShown(S32 risen);
 S32 RaceMod_Rescue(void);
 S32 RaceMod_CarHit(void);
 const char *RaceMod_IslandFile(S32 island);
+S32 RaceMod_IslandPalette(S32 island);
+S32 RaceMod_IslandSky(S32 island);
+int RaceMod_NoSky(void);   // RACEMOD.CPP sky=0: the island's sky layer not drawn in this race (Wannies Island's road climbs through it)
 void RaceMod_Island(S32 island);
 double RaceMod_SpeedFactor(void);
 S32 RaceMod_Takeover(void);
 S32 RaceMod_NoHarm(void);
-S32 RaceMod_BlocksInventory(void);
+S32 RaceMod_SoftLanding(void);
+S32 RaceMod_Drop(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz);
+U32 RaceMod_FilterInput(U32 input);
+S32 RaceMod_Glance(void);
+S32 RaceMod_OffIsland(void);
+extern S32 RaceMod_ExtraHit;
+S32 RaceMod_InFlight(void);
+S32 RaceMod_WantsMenu(void);
+void RaceMod_LoadFile(const char *path);
+// The race game's (RACEGAME.CPP): a race is over -- its time from GO to the line, its best lap, the place; a time trial's time goes to
+// the track's best times (the rank it took there, 1-10, 0 none).
+S32 RaceGame_Finished(S32 trial, S32 total, S32 bestLap, S32 place, S32 racers);
+// ... and whether that race, just finished, unlocked a car (its first win): the race game's congratulations follow it, a moment later
+S32 RaceGame_Celebrate(void);
+// ... and a qualifying lap driven, its time: the race game's player may skip qualifying from then on
+void RaceGame_Qualified(S32 lap);
+// ... and the race's track's best lap in its Best laps, ms (0: none, or not the race game's race): a time trial's display shows it
+S32 RaceGame_BestLap(void);
+// RACEMOD.CPP: the game's ghost of a level ("Easy", "Medium", "Hard") beaten in a time trial: kept; the level it opens, or NULL
+const char *RaceGame_GhostBeaten(const char *level);
+// RACEMOD.CPP: a ghost played back at its lap's end -- non-zero: one of Best laps' sum of best, the race to the menu, the next started there
+S32 RaceGame_WatchDone(void);
+int RaceGame_GhostBeatenLevel(void); // the race's track: its game's ghosts beaten so far (0 none .. 4 Extreme)
+// RACEGAME.CPP: an endless time trial's new fastest lap (ms), into Best laps as it is driven
+void RaceGame_TrialBest(S32 lap);
+// ... and its mini-map setting (Options): 1 on, 0 off, -1 not the race game (the race file's minimap= decides)
+S32 RaceGame_Minimap(void);
 // An opponent's car, which the race-track mode places wherever it is on the lap -- in the next cube too (EXTFUNC.CPP: not kept inside
 // the player's cube).
 S32 RaceMod_FreeOfCube(S32 numobj);
+// The hero held at his cube's edge this move (EXTFUNC.CPP DoAnimExt: FlagHeroOutX/Z): the race's car carried over into the next cube's
+// scene once the frame's zones have had their say and none took it (RACEMOD.CPP HeldAtEdge).
+void RaceMod_EdgeHeld(S32 outX, S32 outZ);
 // The race's mushrooms, penguins and oil slicks: no car is stopped by them, or stands on them (OBJECT.CPP CheckObjCol).
 S32 RaceMod_NoCollide(S32 numobj);
 // Twinsen's car on the super jet-pack: through the island's objects and the scene's actors (EXTFUNC.CPP, OBJECT.CPP CheckObjCol).
@@ -325,17 +357,27 @@ double RaceMod_JetSteer(void);
 // the way it was going (the heading it moves along).
 void RaceMod_Skid(S32 *beta, S32 *speed);
 S32 RaceMod_MoveBeta(S32 beta);
+// BUGGY.CPP: the handbrake (Shift -- the inventory's key, which has no use in the car -- or a pad's Y): whether it is on this frame (1, or
+// 0), the car's steering times RaceMod_HandbrakeSteer while it is, its braking the car's brake times RaceMod_HandbrakeBrake; and every
+// frame after the steering (RaceMod_Slide) the slide it starts: the way the car goes lagging the way it points, its speed scrubbed off
+// sideways, until the grip is back.
+S32 RaceMod_Handbrake(void);
+double RaceMod_HandbrakeSteer(S32 on);
+double RaceMod_HandbrakeBrake(void);
+void RaceMod_Slide(S32 beta, S32 *speed, S32 deltatimer, S32 airborne);
 double RaceMod_SkidCoast(void);
 S32 RaceMod_Dial(S32 num);
 S32 RaceMod_Loop(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *ny, S32 *nz);
 void RaceMod_FloorFor(S32 y);
 void RaceMod_FloorForNothing(void);
+void RaceMod_FloorForFoot(void);
 // OBJECT.CPP ChangeCube's fade-in: from white, once, at a dream's end (RACEMOD.CPP wake_flight=)
 S32 RaceMod_FadeFromWhite(void);
 // EXTFUNC.CPP InitGrilleExt: Citadel Island's weather as its file is chosen (1 fine, CITABAU; 0 the storm, CITADEL) -- game variable 206
 void RaceMod_CitadelWeather(S32 fine);
 void RaceMod_Rail(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *nz);
 void RaceMod_Floor(S32 ox, S32 oy, S32 oz, S32 nx, S32 *ny, S32 nz);
+void RaceMod_OpenWall(S32 ox, S32 oy, S32 oz, S32 *nx, S32 *nz);
 #ifdef	LBA_EDITOR
 #define	TEMPETE_ACTIVE	(!RaceMod_FineWeather() AND (ListVarGame[FLAG_CHAPTER].Value<2 OR FlagRain))
 #define	TEMPETE_FINIE	(RaceMod_FineWeather() OR (ListVarGame[FLAG_CHAPTER].Value>=2 AND !FlagRain))

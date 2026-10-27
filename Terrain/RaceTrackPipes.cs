@@ -16,6 +16,12 @@ internal sealed class PipeRun
     public bool Drip { get; set; } = true;
     // (every so many gantries drip: 2 every other one, 1 every one)
     public int DripsEvery { get; set; } = 2;
+    // The run's hazards on one half of the road each lap, the other half clear (the user, 2026-10-14: "in places we have both steam and
+    // oil attacking obstacles for the player at the same time, and in lots of places at the same time, let's tweak this so we're always
+    // providing a safe path through so they can avoid getting hit if they drive well"): of its gantries in a steam jet stretch every
+    // other one blows (from the first, if that is in one), across to the road's middle; the rest drip -- in place of DripsEvery -- onto
+    // the side the jets blow from that lap (RACEMOD.CPP drip='s 7-number form). Each gantry either steam or oil, never both.
+    public bool OneSide { get; set; }
 }
 
 // Steam jets along a stretch of the road (RaceTrackPlan.SteamJets): out of the gantries' uprights there (RaceTrackPipes.Place: a nozzle on
@@ -48,6 +54,9 @@ internal sealed class PipeLine
     public double SupportEvery { get; set; } = 12;
     public double DripEvery { get; set; } = 2.5;
     public int DripMs { get; set; } = 4500;
+    // Where it passes over the road its drips all on one side of the road's middle, their slicks clear of it: the other half free (with
+    // the drips every DripEvery along the pipe, a crossing's three covered the road's width -- 2026-10-14, as PipeRun.OneSide).
+    public bool OneSide { get; set; }
 }
 
 internal static class RaceTrackPipes
@@ -62,6 +71,9 @@ internal static class RaceTrackPipes
     public const int SteamEvery = 900, DripEvery = 5000;
     // how far to one side of the road's middle the oil drips, as a share of the way to its rail
     public const double DripAcross = 0.45;
+    // how near a car's middle comes to a slick to skid on it (cells: RACEMOD.CPP RACE_OIL_REACH), and a little more -- a one-sided drip's
+    // slick no nearer the road's middle than this
+    public const double SlickClear = 760.0 / 512 + 0.1;
 
     // Places the gantries; `runs` with their points the road's -- and the steam jets of `jets` out of those of them in their stretches
     // (a jet stretch with none there: out of the rail, PlaceJets). Returns the bodies made.
@@ -83,13 +95,17 @@ internal static class RaceTrackPipes
             }
             return -1;
         }
+        // (the jets in each stretch so far; its gantries so far, blowing or not -- the bursts' wave)
         var jetsSoFar = new int[jets.Count];
+        var gantriesSoFar = new int[jets.Count];
         foreach (var (from, to, run) in runs)
         {
             var n = r.Count;
             var span = ((to - from) % n + n) % n;
             var step = Math.Max(2, (int)Math.Round(run.Every / o.Spacing));
             var placed = 0;
+            // (OneSide: the run's gantries so far, and which of them blow -- the even ones if its first is in a jet stretch, else the odd)
+            int nthGantry = 0, blowParity = -1;
             for (var k = step / 2; k <= span - step / 2; k += step)
             {
                 var i = (from + k) % n;
@@ -125,8 +141,11 @@ internal static class RaceTrackPipes
                 if (blocked || feet.Any(f => f > y + 600)) { skipped++; why.Add($"({x:0.#}, {z:0.#}): {(blocked ? "the lap" : "the ground")}"); continue; }
                 var len = (float)(run.Every * 512);
                 var jetRun = JetRunAt(i);
-                var body = Gantry(along, across, half * 512, feet[0] - y, feet[1] - y, len, jetRun >= 0 ? jets[jetRun].Run.High : -1);
-                if (IslandDecors.Locate(island, x * 512, z * 512) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCube) { skipped++; why.Add($"({x:0.#}, {z:0.#}): its cube full"); continue; }
+                if (blowParity < 0) blowParity = jetRun >= 0 ? 0 : 1;
+                var blowsHere = jetRun >= 0 && (!run.OneSide || nthGantry % 2 == blowParity);
+                nthGantry++;
+                var body = Gantry(along, across, half * 512, feet[0] - y, feet[1] - y, len, blowsHere ? jets[jetRun].Run.High : -1);
+                if (IslandDecors.Locate(island, x * 512, z * 512) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCubeRaceTrack) { skipped++; why.Add($"({x:0.#}, {z:0.#}): its cube full"); continue; }
                 var (cube, lx, lz) = at;
                 var d = IslandDecors.Blank(o.NewBodyBase + report.NewBodies.Count, lx, (int)Math.Round(y), lz, 0);
                 report.NewBodies.Add(body);
@@ -146,24 +165,37 @@ internal static class RaceTrackPipes
                     report.Steam.Add(new[] { (int)Math.Round((x + across.X * sign * half) * 512), (int)Math.Round(y + Top + 80), (int)Math.Round((z + across.Z * sign * half) * 512), SteamEvery });
                 }
                 // (in places: every other gantry of the stretch drips -- or every one, DripsEvery -- onto one side of the road and then the
-                // other: a car can keep clear)
-                if (run.Drip && placed++ % Math.Max(1, run.DripsEvery) == 0)
+                // other: a car can keep clear. OneSide: each gantry that doesn't blow, onto the driver's left -- across is his right -- and
+                // with the road's middle under it, mirrored to his right on the player's even laps: the jets' side, as they change it)
+                if (run.OneSide)
+                {
+                    if (run.Drip && !blowsHere)
+                    {
+                        var side = -(half - Out) * DripAcross;
+                        report.Drips.Add(new[] { (int)Math.Round((x + across.X * side) * 512), (int)Math.Round(y + CrossHigh - Cross - 40),
+                            (int)Math.Round((z + across.Z * side) * 512), (int)Math.Round(y), DripEvery, (int)Math.Round(x * 512), (int)Math.Round(z * 512) });
+                    }
+                }
+                else if (run.Drip && placed++ % Math.Max(1, run.DripsEvery) == 0)
                 {
                     var side = (report.Drips.Count % 2 == 0 ? 1 : -1) * (half - Out) * DripAcross;
                     report.Drips.Add(new[] { (int)Math.Round((x + across.X * side) * 512), (int)Math.Round(y + CrossHigh - Cross - 40),
                         (int)Math.Round((z + across.Z * side) * 512), (int)Math.Round(y), DripEvery });
                 }
-                // the steam jet out of its uprights' nozzles: from the nozzle's mouth across the road, into it Reach from its rail
-                if (jetRun >= 0)
+                // the steam jet out of its uprights' nozzles: from the nozzle's mouth across the road, into it Reach from its rail (OneSide:
+                // to the road's middle, the other half clear)
+                var nthIn = jetRun >= 0 ? gantriesSoFar[jetRun]++ : 0;
+                if (blowsHere)
                 {
                     var jr = jets[jetRun].Run;
                     var road = half - Out;
                     var mouth = half * 512 - Upright - Nozzle;
-                    var blows = mouth - (road - Math.Min(jr.Reach, 2 * road - 0.5)) * 512;
+                    var blows = mouth - (road - (run.OneSide ? road : Math.Min(jr.Reach, 2 * road - 0.5))) * 512;
                     // (each a Wave before the one before it: the burst runs back up the road at a car. Each a Wave after it, the burst ran
                     // ahead of the car at its own speed -- a gantry's 6 cells in 450 ms, a Gazogem-fuelled car's in 420 -- and a car that came
-                    // between two bursts was never met by one)
-                    var nth = jetsSoFar[jetRun]++;
+                    // between two bursts was never met by one. A Wave a gantry, blowing or not: the same pace with every other one blowing)
+                    jetsSoFar[jetRun]++;
+                    var nth = nthIn;
                     report.Jets.Add(new[] { (int)Math.Round(x * 512), (int)Math.Round(y), (int)Math.Round(z * 512), (int)Math.Round(mouth), (int)Math.Round(blows),
                         jr.On, jr.Off, nth * jr.Wave % (jr.On + jr.Off),
                         (int)Math.Round(along.X * 1000), (int)Math.Round(along.Z * 1000), jr.High });
@@ -172,7 +204,7 @@ internal static class RaceTrackPipes
             }
         }
         // (a jet stretch with no gantry in it: its jets out of the rail, as before there were gantries to blow them)
-        var bare = Enumerable.Range(0, jets.Count).Where(q => jetsSoFar[q] == 0).Select(q => jets[q]).ToList();
+        var bare = Enumerable.Range(0, jets.Count).Where(q => gantriesSoFar[q] == 0).Select(q => jets[q]).ToList();
         if (bare.Count > 0) PlaceJets(r, bare, o, report);
         if (blowing > 0) report.Notes.Add($"steam jets: {blowing} out of the gantries' uprights, blowing level across the road -- " +
                                           "the left upright on the player's odd laps, the right on his even ones");
@@ -226,7 +258,7 @@ internal static class RaceTrackPipes
         int pieces = 0, supports = 0, skipped = 0;
         bool Add(byte[] body, Vector3 at, Vector3 lo, Vector3 hi)
         {
-            if (IslandDecors.Locate(island, at.X, at.Z) is not { } where || where.Cube.Decors.Count >= IslandDecors.MaxPerCube) return false;
+            if (IslandDecors.Locate(island, at.X, at.Z) is not { } where || where.Cube.Decors.Count >= IslandDecors.MaxPerCubeRaceTrack) return false;
             var (cube, lx, lz) = where;
             var d = IslandDecors.Blank(o.NewBodyBase + report.NewBodies.Count, lx, (int)Math.Round(at.Y), lz, 0);
             report.NewBodies.Add(body);
@@ -296,6 +328,20 @@ internal static class RaceTrackPipes
         if (open is { } last) stretches.Add((last, length));
         var drips = 0;
         foreach (var (from, to) in stretches)
+        {
+            if (line.OneSide)
+            {
+                // (OneSide: the side of the road's middle with room for more of them, from the middle out -- each SlickClear or more from the
+                // middle, DripEvery along the pipe from the one before)
+                var left = OneSideDrips(r, o, pts, radius, from, to, line.DripEvery, +1);
+                var right = OneSideDrips(r, o, pts, radius, from, to, line.DripEvery, -1);
+                foreach (var (p, deck) in left.Count >= right.Count ? left : right)
+                {
+                    report.Drips.Add(new[] { (int)Math.Round(p.X), (int)Math.Round(p.Y - radius - 30), (int)Math.Round(p.Z), (int)Math.Round(deck), line.DripMs });
+                    drips++;
+                }
+                continue;
+            }
             for (var s = from + 0.6; s <= to - 0.3; s += line.DripEvery)
             {
                 var p = AlongPipe(pts, s);
@@ -303,6 +349,7 @@ internal static class RaceTrackPipes
                 report.Drips.Add(new[] { (int)Math.Round(p.X), (int)Math.Round(p.Y - radius - 30), (int)Math.Round(p.Z), (int)Math.Round(deck), line.DripMs });
                 drips++;
             }
+        }
         report.Notes.Add($"the pipeline: {pieces} pieces of pipe, {supports} supports ({skipped} left out: the road in a support's way, or a cube full), " +
                          $"{drips} drips over the road in {stretches.Count} places it passes over it");
         return made;
@@ -318,6 +365,48 @@ internal static class RaceTrackPipes
             if (dd < HalfAt(r, j, o) - 0.9 && r.H[j] < p.Y - radius - 1600 && dd < best) { best = dd; deck = r.H[j]; }
         }
         return deck;
+    }
+
+    // A pipe's drips where it is over the road from `from` to `to` along it, on one side of the road's middle (+1 the driver's left, -1 his
+    // right): where the road under it is SlickClear or more that way, from the middle out, `every` along the pipe apart.
+    private static List<(Vector3 At, double Deck)> OneSideDrips(TrackRoad r, RaceTrackOptions o, List<Vector3> pts, float radius,
+        double from, double to, double every, int side)
+    {
+        var found = new List<(Vector3, double)>();
+        var at = new List<(double S, double Off, Vector3 P, double Deck)>();
+        for (var s = from; s <= to; s += 0.25)
+        {
+            var p = AlongPipe(pts, s);
+            if (UnderRoad(r, o, p, radius) is not { } u || u.Left * side < SlickClear) continue;
+            at.Add((s, u.Left * side, p, u.Deck));
+        }
+        var taken = new List<double>();
+        foreach (var c in at.OrderBy(c => c.Off))
+        {
+            if (taken.Any(s => Math.Abs(c.S - s) < every)) continue;
+            found.Add((c.P, c.Deck));
+            taken.Add(c.S);
+        }
+        return found;
+    }
+
+    // NearestUnder's road point under a place of the pipe with its deck and how far the place is to the driver's left of the road's
+    // middle there (cells; negative: his right)
+    private static (double Deck, double Left)? UnderRoad(TrackRoad r, RaceTrackOptions o, Vector3 p, float radius)
+    {
+        double best = double.MaxValue; var at = -1;
+        for (var j = 0; j < r.Count; j++)
+        {
+            var dd = Math.Sqrt(Math.Pow(r.X[j] * 512 - p.X, 2) + Math.Pow(r.Z[j] * 512 - p.Z, 2)) / 512;
+            if (dd < HalfAt(r, j, o) - 0.9 && r.H[j] < p.Y - radius - 1600 && dd < best) { best = dd; at = j; }
+        }
+        if (at < 0) return null;
+        int a = (at + r.Count - 1) % r.Count, b = (at + 1) % r.Count;
+        double tx = r.X[b] - r.X[a], tz = r.Z[b] - r.Z[a], len = Math.Sqrt(tx * tx + tz * tz);
+        if (len < 1e-9) return null;
+        // (the driver's left: x east, z south -- RACEMOD.CPP Jets' (DirZ, -DirX))
+        var left = ((p.X / 512 - r.X[at]) * tz - (p.Z / 512 - r.Z[at]) * tx) / len;
+        return (r.H[at], left);
     }
 
     private static double Horizontal(Vector3 a, Vector3 b) => Math.Sqrt(Math.Pow((b.X - a.X) / 512, 2) + Math.Pow((b.Z - a.Z) / 512, 2));

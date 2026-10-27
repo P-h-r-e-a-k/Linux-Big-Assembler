@@ -155,7 +155,8 @@ Twinsen gets in and drives it.
 
 ## The scenes (`PolarScenes.cs`)
 
-An LBA2 outside scene is one cube of its island. The island has 35 cubes (5–9 × 4–10); the 21 with land have scenes, **233–253**, in
+An LBA2 outside scene is one cube of its island. The island has 63 cubes (4–10 × 3–11: the land's 5–9 × 4–10 and,
+since 2026-10-27, a ring of sea cubes round them -- past an island's last cube the engine draws no sea); the 21 with land have scenes, **233–253**, in
 the order of `PolarScenes.SceneCubes` (row by row). The cubes of open sea have none, and no zone leads into them; Twinsen would drown
 before he got there.
 

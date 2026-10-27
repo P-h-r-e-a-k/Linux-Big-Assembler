@@ -17,6 +17,20 @@ public sealed class Lba1Shading
     public double AlphaLight { get; init; }                  // the scene's light angles, 1024ths of a turn
     public double BetaLight { get; init; }
 
+    // The light the game uses outside the scenes (SetLightVector(896, 950, 0) in GAMEMENU.C; 77 of the 120 scenes use it too).
+    public const int DefaultAlphaLight = 896, DefaultBetaLight = 950;
+
+    // The facing (1024ths of a turn) of an actor that Renderer.Render shows at `yaw` the way the game's iso camera would: beta 128 faces
+    // the camera, which the renderer shows at yaw 0 (so the play view draws an actor at yaw = beta - 128).
+    public static double BetaOfYaw(float yaw) => yaw * 1024 / (2 * Math.PI) + 128;
+
+    // A body as modelled (every bone unturned), seen at `yaw`, under the default light: how the game would light it in a menu.
+    public static Lba1Shading ForView(Body model, float yaw) => new()
+    {
+        BoneMatrices = Enumerable.Range(0, Math.Max(1, model.Bones.Count)).Select(_ => new double[] { 1, 0, 0, 0, 1, 0, 0, 0, 1 }).ToArray(),
+        ActorBeta = BetaOfYaw(yaw), AlphaLight = DefaultAlphaLight, BetaLight = DefaultBetaLight,
+    };
+
     public float[] Intensities(Body model)
     {
         static double Rad(double a) => a * Math.PI * 2 / 1024;
@@ -43,12 +57,21 @@ public static class Renderer
     // KeyBackground and KeyGrid are the colours a marker is made transparent by (Lba1ActorImages.Transparent): renders that become markers keep them; a picture shown as it is passes its own.
     public static readonly Color KeyBackground=Color.FromArgb(25,30,39),KeyGrid=Color.FromArgb(44,52,64);
     public static readonly Color ViewBackground=Color.FromArgb(232,240,250),ViewGrid=Color.FromArgb(203,221,240);
+    // How many body units one pixel of the game's own iso view covers: P_OB_ISO.ASM draws a sphere's radius r as r * 34 / 512 pixels
+    // (and a step of 512 along the screen's horizontal as 24 * 2 / sqrt 2 = 34 pixels). The games draw their lines one pixel wide.
+    public const float GamePixelUnits=512f/34;
     // The app's own chrome palette used to be duplicated here too (PanelBackground, FieldBackground, ...)
     // for BodyStudioWindow/AnimationStudioWindow's own controls to match by eye -- gone now that both
     // reference the real theme resources directly (SetResourceReference, see their own ApplyTheme), which
     // also means they retheme live instead of only ever matching whatever this file's own copy was frozen
     // to at the time. KeyBackground/KeyGrid/ViewBackground/ViewGrid above are different: they feed the
     // rasterizer below directly (Render's own background/gridLine parameters), not WPF chrome, so they stay.
+    //
+    // The view: the body turned by `yaw` about its vertical (x' = x cos + z sin, z' = z cos - x sin: the games' own beta turn), then +X to
+    // the right, +Y up and +Z towards the viewer, looked at from a little above. That is a right-handed view like the games' cameras on
+    // their right-handed worlds, so nothing comes out mirrored, and yaw 0 shows a body's +Z side, which both games' characters face: the
+    // front. (The depth test used to keep the farthest surface instead: every body showed its back where its front should be, mirrored,
+    // and LBA1 Play's Twinsen, drawn at yaw = beta - 128, looked as if he walked backwards.)
     public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null,Color? background=null,Color? gridLine=null)
     {
         width=Math.Max(1,width);height=Math.Max(1,height);
@@ -65,17 +88,22 @@ public static class Renderer
         for(int x=-5;x<=5;x++)g.DrawLine(grid,width/2f+x*h*scale/6,height*0.92f,width/2f+x*h*scale/6,height*0.97f);
         g.DrawLine(grid,20,height*0.92f,width-20,height*0.92f);
         // Polygon-average painter sorting loses narrow lettering at oblique angles.
-        // Rasterize the actual surfaces with interpolated depth instead.
-        var depth=Enumerable.Repeat(float.PositiveInfinity,width*height).ToArray();
+        // Rasterize the actual surfaces with interpolated depth instead: the depth buffer keeps the largest z, the surface nearest the viewer.
+        var depth=Enumerable.Repeat(float.NegativeInfinity,width*height).ToArray();
         var pixels=new int[width*height];
         float Edge(PointF a,PointF b,float x,float y)=>(x-a.X)*(b.Y-a.Y)-(y-a.Y)*(b.X-a.X);
+        // An LBA1 body read from the game carries the game's own normals, and each normal's range caps how far up its ramp a polygon goes
+        // (Twinsen's eyes: 4 steps of their blue ramp; his tunic: 11): light it the game's way, under the caller's scene light and pose
+        // when it gives them, else under the default light with the bones as modelled. (The generic light below ignores the ranges and ran
+        // the eyes off the end of their ramp, one into the next ramp's dark red.)
+        if(model.Game==1&&model.Normals.Count>0)shading??=Lba1Shading.ForView(model,yaw);
         var lit=shading!=null&&model.Game==1&&model.Normals.Count>0?shading.Intensities(model):null;
         // A generated body carries game lighting (Body.Lit): preview it with a light from above-left of the viewer, the game adds up to its
         // maximum number of ramp steps to each polygon's start colour.
         float[]? previewLight=null;
         if(lit==null&&(model.Lit||model.Faces.Any(x=>x.Material>=0)))
         {
-            var normals=model.VertexNormals();var toLight=Vector3.Normalize(new Vector3(-0.35f,0.55f,-0.75f));float max=LightModel.Max(model.Game);
+            var normals=model.VertexNormals();var toLight=Vector3.Normalize(new Vector3(-0.35f,0.55f,0.75f));float max=LightModel.Max(model.Game);
             previewLight=normals.Select(n=>{var r=new Vector3(n.X*MathF.Cos(yaw)+n.Z*MathF.Sin(yaw),n.Y,-n.X*MathF.Sin(yaw)+n.Z*MathF.Cos(yaw));return Math.Clamp(Vector3.Dot(r,toLight),0,1)*max;}).ToArray();
             if(model.LightScale is{}scales)for(int i=0;i<previewLight.Length&&i<scales.Length;i++)previewLight[i]*=scales[i];
         }
@@ -110,7 +138,7 @@ public static class Renderer
                     float wa=Edge(pb,pc,x+.5f,y+.5f)/area,wb=Edge(pc,pa,x+.5f,y+.5f)/area,wc=1-wa-wb;
                     if(wa<-.0001f||wb<-.0001f||wc<-.0001f)continue;
                     float z=wa*a.Z+wb*b.Z+wc*c.Z;int index=y*width+x;
-                    if(z<=depth[index])
+                    if(z>=depth[index])
                     {
                         depth[index]=z;
                         if(f.Texture!=null&&model.TexturePage!=null&&f.Texture.Handle<model.Textures.Length)
@@ -133,15 +161,24 @@ public static class Renderer
         }
         // Lines and spheres (hair buns, hands, necklaces) go through the same depth buffer as the polygons, so a
         // bun behind the head stays behind it instead of being painted over the face.
-        void Plot(int x,int y,float z,int colour){if(x<0||y<0||x>=width||y>=height)return;int i=y*width+x;if(z<=depth[i]){depth[i]=z;pixels[i]=colour;}}
+        void Plot(int x,int y,float z,int colour){if(x<0||y<0||x>=width||y>=height)return;int i=y*width+x;if(z>=depth[i]){depth[i]=z;pixels[i]=colour;}}
+        // A line is as wide as one pixel of the game's own view at this picture's scale (at least two pixels), drawn as a round tube so it
+        // sits in front of the surface it lies on: the game draws its lines one pixel wide, so small shapes made of lines look solid there
+        // (Twinsen's medallion is an octagon of lines with four more across it: a gold disc in the game, a see-through wire hoop when its
+        // lines were two pixels wide however large the picture).
+        float lineRadius=Math.Max(1f,GamePixelUnits*scale/2);
         foreach(var l in model.Lines)
         {
             var a=rotated[l.A];var b=rotated[l.B];var pa=Screen(a);var pb=Screen(b);int colour=palette[Math.Clamp(l.Colour,0,255)].ToArgb();
             int steps=Math.Max(1,(int)MathF.Ceiling(Math.Max(Math.Abs(pb.X-pa.X),Math.Abs(pb.Y-pa.Y))));
             for(int k=0;k<=steps;k++)
             {
-                float t=k/(float)steps;int x=(int)MathF.Round(pa.X+(pb.X-pa.X)*t),y=(int)MathF.Round(pa.Y+(pb.Y-pa.Y)*t);float z=a.Z+(b.Z-a.Z)*t-2f;
-                Plot(x,y,z,colour);Plot(x+1,y,z,colour);
+                float t=k/(float)steps,cx=pa.X+(pb.X-pa.X)*t,cy=pa.Y+(pb.Y-pa.Y)*t,z=a.Z+(b.Z-a.Z)*t;
+                for(int y=(int)MathF.Floor(cy-lineRadius);y<=(int)MathF.Ceiling(cy+lineRadius);y++)for(int x=(int)MathF.Floor(cx-lineRadius);x<=(int)MathF.Ceiling(cx+lineRadius);x++)
+                {
+                    float dx=x+.5f-cx,dy=y+.5f-cy,d2=dx*dx+dy*dy;if(d2>lineRadius*lineRadius)continue;
+                    Plot(x,y,z+MathF.Sqrt(lineRadius*lineRadius-d2)/scale,colour);
+                }
             }
         }
         foreach(var s in model.Spheres)
@@ -150,7 +187,7 @@ public static class Renderer
             for(int y=(int)MathF.Floor(p.Y-r);y<=(int)MathF.Ceiling(p.Y+r);y++)for(int x=(int)MathF.Floor(p.X-r);x<=(int)MathF.Ceiling(p.X+r);x++)
             {
                 float dx=x+.5f-p.X,dy=y+.5f-p.Y,d2=dx*dx+dy*dy;if(d2>r*r)continue;
-                Plot(x,y,c.Z-MathF.Sqrt(r*r-d2)/scale,colour);
+                Plot(x,y,c.Z+MathF.Sqrt(r*r-d2)/scale,colour);
             }
         }
         // as the game fills them: what is behind keeps its place in its ramp and takes the polygon's ramp (here: its brightness picks the step)
@@ -170,7 +207,7 @@ public static class Renderer
                     float wa=Edge(pb,pc,x+.5f,y+.5f)/area,wb=Edge(pc,pa,x+.5f,y+.5f)/area,wc=1-wa-wb;
                     if(wa<-.0001f||wb<-.0001f||wc<-.0001f)continue;
                     float z=wa*a.Z+wb*b.Z+wc*c.Z;int index=y*width+x;
-                    if(z>depth[index])continue;
+                    if(z<depth[index])continue;
                     var under=Color.FromArgb(pixels[index]==0?backdrop:pixels[index]);
                     int step=Math.Clamp((int)MathF.Round((under.R*0.30f+under.G*0.59f+under.B*0.11f)*15/255f),0,15);
                     pixels[index]=palette[(f.Colour&0xF0)|step].ToArgb();

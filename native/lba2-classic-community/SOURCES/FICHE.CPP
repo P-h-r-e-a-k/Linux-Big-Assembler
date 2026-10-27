@@ -469,7 +469,21 @@ void GereAnimAction(T_OBJET *ptrobj, U8 numobj) {
                     ptrobj->SampleAlways = 0;
                 }
 
-                if (!ptrobj->SampleAlways
+                // (a race's opponent car, its engine in its driving animation: started, panned and let go by RACEMOD.CPP
+                // EnginesHeard, heard from Twinsen's car -- told the animation's pitch)
+                extern S32 RaceMod_EngineHeard(S32 num);
+                extern void RaceMod_EngineAnim(S32 num, S32 pitch);
+                extern void InitParmSample(void);
+                const S32 heard = RaceMod_EngineHeard(numobj);
+
+                if (heard) {
+                    RaceMod_EngineAnim(numobj, y);
+                    ptrobj->SampleVolume = (U8)ParmSampleVolume;
+                    if (!ptrobj->SampleAlways OR !IsSamplePlaying(ptrobj->SampleAlways)) {
+                        ptrobj->SampleAlways = (U32)sample << 8;
+                    }
+                    InitParmSample();
+                } else if (!ptrobj->SampleAlways
                          OR !IsSamplePlaying(ptrobj->SampleAlways)) {
                     ptrobj->SampleVolume = (U8)ParmSampleVolume;
 
@@ -731,6 +745,11 @@ void GereAnimAction(T_OBJET *ptrobj, U8 numobj) {
                 vitesse = GET_S16;
                 poids = GET_S8;
                 force = GET_S8;
+
+                // (a race-track mode's hunting gun -- Island CX's: its firing animation without the missile it throws level along its
+                // facing; RACEMOD.CPP flies it at a car)
+                extern S32 RaceMod_SilentThrow(S32 numobj);
+                if (RaceMod_SilentThrow(numobj)) break;
 
                 last_extra = ThrowExtraObj(numobj,
                                            x, y, z,

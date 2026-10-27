@@ -1,5 +1,6 @@
 #include "RENDERER_API.H"
 #include "DEFINES.H"
+#include "../MAPPACK.H"
 #include "EXTERN.H"
 #include "LOADISLE.H"
 #include "DIRECTORIES.H"
@@ -33,8 +34,9 @@ extern unsigned int InitPartFlow(void);
 extern S32 Island;
 extern U8 RendererDrawSky;
 extern U8 RendererDrawSea;
+extern U8 RendererDrawSeaPolys;
 extern U8 RendererDrawActors;
-extern int RendererScanIslandActors(int islandIndex);
+extern int RendererScanIslandActors(int islandIndex, const char *islandFile);
 extern int RendererGetActorCount(void);
 extern int RendererGetActor(int index, int *x, int *y, int *z, int *waypointCount);
 extern int RendererGetActorWaypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z);
@@ -45,6 +47,7 @@ extern int RendererSetActorPosition(int index, int worldX, int worldY, int world
 extern int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
 extern int RendererIsActorPlaceholder(int index);
 extern int RendererRemoveActor(int index);
+extern int RendererForgetSceneEdits(int sceneIndex);
 extern int RendererLoadInteriorScene(int numscene);
 extern int RendererSetInteriorCameraPosition(int x, int y, int z);
 extern int RendererGetInteriorCameraPosition(int *x, int *y, int *z);
@@ -222,6 +225,8 @@ int lba2_renderer_set_data_root(const char *path)
     // assert(directoriesInitialized == false) and the process fail-fasted via abort().
     EndDirectories();
     InitDirectories(root, root, root, "", 0);
+    // (LBA Assembler's maps: the new root's MAPS folder's, when next asked -- MAPPACK.CPP)
+    MapPack_Reset();
     return 1;
 }
 
@@ -267,8 +272,33 @@ int lba2_renderer_load_island(const char *name)
         if (!strcasecmp(name, kIslandNames[i])) { islandIndex = i; break; }
     }
     if (islandIndex < 0 && !strcasecmp(name, "celebra2")) islandIndex = 5; // shares celebrat's sky/ambience
+    // (CXTOWER, the editor's Island CX with the control tower's halls under it: Island CX on top, so Island CX's gas, sky and ambience --
+    // it had the first slot's, Citadel's sea, round it. PALACE, Otringal's palace made an island: Otringal's, as its palette is. No scenes
+    // of their own yet, so no actors: Island CX's and Otringal's belong to those islands.)
+    const S32 actorIsland = islandIndex;
+    if (islandIndex < 0 && !strcasecmp(name, "cxtower")) islandIndex = 9;
+    if (islandIndex < 0 && !strcasecmp(name, "palace")) islandIndex = 4;
+    // (TEMPLE, the Temple of Bú ported from LBA1: raced as Otringal's island 4, but in a palette and under a sky of its own -- RESS_XPL0 + 13
+    // and RESS_SKYSEA0 + 13, the slots its install fills; the race-track mod's island_palette= / island_sky= in the game)
+    const S32 temple = islandIndex < 0 && !strcasecmp(name, "temple");
+    if (temple) islandIndex = 4;
+    IslandPaletteOverride = temple ? RESS_XPL0 + 13 : -1;
+    // (an island of LBA Assembler's maps -- File > New map: the game folder's ISLANDS.TXT says whose look it has, "island <file> <number>")
+    if (islandIndex < 0) {
+        char listPath[ADELINE_MAX_PATH];
+        GetResPath(listPath, ADELINE_MAX_PATH, "ISLANDS.TXT");
+        if (FILE *list = fopen(listPath, "r")) {
+            char line[128], file[32];
+            int look;
+            while (islandIndex < 0 && fgets(line, sizeof(line), list))
+                if (sscanf(line, "island %31s %d", file, &look) == 2 && !strcasecmp(file, name) && look >= 0
+                        && look < (S32)(sizeof(kIslandNames) / sizeof(kIslandNames[0]))) islandIndex = look;
+            fclose(list);
+        }
+    }
 
     S32 skyResource = islandIndex >= 0 ? RESS_SKYSEA0 + islandIndex : RESS_SKYSEA0;
+    if (temple) skyResource = RESS_SKYSEA0 + 13;
     if (!strcasecmp(name, "citabau")) skyResource = RESS_SKYSEA00; // interior-only ambience, no Island slot
     if (!Load_HQR(path, SkySeaTexture, skyResource)) return 0;
 
@@ -286,8 +316,10 @@ int lba2_renderer_load_island(const char *name)
     // Scans every exterior scene on this island for actors/tracks (see
     // RENDERER_ACTORS.CPP); islandIndex < 0 (e.g. citabau, which has no
     // ordinary Island slot -- see ChoicePalette()'s special case) just
-    // leaves the actor list empty rather than scanning.
-    RendererScanIslandActors(islandIndex);
+    // leaves the actor list empty rather than scanning. (A map's island
+    // has no number of its own, but scenes of its own in ISLANDS.TXT: the
+    // scan takes those, by the file's name.)
+    RendererScanIslandActors(actorIsland, name);
     return 1;
 }
 
@@ -517,6 +549,11 @@ void lba2_renderer_set_draw_sea(int enabled)
     RendererDrawSea = enabled ? 1 : 0;
 }
 
+void lba2_renderer_set_draw_sea_polys(int enabled)
+{
+    RendererDrawSeaPolys = enabled ? 1 : 0;
+}
+
 void lba2_renderer_set_draw_actors(int enabled)
 {
     RendererDrawActors = enabled ? 1 : 0;
@@ -596,6 +633,11 @@ int lba2_renderer_is_actor_placeholder(int index)
 int lba2_renderer_remove_actor(int index)
 {
     return RendererRemoveActor(index);
+}
+
+int lba2_renderer_forget_scene_edits(int scene)
+{
+    return RendererForgetSceneEdits(scene);
 }
 
 int lba2_renderer_load_interior_scene(int numscene)
@@ -699,6 +741,8 @@ void lba2_renderer_set_body_preview_animation_paused(int paused)
 // new #include, avoids MEM.H's own double-inclusion landmine (see this file's other comments).
 extern T_HQR_HEADER *HQR_Bodys;
 extern T_HQR_HEADER *HQR_Anims;
+extern U8 *BufferFile3D;       // (GLOBAL.CPP, C_EXTERN.H: the entity table)
+extern S32 BufferFile3DMem;    // (MEM.CPP: its buffer's size)
 extern void NativeDebugLog(const char *fmt, ...);
 
 int lba2_renderer_reload_bodies(const char *path)
@@ -714,6 +758,29 @@ int lba2_renderer_reload_anims(const char *path)
     if (!path || !path[0] || !HQR_Anims) { NativeDebugLog("lba2_renderer_reload_anims: bad path or HQR_Anims not open"); return 0; }
     int ok = HQR_Change_Ressource(HQR_Anims, path) ? 1 : 0;
     NativeDebugLog("lba2_renderer_reload_anims(%s) -> %d, old Name was now '%s', NbIndex=%d, FreeSize=%d", path, ok, HQR_Anims->Name, HQR_Anims->NbIndex, HQR_Anims->FreeSize);
+    return ok;
+}
+
+// The entity table (RESS.HQR entry 44) read again -- from ressPath, a full file path, or the data root's RESS.HQR when it is empty:
+// RendererBootAssets reads it once, so a character a map's Character maker adds afterwards (an entity appended to the table) was past the
+// end of the one in memory, and loading a scene with an actor of it read a garbage offset (2026-10-23). The buffer grows when the table
+// has; the old one is kept, as the actors loaded from it still point into it until their scene is loaded again.
+int lba2_renderer_reload_entities(const char *ressPath)
+{
+    if (!BufferFile3D) { NativeDebugLog("lba2_renderer_reload_entities: the renderer isn't initialized"); return 0; }
+    char path[ADELINE_MAX_PATH];
+    if (ressPath && ressPath[0]) { strncpy(path, ressPath, ADELINE_MAX_PATH - 1); path[ADELINE_MAX_PATH - 1] = 0; }
+    else GetResPath(path, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    S32 size = HQF_ResSize(path, RESS_FILE3D);
+    if (size <= 0) { NativeDebugLog("lba2_renderer_reload_entities: no entity table in %s", path); return 0; }
+    if (size + RECOVER_AREA > BufferFile3DMem) {
+        U8 *grown = (U8 *)Malloc(size + RECOVER_AREA);
+        if (!grown) { NativeDebugLog("lba2_renderer_reload_entities: no memory for %d bytes", size + RECOVER_AREA); return 0; }
+        BufferFile3D = grown;
+        BufferFile3DMem = size + RECOVER_AREA;
+    }
+    int ok = Load_HQR(path, BufferFile3D, RESS_FILE3D) ? 1 : 0;
+    NativeDebugLog("lba2_renderer_reload_entities(%s) -> %d, %d entities", path, ok, ok ? (int)(*(U32 *)BufferFile3D / 4 - 1) : 0);
     return ok;
 }
 

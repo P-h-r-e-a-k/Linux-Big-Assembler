@@ -40,15 +40,25 @@ U8 RendererDrawSky = TRUE;
 // against elevated terrain from a near-vertical (top-down) camera -- from
 // that angle the sea plane can come out *nearer* than higher ground it
 // should be sitting well behind, painting flat sea color over real terrain.
-// Off only for the minimap's top-down snapshots (RenderIslandTopDown);
-// the main 3D view's ordinary viewing angles don't have this problem, so it
-// stays on there.
+// Off for the minimap's top-down snapshots (RenderIslandTopDown); the main
+// 3D view's ordinary viewing angles don't have this problem, so it stays on
+// there, unless the viewport's temporary "Sea/gas" checkbox is unticked to
+// see what's under the sea or gas (with RendererDrawSeaPolys, below).
 U8 RendererDrawSea = TRUE;
+// Renderer-only as well: the ground's own animated sea and gas triangles (TERRAIN.CPP HalfPolyShown) -- off, with the sea plane, for the
+// editor's temporary "Sea/gas" toggle, to see what is under them (the control tower's halls under Island CX's gas); on for everything
+// else, the minimap's snapshots too.
+U8 RendererDrawSeaPolys = TRUE;
 // Same idea as RendererDrawSky/RendererDrawSea: renderer-only toggle (LBA2 Level Workshop's "Hide all
 // actors" checkbox), defaults to TRUE so the full game is unaffected. Gates AffichageActorsZBuf()
 // (EXTFUNC.CPP), the dedicated actor-draw pass -- terrain and decor objects are drawn by separate code
 // and are unaffected.
 U8 RendererDrawActors = TRUE;
+// The editor's renderer only (RendererBootAssets): AffichageActorsZBuf draws hidden actors too -- INVISIBLE ones, and those put out of
+// sight at Y -20000 -- for the level editor to see and pick. The game leaves them out: that pass is the game's own exterior drawing too,
+// and a car hidden there still showed (an island's own car parked in the buggy's place, RACEMOD.CPP: the buggy under Polar Island's
+// digger, its wheels showing, and the buggy alone as a behaviour key's name was up -- the user, 2026-10-27)
+U8 RendererShowHiddenActors = FALSE;
 U8 SavingEnable = TRUE;
 U8 FlagPlayAcf = FALSE;
 U8 RainEnable = FALSE;
@@ -383,7 +393,7 @@ S32 VueCamera = 0;
 S32 DefVueDistance[NB_VUE_CAMERA] = {10500, 17000};
 S32 DefAlphaCam[NB_VUE_CAMERA] = {300, 530};
 
-T_TABALLCUBE TabAllCube[256]; //	A mettre en define
+T_TABALLCUBE TabAllCube[MAX_GRID_SCENES]; // (256 retail; LBA Assembler's new interiors past it: GRILLE.CPP InitGrille)
 /*──────────────────────────────────────────────────────────────────────────*/
 
 U8 NumObjDial = 0;

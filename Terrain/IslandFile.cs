@@ -115,12 +115,12 @@ internal sealed class IslandFile
     // (DECORS.CPP).
     public List<byte[]> GroundPages { get; } = new();
     public List<byte[]> ObjectPages { get; } = new();
-    public const int GroundPageShift = 10, MaxGroundPages = 8, MaxObjectPages = 16, DecorPageShift = 18, PagesMagic = 0x45474150;
+    public const int GroundPageShift = 10, MaxGroundPages = 8, MaxObjectPages = 32, DecorPageShift = 18, PagesMagic = 0x45474150;
     private bool parsedPages;
 
     // An object texture page (0: ObjectTexture), and a decor's.
     public byte[] ObjectPage(int page) => page > 0 && page <= ObjectPages.Count ? ObjectPages[page - 1] : ObjectTexture;
-    public static int ObjectPageOf(IslandDecor decor) => (decor.Body >> DecorPageShift) & 15;
+    public static int ObjectPageOf(IslandDecor decor) => (decor.Body >> DecorPageShift) & (MaxObjectPages - 1);
 
     // A ground triangle's texture as its page and its definition in the cube's list. With more ground pages a definition has an eleventh
     // bit, the triangle's Wide (the engine's Dummy: 2026-10-06, Polar Island at twice LBA1's size had cubes of road needing more than
@@ -301,11 +301,21 @@ internal sealed class IslandFile
         }
     }
 
-    public bool HasVertex(int gx, int gz) => Owners(gx, gz).Any();
+    public bool HasVertex(int gx, int gz) => HeightAt(gx, gz) is not null;
 
+    // (the first of Owners, found without an enumerator: ground queries -- IslandOps.Altitude, objects following the ground -- call this
+    // millions of times on a big island)
     public short? HeightAt(int gx, int gz)
     {
-        foreach (var (cube, x, z) in Owners(gx, gz)) return cube.Height(x, z);
+        if (gx < 0 || gz < 0 || gx > GridSize || gz > GridSize) return null;
+        int cx = gx / IslandCube.Cells, lx = gx % IslandCube.Cells, cz = gz / IslandCube.Cells, lz = gz % IslandCube.Cells;
+        for (var dz = 0; dz < (lz == 0 && cz > 0 ? 2 : 1); dz++)
+        for (var dx = 0; dx < (lx == 0 && cx > 0 ? 2 : 1); dx++)
+        {
+            int ox = cx - dx, oz = cz - dz;
+            if (ox >= MapSize || oz >= MapSize || !Cubes.TryGetValue(Map[oz * MapSize + ox] & 0x7F, out var cube)) continue;
+            return cube.Heights[(dz == 1 ? IslandCube.Cells : lz) * IslandCube.Vertices + (dx == 1 ? IslandCube.Cells : lx)];
+        }
         return null;
     }
 

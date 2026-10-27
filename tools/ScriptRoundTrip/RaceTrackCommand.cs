@@ -53,6 +53,7 @@ internal static class RaceTrackCommand
             var t = twin.Report;
             Console.WriteLine($"{where.TwinIleFile}'s own track: lap {t.Length:0} cells, {t.Vertices} vertices levelled, {t.Cells} cells painted, {t.DecorsRemoved} props and {t.SolidDecorsRemoved} solid decors removed");
             foreach (var note in t.Notes) Console.WriteLine("  " + note);
+            if (Environment.GetEnvironmentVariable("RT_ARROWS") == "1") foreach (var a in t.Arrows) Console.WriteLine($"  arrow at cell ({a[0]:0.0}, {a[1]:0.0}) heading ({a[2]:0.00}, {a[3]:0.00})");
             foreach (var l in t.StartLine) Console.WriteLine($"  start line at cell ({l.X:0.0}, {l.Z:0.0}), height {l.Y:0}, heading ({l.DirX:0.00}, {l.DirZ:0.00})");
             foreach (var l in t.Placed) Console.WriteLine("  placed " + l);
             if (t.RoadBridge is { } trb) Console.WriteLine($"  road bridge: cell ({trb.X:0.0},{trb.Z:0.0}) dir ({trb.DirX:0.00},{trb.DirZ:0.00}) height {trb.Height:0} size {trb.Width / 512:0.#}x{trb.Length / 512:0.#} cells, deck body {twin.Options.DeckBodyIndex}");
@@ -109,12 +110,24 @@ internal static class RaceTrackCommand
         return 0;
     }
 
-    // buildhere <game folder> <island>...: the islands' tracks built into the folder as it is -- as the race track window's Build does, its
+    // buildhere <game folder> <island>... [--plan <file>]: the islands' tracks built into the folder as it is -- as the race track window's Build does, its
     // backups and all (2026-10-06: Polar Island at twice its size over a folder with the earlier island and its track)
     public static int BuildHere(string[] args)
     {
         var game = args[1];
-        var tracks = args.Skip(2).Select(RaceTrackIsland.ByName).Select(where => new RaceTrackService.TrackBuild(RaceTrackPlan.Built(where), RaceTrackOptions.For(where))).ToList();
+        // (--plan <file>: the first island's track from a plan file, as the window's "A plan file" builds it)
+        var at = Array.IndexOf(args, "--plan");
+        var planFile = at > 0 && at + 1 < args.Length ? args[at + 1] : null;
+        var names = args.Skip(2).Where((a, i) => at < 0 || (i + 2 != at && i + 2 != at + 1)).ToList();
+        // (the story on for Citadel Island only, as the window has it -- RaceTrackWindow)
+        var tracks = names.Select(RaceTrackIsland.ByName).Select((where, i) =>
+        {
+            var options = RaceTrackOptions.For(where);
+            options.Story = options.Story && where.IleFile == RaceTrackIsland.Citadel.IleFile;
+            var plan = planFile is not null && i == 0 && !where.RacesTwin ? RaceTrackPlan.Load(planFile) : RaceTrackPlan.Built(where);
+            var twin = planFile is not null && i == 0 && where.RacesTwin ? RaceTrackPlan.Load(planFile) : null;
+            return new RaceTrackService.TrackBuild(plan, options, twin);
+        }).ToList();
         var result = RaceTrackService.Build(game, tracks);
         Console.WriteLine(result.Summary);
         foreach (var l in result.Log) Console.WriteLine("  " + l);
@@ -124,20 +137,26 @@ internal static class RaceTrackCommand
     // buildtogether <pristine> <game folder> <island>...: the islands' tracks (their built-in plans) built into one folder by one build, as
     // the race track window does with several islands ticked -- the game folder given its pristine files first, its backups removed -- and
     // for each track the start scene and line RACETRACK.JSON has. RT_CROSSING picks the crossing style of the ones that take it.
+    // RT_ITEM_SPACING spaces the power-ups' rows: "<seconds>s" of driving apart, or "<cells>" of road (RaceTrackOptions.ItemSpacing,
+    // ItemSpacingCells: "40" is the rule until 2026-10-17; tools/RaceTrackStress/items.py compares them).
     public static int BuildTogether(string[] args)
     {
         var pristine = args[1]; var game = args[2];
         foreach (var f in Directory.GetFiles(game, "*" + RaceTrackService.BackupSuffix)) File.Delete(f);
         foreach (var f in RaceTrackService.AllFiles.Append("LBA2.HQR"))
             if (File.Exists(Path.Combine(pristine, f))) RaceTrackService.CopyWritable(Path.Combine(pristine, f), Path.Combine(game, f));
+        var spacing = Environment.GetEnvironmentVariable("RT_ITEM_SPACING");
         var tracks = args.Skip(3).Select(RaceTrackIsland.ByName).Select(where =>
         {
             var options = RaceTrackOptions.For(where);
             if (Environment.GetEnvironmentVariable("RT_CROSSING") is { } cs) options.Crossing = Enum.Parse<CrossingStyle>(cs, ignoreCase: true);
+            if (spacing is { Length: > 0 } && spacing.EndsWith('s')) options.ItemSpacing = double.Parse(spacing[..^1], System.Globalization.CultureInfo.InvariantCulture);
+            else if (spacing is { Length: > 0 }) options.ItemSpacingCells = double.Parse(spacing, System.Globalization.CultureInfo.InvariantCulture);
             return new RaceTrackService.TrackBuild(RaceTrackPlan.Built(where), options);
         }).ToList();
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        var result = RaceTrackService.Build(game, tracks);
+        // (RT_PROGRESS=1: the build's steps as the race track window's bar hears them, each with the time it was reached)
+        var result = RaceTrackService.Build(game, tracks, Environment.GetEnvironmentVariable("RT_PROGRESS") == "1" ? new ConsoleProgress(watch) : null);
         Console.WriteLine($"{result.Summary} ({watch.Elapsed.TotalSeconds:0.0} s)");
         if (Environment.GetEnvironmentVariable("RT_LOG") == "1") foreach (var l in result.Log) Console.WriteLine("  " + l);
         foreach (var t in RaceTrackService.Tracks(RaceTrackService.ReadInfo(game)))
@@ -149,7 +168,9 @@ internal static class RaceTrackCommand
     // (for looking at a place of the track in the game).
     // racecarfile <game folder> <out file> [pace]: (RT_RACE=<island file>: the track of that island, of a folder with several) the engine's car setup file Play would write for that folder (the default car, the
     // folder's RACETRACK.JSON: start line, checkpoints, the opponent's line beside it as racepath.txt), for headless tests. RT_WEATHER=rain:
-    // Citadel Island left raining (its storm track).
+    // Citadel Island left raining (its storm track). RT_TRACK_SETUP=1: the track's best setup over the default car's top speed,
+    // acceleration and steering (RaceCarSetup.UseTrackSetups). RT_DIFFICULTY=0|1|2: the race's level on a track with levels (the Temple of
+    // Bú's: RaceDifficulty).
     // baldinocar <game folder> <scratch folder>: Baldino's car built from the game folder's BODY.HQR and installed into copies of its BODY.HQR and
     // RESS.HQR in the scratch folder (for a look at it: BodyPipeline hqrpreview <scratch>\BODY.HQR <index>)
     public static int BaldinoCar(string[] args)
@@ -185,6 +206,45 @@ internal static class RaceTrackCommand
         var (_, log) = RaceTrackCharacterCars.Install(args[2], good);
         foreach (var line in log) Console.WriteLine(line);
         return failed;
+    }
+
+    // pumpkinf1 <game folder> <scratch folder>: Twinsen's pumpkin F1 (RaceTrackCharacterCars.InstallPumpkin) installed into copies of the
+    // folder's BODY.HQR and RESS.HQR (and RACECARS.JSON, a built folder's) in the scratch folder (for a look at it: BodyPipeline carviews
+    // <scratch>\BODY.HQR <index> <game folder> <png> [island palette])
+    public static int PumpkinF1(string[] args)
+    {
+        Directory.CreateDirectory(args[2]);
+        CopyWritable(args[1], args[2], "BODY.HQR", "RESS.HQR");
+        if (File.Exists(Path.Combine(args[1], RaceTrackCharacterCars.CatalogueFile))) CopyWritable(args[1], args[2], RaceTrackCharacterCars.CatalogueFile);
+        foreach (var line in RaceTrackCharacterCars.InstallPumpkin(args[2])) Console.WriteLine(line);
+        return RaceTrackCharacterCars.Catalogue(args[2]).Any(e => e.Number == RaceTrackCharacterCars.PumpkinNumber) ? 0 : 1;
+    }
+
+    // toytruck <game folder> <scratch folder>: the toy dump truck (RaceTrackCharacterCars.InstallToyTruck) and its violet-wheeled copy
+    // (InstallToyTruckViolet) installed into copies of the folder's BODY.HQR and RESS.HQR (and RACECARS.JSON, a built folder's) in the
+    // scratch folder, as pumpkinf1 does
+    public static int ToyTruck(string[] args)
+    {
+        Directory.CreateDirectory(args[2]);
+        CopyWritable(args[1], args[2], "BODY.HQR", "RESS.HQR");
+        if (File.Exists(Path.Combine(args[1], RaceTrackCharacterCars.CatalogueFile))) CopyWritable(args[1], args[2], RaceTrackCharacterCars.CatalogueFile);
+        foreach (var line in RaceTrackCharacterCars.InstallToyTruck(args[2])) Console.WriteLine(line);
+        foreach (var line in RaceTrackCharacterCars.InstallToyTruckViolet(args[2])) Console.WriteLine(line);
+        return RaceTrackCharacterCars.Catalogue(args[2]).Any(e => e.Number == RaceTrackCharacterCars.ToyTruckNumber) ? 0 : 1;
+    }
+
+    // monstercars <game folder> <scratch folder>: Halloween's monsters' cars -- the vampire's coffin, the witch's broomstick, the zombie's
+    // hearse (RaceTrackCharacterCars.InstallMonsters) -- installed into copies of the folder's BODY.HQR and RESS.HQR (and RACECARS.JSON, a
+    // built folder's) in the scratch folder, as pumpkinf1 does
+    public static int MonsterCars(string[] args)
+    {
+        Directory.CreateDirectory(args[2]);
+        CopyWritable(args[1], args[2], "BODY.HQR", "RESS.HQR");
+        if (File.Exists(Path.Combine(args[1], RaceTrackCharacterCars.CatalogueFile))) CopyWritable(args[1], args[2], RaceTrackCharacterCars.CatalogueFile);
+        var log = RaceTrackCharacterCars.InstallMonsters(args[2]);
+        foreach (var line in log) Console.WriteLine(line);
+        var numbers = new[] { RaceTrackCharacterCars.VampireNumber, RaceTrackCharacterCars.WitchNumber, RaceTrackCharacterCars.ZombieNumber };
+        return numbers.All(n => RaceTrackCharacterCars.Catalogue(args[2]).Any(e => e.Number == n)) ? 0 : 1;
     }
 
     // castcars <game folder> <scratch folder> [car number...]: the cast's cars (RaceTrackCharacterCars.Cast) installed into a copy of the
@@ -322,6 +382,17 @@ internal static class RaceTrackCommand
         return 0;
     }
 
+    // frogbody <game folder> <out> [length cells] [floor over the ground]: the giant frog's body (RaceTrackFrog.Make) to a file, as the build
+    // appends it to BODY.HQR (looking at its shape: E:\dump\TEMP\wan\frogview.py)
+    public static int FrogBody(string[] args)
+    {
+        var header = LbaBodyStudio.Body.Read(HqrArchive.Open(Path.Combine(args[1], "BODY.HQR")).Read(RaceTrackBaldinoCar.RacerBody), 2).Header;
+        var body = RaceTrackFrog.Make(header, (args.Length > 3 ? double.Parse(args[3]) : 18) * 512, args.Length > 4 ? double.Parse(args[4]) : 14000);
+        File.WriteAllBytes(args[2], body.Write());
+        Console.WriteLine($"{args[2]}: {body.Vertices.Count} points, {body.Faces.Count} polygons, {body.Spheres.Count} spheres");
+        return 0;
+    }
+
     public static int RaceCarFile(string[] args)
     {
         var setup = new LBAAssembler.RaceCarSetup();
@@ -332,8 +403,19 @@ internal static class RaceTrackCommand
         if (Environment.GetEnvironmentVariable("RT_NO_OPPONENTS") == "1") setup.Opponent = false;
         // (RT_CHECKPOINTS=1: the checkpoints drawn as red lines across the road -- off by default)
         if (Environment.GetEnvironmentVariable("RT_CHECKPOINTS") == "1") setup.ShowCheckpoints = true;
+        // (RT_TRACK_SETUP=1: each track's best setup in place of the sliders' top speed, acceleration and steering)
+        if (Environment.GetEnvironmentVariable("RT_TRACK_SETUP") == "1") setup.UseTrackSetups = true;
+        // (RT_DIFFICULTY=0|1|2: the race's level, easy, medium or hard, on a track with levels -- the Temple of Bú's)
+        if (int.TryParse(Environment.GetEnvironmentVariable("RT_DIFFICULTY"), out var difficulty)) setup.Difficulty = difficulty;
         // (RT_DRIVE=<racer body>: driving as that opponent's car; -2 or -3 Twinsen's buggy firing green or red lasers)
-        if (int.TryParse(Environment.GetEnvironmentVariable("RT_DRIVE"), out var drive)) { setup.DriveAs = drive; setup.DriveAsKey = RaceCarEngineFile.DriveAsLine(args[1], drive); }
+        if (int.TryParse(Environment.GetEnvironmentVariable("RT_DRIVE"), out var drive))
+        {
+            setup.DriveAs = drive;
+            setup.DriveAsKey = RaceCarEngineFile.DriveAsLine(args[1], drive);
+            setup.DriveAsIslandKeys = RaceCarEngineFile.DriveAsIslandLines(args[1], drive);
+        }
+        // (left to his own car, as Play leaves him: the track's own -- the Temple of Bú's pumpkin F1; RT_DRIVE=-4 his buggy there too)
+        setup.TrackCarKeys = RaceCarEngineFile.TrackCarLines(args[1], setup.DriveAs);
         // (RT_RACE=<island file>: of a folder with several tracks, the one Play races with that island open in the editor, as RaceFor picks it)
         var track = Environment.GetEnvironmentVariable("RT_RACE") is { Length: > 0 } race ? RaceTrackService.RaceFor(args[1], race) : RaceTrackService.ReadInfo(args[1]);
         // (RT_STORY=1: the game played as a game -- every track in a set, raced where and when the game is, with the story's keys)
@@ -447,4 +529,10 @@ internal static class RaceTrackCommand
         for (var i=0;i<names.Count;i++) if (names[i] is { } n && n.ToLowerInvariant().Contains(word)) Console.WriteLine($"{i-1}: {n}");
         return 0;
     }
+}
+
+// A build's progress printed as it comes (RT_PROGRESS=1), on the build's own thread: the time each step was reached, how far, and what it is.
+internal sealed class ConsoleProgress(System.Diagnostics.Stopwatch watch) : IProgress<RaceTrackService.BuildProgress>
+{
+    public void Report(RaceTrackService.BuildProgress value) => Console.WriteLine($"  [{watch.Elapsed.TotalSeconds,6:0.0} s] {value.Done * 100,3:0}%  {value.Doing}");
 }

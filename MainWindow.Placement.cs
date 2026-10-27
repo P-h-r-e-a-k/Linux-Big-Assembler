@@ -188,6 +188,13 @@ public partial class MainWindow
     {
         var library = nativeRenderer.RendererLibrary;
         if (library is null || interiorZoom <= 0) return;
+        if (PickInteriorFloor(library, at) is { } floor) placeWorld = (floor.X, floor.Y, floor.Z);
+    }
+
+    // The floor of the interior on screen under a point of the view (null: off every floor). Also where the scene panel places things.
+    private (int X, int Y, int Z)? PickInteriorFloor(RendererLibraryApi library, Point at)
+    {
+        if (interiorZoom <= 0) return null;
         var canvas = new Point((at.X - ViewportHost.ActualWidth / 2) / interiorZoom + interiorCenter.X, (at.Y - ViewportHost.ActualHeight / 2) / interiorZoom + interiorCenter.Y);
         const int headroom = 2 * 256;
         var top = 24;
@@ -195,13 +202,12 @@ public partial class MainWindow
         for (var level = Math.Max(1, top); level >= 1; level--)
         {
             var y = level * 256;
-            if (!SolveInteriorGround(library, canvas, y, out var x, out var z)) return;
+            if (!SolveInteriorGround(library, canvas, y, out var x, out var z)) return null;
             if (!Floor(x, z, y)) continue;
-            var patch = false;
             foreach (var (dx, dz) in new[] { (512, 512), (-512, 512), (512, -512), (-512, -512) })
-                if (Floor(x + dx, z, y) && Floor(x, z + dz, y) && Floor(x + dx, z + dz, y)) { patch = true; break; }
-            if (patch) { placeWorld = (x, y, z); return; }
+                if (Floor(x + dx, z, y) && Floor(x, z + dz, y) && Floor(x + dx, z + dz, y)) return (x, y, z);
         }
+        return null;
     }
     // The scene-local (x, z) at height y whose picture is `canvas`.
     private static bool SolveInteriorGround(RendererLibraryApi library, Point canvas, int y, out int x, out int z)
@@ -266,7 +272,7 @@ public partial class MainWindow
             // outdoors each cube of the island has its own scene: dropped in another cube, that cube's scene is played
             var cubeX = Math.Clamp((int)Math.Floor(world.X / 32768.0), 0, 15);
             var cubeZ = Math.Clamp((int)Math.Floor(world.Z / 32768.0), 0, 15);
-            var island = System.IO.Path.GetFileNameWithoutExtension(activeFile);
+            var island = SceneIsland(activeFile);
             var there = allSceneEntries.FirstOrDefault(s => !s.IsInterior && s.CubeX == cubeX && s.CubeY == cubeZ && string.Equals(s.IslandFile, island, StringComparison.OrdinalIgnoreCase));
             if (there is not null) scene = there.Option.Index;
             else (cubeX, cubeZ) = allSceneEntries.Where(s => s.Option.Index == scene).Select(s => (s.CubeX, s.CubeY)).FirstOrDefault();
@@ -340,8 +346,11 @@ public partial class MainWindow
     // is at or below (higher on the ray = nearer the viewer = drawn on top). Twinsen goes on the top of that column, in the coordinates of the
     // scene whose tile it is (tiles carry offsets in the shared map).
     private (Lba1AreaTile Tile, double X, double Y, double Z)? PickManagedGround(Point canvas)
+        => placeImage is { } image && placeTiles is { } tiles && placeTopsOf is { } topsOf ? PickManagedGroundOn(image, tiles, topsOf, placeTops, canvas) : null;
+
+    // ... on any managed picture (`tops`: the column tops already worked out, per tile). Also where the scene panel places things.
+    private static (Lba1AreaTile Tile, double X, double Y, double Z)? PickManagedGroundOn(Lba1SceneImage image, IReadOnlyList<Lba1AreaTile> tiles, Func<Lba1AreaTile, int[]> topsOf, Dictionary<Lba1AreaTile, int[]> placeTops, Point canvas)
     {
-        if (placeImage is not { } image || placeTiles is not { } tiles || placeTopsOf is not { } topsOf) return null;
         double u = (canvas.X - image.OriginX) * 512 / 24;                     // = x - z, in the shared map's units
         (double X, double Z) GroundAt(double y) { var v = (canvas.Y - image.OriginY + y * 15 / 256) * 512 / 12; return ((u + v) / 2, (v - u) / 2); }
         int lowest = tiles.Min(t => t.OffsetY), highest = tiles.Max(t => t.OffsetY) + 25 * 256;

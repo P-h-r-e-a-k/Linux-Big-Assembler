@@ -218,6 +218,24 @@ internal static partial class RaceTrackCharacterCars
             new Axle(new Vector3(245, 266, 400), new Vector3(430, 160, 400), 160, 110), new Axle(new Vector3(250, 266, -380), new Vector3(465, 180, -380), 180, 130));
     }
 
+    // FunFrock's car with nobody in it: standing on pole at Polar Island's story's start while he talks to Twinsen beside it, before he gets
+    // in (RACEMOD.CPP chase_car=; the user, 2026-10-27: "Let's start Funfrock outside of the car talking to Twinsen, then have him get into
+    // the car")
+    // (the car as it is, its driver's polygons, lines and spheres taken out: his bones -- the seat's, 13, and every one after it -- stay, so
+    // the racer's animations still fit it)
+    public static Body BuildFunFrockEmpty(Body funfrock, Body racer)
+    {
+        var car = BuildFunFrock(funfrock, racer);
+        const int seat = 13;
+        if (car.Bones.Count <= seat) return car;
+        var from = car.Bones[seat].Start;
+        bool Driver(int point) => point >= from;
+        car.Faces.RemoveAll(f => f.Points.All(Driver));
+        car.Lines.RemoveAll(l => Driver(l.A) && Driver(l.B));
+        car.Spheres.RemoveAll(sp => Driver(sp.Point));
+        return car;
+    }
+
     // FunFrock, out of the Dark Monk's statue: a blood-red car with a sabre down each flank, and behind him the ring of one of his
     // teleporters, glowing.
     public static Body BuildFunFrock(Body funfrock, Body racer)

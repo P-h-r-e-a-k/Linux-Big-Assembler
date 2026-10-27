@@ -32,6 +32,10 @@ bool windowFullscreenEnabled = false;
    UnlockAndPresentRendererTexture. See Window_IsRendererTextureLocked's own
    comment (below) for why this exists. */
 static bool s_rendererTextureLocked = false;
+/* The window's size changed (SDL_EVENT_WINDOW_RESIZED / PIXEL_SIZE_CHANGED) and
+   nobody has taken the change yet (Window_TakeSettledResize); when it last did. */
+static bool s_resizePending = false;
+static Uint64 s_resizeAt = 0;
 
 static void ApplyGameWindowHideSystemCursor(void) {
     SDL_HideCursor();
@@ -405,6 +409,14 @@ void SetWindowRelativeMouse(bool enable) {
         SDL_SetWindowRelativeMouseMode(sdlWindow, enable);
 }
 
+void SetWindowTitle(const char *title) {
+    static char kept[128];
+    if (!title || !title[0]) return;
+    snprintf(kept, sizeof(kept), "%s", title);
+    windowTitle = kept;
+    if (sdlWindow) SDL_SetWindowTitle(sdlWindow, kept);
+}
+
 void SetWindowFullscreen(bool fullscreen) {
     fullscreen = CoerceFullscreenForPlatform(fullscreen);
     windowFullscreenEnabled = fullscreen;
@@ -437,6 +449,66 @@ bool GetWindowFullscreen() {
 bool Window_IsFullscreen(void) {
     return (sdlWindow != NULL) &&
            ((SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_FULLSCREEN) != 0);
+}
+
+static bool HeadlessVideoDriver(void) {
+    const char *driver = SDL_GetCurrentVideoDriver();
+    return driver == NULL || SDL_strcmp(driver, "dummy") == 0 || SDL_strcmp(driver, "offscreen") == 0;
+}
+
+bool Window_TakeSettledResize(U32 settleMs, U32 *outPixelW, U32 *outPixelH) {
+    if (!s_resizePending || sdlWindow == NULL || outPixelW == NULL || outPixelH == NULL) {
+        return false;
+    }
+    if (SDL_GetTicks() - s_resizeAt < (Uint64)settleMs) {
+        return false;
+    }
+    s_resizePending = false;
+    if (HeadlessVideoDriver() || (SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_MINIMIZED) != 0) {
+        return false;
+    }
+    int w = 0, h = 0;
+    if (!SDL_GetWindowSizeInPixels(sdlWindow, &w, &h) || w <= 0 || h <= 0) {
+        return false;
+    }
+    *outPixelW = (U32)w;
+    *outPixelH = (U32)h;
+    return true;
+}
+
+bool Window_GetWindowedSize(S32 *outW, S32 *outH, bool *outMaximized) {
+    if (sdlWindow == NULL || outW == NULL || outH == NULL || outMaximized == NULL) {
+        return false;
+    }
+    int w = 0, h = 0;
+    if (!SDL_GetWindowSize(sdlWindow, &w, &h) || w <= 0 || h <= 0) {
+        return false;
+    }
+    *outW = (S32)w;
+    *outH = (S32)h;
+    *outMaximized = (SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_MAXIMIZED) != 0;
+    return true;
+}
+
+void Window_RestoreWindowedSize(S32 w, S32 h, bool maximized) {
+    if (sdlWindow == NULL || HeadlessVideoDriver() || w <= 0 || h <= 0) {
+        return;
+    }
+    /* Never bigger than the screen it is on (a size kept from a bigger
+       monitor), then centred on it. */
+    SDL_Rect usable;
+    const SDL_DisplayID display = SDL_GetDisplayForWindow(sdlWindow);
+    if (display != 0 && SDL_GetDisplayUsableBounds(display, &usable)) {
+        if (w > usable.w)
+            w = usable.w;
+        if (h > usable.h)
+            h = usable.h;
+    }
+    SDL_SetWindowSize(sdlWindow, w, h);
+    SDL_SetWindowPosition(sdlWindow, SDL_WINDOWPOS_CENTERED_DISPLAY(display), SDL_WINDOWPOS_CENTERED_DISPLAY(display));
+    if (maximized) {
+        SDL_MaximizeWindow(sdlWindow);
+    }
 }
 
 bool Window_CanLoseNativeWindow(void) {
@@ -513,6 +585,12 @@ void HandleEventsWindow(const void *event) {
         if ((sdlRenderer != NULL) && (sdlTexture != NULL)) {
             PresentCurrentTexture();
         }
+        s_resizePending = true;
+        s_resizeAt = SDL_GetTicks();
+        break;
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        s_resizePending = true;
+        s_resizeAt = SDL_GetTicks();
         break;
     case SDL_EVENT_QUIT:
         exit(0); // TODO: Implement graceful exit

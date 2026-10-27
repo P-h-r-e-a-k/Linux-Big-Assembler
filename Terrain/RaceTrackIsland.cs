@@ -19,6 +19,19 @@ internal sealed record RaceTrackIsland(
         "RaceTrackPlan.Desert.json", (7, 10))
     {
         Crossing = CrossingStyle.Jump, Roster = RaceDriver.Desert,
+        // (the island's people and animals away from the road stay -- the camel: the user, 2026-10-27, "Let's make sure with Desert island
+        // we're not removing any actors or zones we don't need the same as we checked with citadel")
+        KeepOffRoadActors = true,
+        // (the School of Magic's gates open from the start -- the game unlocks them later, game variable 65, which also shows the open gates'
+        // decor: the user, 2026-10-27, "The gates to the school of magic are initially closed on Desert island and get unlocked later in the
+        // game, let's just start the game with them open")
+        HeldVars = new[] { (65, 1) },
+        // (the School of Magic's canyon: its rim back up where the levelling cut it down beside the road -- in only through the gate, as
+        // the game has it: the user, 2026-10-27, "Let's raise the terrain slightly around the school of magic to force the user to access
+        // it via the gate, but let's make sure we don't change the near track terrain height")
+        OwnRimsAt = new[] { (535, 590, 571, 630) },
+        // (its water crossing a deck over the water, the ferry's channel open under it: RaceTrackBuilder.WaterDeck)
+        WaterDeck = true,
     };
 
     // Citadel Island: two tracks, one for each of its files, no retail track to clear, and no buggy in its scenes (the build puts one at each
@@ -39,11 +52,34 @@ internal sealed record RaceTrackIsland(
         // carport, where the island's own car stands: that one, a decor that can't be driven, goes from both files)
         ParkOwn = (540.5, 637.5, 1024, 1), ParkTwin = (544.125, 654.75, 1024, 0),
         DropDecors = new[] { (8, 10, 16448, 7552) }, OwnWeather = 0,
-        // (the lighthouse, scene 46, where the storm ends: the game's own Raph by its door, his fiancee and Twinsen and Zoe on its top, whom
-        // the Weather Wizard's spell needs -- RaceTrackStory -- and the door's people and track points on the storm file's ground: the town
-        // circuit, in the fine weather's file, cut the hill there by 2,000)
-        StoryEntities = new[] { RaceTrackStory.LighthouseRaph, RaceTrackStory.Fiancee, RaceTrackStory.CoupleOnTop },
-        OwnGroundAt = new[] { (46, 481.5, 661.8, 10.0), (46, 463.0, 665.0, 3.0) },
+        // (the lighthouse, scene 46, where the storm ends: the game's own Raph by its door and Twinsen and Zoe on its top, whom the Weather
+        // Wizard's spell needs -- RaceTrackStory -- and the door's people and track points on the storm file's ground: the town circuit, in
+        // the fine weather's file, cut the hill there by 2,000. Raph's fiancee went with the others, 2026-10-14 -- the user: "an NPC on the
+        // track behind the lighthouse that we need to remove": she wanders between five places behind it, on the town circuit, and runs
+        // after Twinsen until the keeper is back -- after the car; no script of the scene's refers to her)
+        StoryEntities = new[] { RaceTrackStory.LighthouseRaph, RaceTrackStory.CoupleOnTop },
+        OwnGroundAt = new[] { (46, 481.5, 661.8, 10.0) },
+        // (the museum (scene 48, its building's top taken for the storm track's deck): walls built up from what is left of it to the deck, and
+        // a lift on the deck where its upper window was, down into the museum where the window took Twinsen -- scene 15, at the window's own
+        // place: the user, 2026-10-27)
+        DeckWalls = new[] { (518.7, 568.5, 523.1, 572.6, 2618) },
+        // (no support for the storm track's deck in the walk into the port beside the big wall, its other side open park: the user,
+        // 2026-10-27, "This post blocking access to the port ... it's a track support, but let's just remove the post")
+        // ... and in the alley between the curved wall and the lattice-walled shop south of it, at cell (518.9, 614.0) (the user, 2026-10-27,
+        // "the post on citadel.ile is still ... there")
+        NoPiersAt = new[] { (519.0, 582.0, 3.0), (518.9, 614.0, 4.0) },
+        // (Twinsen's car in the story where he left it, first under the carport at his house -- not on a start line: the user, 2026-10-27)
+        CarHome = (544.125, 654.75, 1024),
+        // (its steep banks beside the road its own ground, walked on by Twinsen, walls to the cars only: RaceTrackBuilder.WallSteepBanks)
+        SoftBanks = true,
+        DeckLifts = new[] { (520.8, 568.1, 15, 12288, 3000, 13312) },
+        // (and in the town circuit's file, where the road took the museum: its front against the road's bank, the retail front (body 38)
+        // moved there, and a lift on the road above -- the user, 2026-10-27, "Let's put the museum on the wall where Twinsen is currently
+        // facing": scene 48 at (10966, 31375), facing west)
+        TwinMuseum = (38, 520.5, 570.5, 525.5, 572.4, 521.5, 573.3),
+        // (the island's people and things away from both roads stay: the cow, the sewer lifts by the start line and over the school -- without
+        // them the lift's zone took Twinsen down into the sewers and the ride back up took him straight down again -- the user, 2026-10-27)
+        KeepOffRoadActors = true,
     };
 
     public static readonly RaceTrackIsland CitadelStorm = Citadel with
@@ -113,9 +149,45 @@ internal sealed record RaceTrackIsland(
     // Who races there (RaceDriver: the user's line-up for the track), and on the twin's track (Citadel Island's town circuit). Null: the
     // retail track's racer, Baldino and the biker.
     public List<RaceDriver>? Roster { get; init; }
+    // The race's levels, easy, medium and hard (RaceDifficulty: the Temple of Bú's, 2026-10-17); null: none -- the race as it is, whatever
+    // the car setup's difficulty.
+    public RaceLevel[]? Levels { get; init; }
     // The game's own people the story needs, by entity, kept in the island's scenes when the build takes the others off the road (the
     // souvenir seller on Celebration Island: RaceTrackStory.ApplyCelebration).
     public int[]? StoryEntities { get; init; }
+    // The entities whose actors every build keeps, story or not (and moves off the road): the island's own story outside a race
+    public int[]? KeptEntities { get; init; }
+    // The build keeps every actor that is off the road -- it stands clear of it, and its scripts put it nowhere on it (RaceTrackScenes
+    // OffRoad) -- taking only those on it away; without, every actor goes but the story's and the cutscenes'
+    public bool KeepOffRoadActors { get; init; }
+    // Places (island cells, x0 z0 x1 z1) where the island's own ground comes back up to its height after the road's levelling, clear of the
+    // road: rims that kept people to a gate (RaceTrackBuilder)
+    public (int X0, int Z0, int X1, int Z1)[]? OwnRimsAt { get; init; }
+    // The lap's longest water crossing a raised deck over the water, humped for a boat to pass under (RaceTrackBuilder.WaterDeck)
+    public bool WaterDeck { get; init; }
+    // Walls built up under the raised road where it passes over a building cut down for it: island cells x0 z0 x1 z1 and the height they
+    // stand on (the building's top), up to the deck's underside (RaceTrackBuilder)
+    public (double X0, double Z0, double X1, double Z1, int BaseY)[]? DeckWalls { get; init; }
+    // Places a raised road's pier never stands (island cells, a reach round each): a walkway the build's own rules (a lane between
+    // buildings, a door) don't see (RaceTrackBuilder.PlacePiers)
+    public (double X, double Z, double Reach)[]? NoPiersAt { get; init; }
+    // Lifts on the raised road down into a building: island cell, and the scene and place there they take Twinsen to (a door zone on the deck)
+    public (double X, double Z, int Scene, int ToX, int ToY, int ToZ)[]? DeckLifts { get; init; }
+    // A building's front put back in the other weather's file (RaceTrackBuilder.PlaceTwinMuseum): the retail decor of Body nearest FromX, FromZ
+    // moved to ToX, ToZ (island cells; its door zone and way out moved with it, RaceTrackScenes), and a lift on the road at LiftX, LiftZ
+    // into the building as DeckLifts' first
+    public (int Body, double FromX, double FromZ, double ToX, double ToZ, double LiftX, double LiftZ)? TwinMuseum { get; init; }
+    // The entity of the one the island's story has waiting at the start, whatever the build's story setting: brought from the scene the
+    // island has him in to stand just behind Twinsen on the grid (Polar Island's grobo with the digger's key, 2026-10-27)
+    public int? StartPerson { get; init; }
+    // The one to beat of the island's story's start, standing beside his car on pole before he gets in (RACEMOD.CPP chase_car=): the
+    // game's actor brought from its scene, and its entity
+    public (int Scene, int Actor, int Entity)? ChaseDriver { get; init; }
+    // Where Twinsen's car first stands in the story (island cell, turn): its scene's car made there the first time, and every start scene's
+    // car where he left it -- on the start line only when the race file starts the game there (RACEMOD.CPP RACE_GRID_CAR_VAR)
+    public (double X, double Z, int Beta)? CarHome { get; init; }
+    // The steep banks the shaping leaves beside the road kept as the island's own ground, walls to the cars only (RaceTrackBuilder)
+    public bool SoftBanks { get; init; }
     // For an island with a track in each weather: places whose scene's people and track points belong to the own file's story (the storm's,
     // gone once it is over), each the scene, the island cell and a reach in cells -- the build seats them on the own file's reshaped ground,
     // not on the ground of whichever file's road is nearer (RaceTrackScenes.Reseat).
@@ -160,7 +232,8 @@ internal sealed record RaceTrackIsland(
     };
 
     // The Emerald Moon itself (EMERAUDE.ILE, island 3), from the user's sketch: all of it a raised road -- along the middle of the moon
-    // base's long arm on its roof (the straight, its pit lane beside it on one deck), up onto the crater's rim and round it through three
+    // base's long arm on its roof (the straight, its pit lane beside it: a strip of road of its own, clear space between them, since
+    // 2026-10-12 -- RaceTrackPlan.RaisedStrips), up onto the crater's rim and round it through three
     // vertical loops (the plan's Loops: the deck there twice the road's width, the car going in on one half and coming out on the other),
     // and one jump over the whole reactor on the north rim (ArcJumps: the race-track mode carries the car up a curved ramp, over the
     // reactor's dish and down a curved hill, from one cube into the next), the road as wide as the dish there and banked hard through the
@@ -186,6 +259,10 @@ internal sealed record RaceTrackIsland(
         LBAAssembler.Terrain.Polar.PolarScenes.FirstScene + LBAAssembler.Terrain.Polar.PolarScenes.Count - 1, LBAAssembler.Terrain.Polar.PolarIsland.PaletteEntry, "RaceTrackPlan.Polar.json", null)
     {
         Roster = RaceDriver.Polar, Dream = true, Title = "Polar Island: the dream race to Sendell (LBA1's island, added when missing)",
+        // (the grobo with the digger's key, on the dock: Twinsen's car outside a race asks for it -- Polar.PolarGrobo)
+        StartPerson = LBAAssembler.Terrain.Polar.PolarGrobo.Entity,
+        // (FunFrock himself beside his car on pole, talking to Twinsen before he gets in: the game's own, scene 95's actor 14)
+        ChaseDriver = (95, 14, 217),
     };
 
     // A sprint dreamt at the start of the game (Polar Island's): won, Twinsen wakes up at home (RaceTrackService.DreamInfo).
@@ -284,19 +361,120 @@ internal sealed record RaceTrackIsland(
         Shuttles = new[] { (92, 2, 47, 19200, 9472), (92, 3, 47, 19104, 17632) },
     };
 
-    // Volcano Island (SOUSCELB.ILE, the game's island 11 under Celebration Island, scenes 130-132; cube (7,8) isn't there), redesigned on
-    // 2026-10-10 round its new summit: the ground north of the main lava channel raised to 30,000, a lake of lava on top pouring down its
-    // south face in four tiers (RaceTrackLavaFall). The start and the pit lane (its boost panel) on the sand plateau's north straight; south
-    // under the summit's west cliff, between a crystal gate and down the canyon road along the falls; a drop jump off its end onto the east
-    // ridge, south along it under a crystal arch over the crystal field in the lava; a jump down to the south shore, along it and up the
-    // volcano's flank past its bowls of lava; round the plateau's crystal garden, under another arch (RaceTrackCrystals). The game's lava
-    // balls out of the falls' foot, the lava, the bowls (LavaBalls). The plan: tools/RaceTrackPlan/volcano_design.py.
+    // Volcano Island (SOUSCELB.ILE, the game's island 11 under Celebration Island, scenes 130-132; cube (7,8) isn't there), from the user's
+    // sketch (2026-10-08), in layers since 2026-10-11: the start and the pit lane (its boost panel) on the sand plateau's north straight;
+    // a climb twice round a circle over the plateau, each time past a lava fall down a crag's face (RaceTrackLavaFall), its second turn over
+    // its first; a double spiral down, a circle over the main lava channel with a lava geyser up its open middle, and a slope over the
+    // channel (both loops circles since 2026-10-11); between the channels, a jump onto the east edge (a
+    // crystal arch, the crystal field in the lava: RaceTrackCrystals), a jump down to the south shore -- both landing as high as they leave --
+    // along it and up the volcano's flank; along the plateau's south edge and its west side, under the crag's lava carried over the road on an
+    // aqueduct. The game's lava balls out of lava geysers' showers, the aqueduct, the fall's pool; red crystal shards out of the volcano
+    // (LavaBalls, LavaGeysers, CrystalShards). The plan: tools/RaceTrackPlan/volcano_design.py.
     public static readonly RaceTrackIsland Volcano = new("Volcano Island", "SOUSCELB.ILE", "SOUSCELB.OBL", 11, 130, 132, 38, "RaceTrackPlan.Volcano.json", null)
     {
         Title = "Volcano Island: over the lava", Roster = RaceDriver.Volcano,
     };
 
-    public static readonly RaceTrackIsland[] All = { Desert, Citadel, CitadelStorm, Mosquibe, Celebration, CelebrationLava, Elevator, Sendell, Moon, Emerald, Polar, Knartas, Otringal, Volcano };
+    // Wannies Island (PLATFORM.ILE, island 6: outside scenes 96-99), from the user's drawing (2026-10-14): from the start straight east of
+    // the elevator's pier (its pit lane down the pier: a branch of the raised road) round the east island and the west one (or a shortcut
+    // off the east island's corner over a boost pad and a high leap over the west one's loop: another branch), climbing all the way, high
+    // over the islands, to a jump into a giant frog's mouth (timed: it opens and shuts; a shut one throws the car back -- RaceTrackFrog),
+    // through it and out of its back, up over the lava to the elevator tower's top and twice round it down a helix to the start. The plan:
+    // tools/RaceTrackPlan/wannies_design.py.
+    public static readonly RaceTrackIsland Wannies = new("Wannies Island", "PLATFORM.ILE", "PLATFORM.OBL", 6, 96, 99, 33, "RaceTrackPlan.Wannies.json", null)
+    {
+        Title = "Wannies Island: through the frog and down the tower", Roster = RaceDriver.Wannies,
+        // (Twinsen has come down in the elevator: scene 98's hero script plays the elevator's cutscene -- and puts him at its point 7, on
+        // foot -- while it's 0, and above 1 the cinema of his way back up)
+        // (and the frog's still copy among the decor -- the editor's -- hidden: the race-track mode draws the frog, RaceTrackFrog.AddDecor)
+        HeldVars = new[] { (107, 1), (RaceTrackFrog.DecorVar, 1) },
+        // (the pier's east post, body 33: the pit lane runs over the pier there, low since the road came down -- 2026-10-15)
+        DropDecors = new[] { (8, 7, 19712, 17664) },
+    };
+
+    // The Emperor's palace (the user, 2026-10-12: "through the palace rooms, coming out the window and around the roof tops? Point-to-point
+    // i.e. no laps, finishing with massive jump to harbor teleport? - Twinsen, quick, Dark monk's in the palace, he's killing everybody.
+    // Leading into final showdown at Celebration"), on the Palace island (Terrain/Palace: PALACE.ILE and PALACE.OBL, made by the build --
+    // Created: PalaceTrack.Install -- with its scenes from 265, a cube of the route each), raced as Otringal's island 4 drawn from the palace's
+    // file (RaceFile). A sprint through the palace, two storeys high since 2026-10-15 (its outside dropped -- docs/racetrack/
+    // palace_outside_archive -- and an upstairs added: PalaceUpstairs): from the sixteen rooms' south-east room west along the bottom row,
+    // up the ramp round the stairwell's column, through the library, the music room, the bedrooms and the dressing room into the throne
+    // room, down the other stairwell's ramp, through the long hall and up to its round window: the finish, the leap out of it -- won, the
+    // Dark Monk's teleporter takes the car in mid-air and Twinsen arrives on Celebration Island (PalaceTrack's lines and the race-track
+    // mode's wake=). The plan: tools/RaceTrackPlan/palace_design.py.
+    public static readonly RaceTrackIsland Palace = new("The Emperor's palace", LBAAssembler.Terrain.Palace.PalaceIsland.IleFile, LBAAssembler.Terrain.Palace.PalaceIsland.OblFile,
+        LBAAssembler.Terrain.Palace.PalaceTrack.IslandByte, LBAAssembler.Terrain.Palace.PalaceTrack.FirstScene, LBAAssembler.Terrain.Palace.PalaceTrack.LastScene,
+        LBAAssembler.Terrain.Palace.PalaceIsland.PaletteEntry, "RaceTrackPlan.Palace.json", null)
+    {
+        Created = true, RaceFile = "palace", NoHolomap = true, Roster = RaceDriver.Palace, Sprint = true, OwnScenes = true, RailHeld = true,
+        Title = "The Emperor's palace: through its rooms, upstairs past the throne, out of the round window to the Dark Monk's teleporter",
+    };
+
+    // Island CX (the user, 2026-10-15: "a loop around the tower, the track enters the underground section through a slope down through one of
+    // the doors ... loops around the underground section a few times then back out a door on the other side ... a pit lane ... the cannons
+    // that normally fire at Twinsen outside randomly firing at any outside car"; then: "In the underground section there's some gas monsters
+    // that attack the player let's build on this theme"), on CXTOWER.ILE -- Island CX with the control tower's lower level under its gas,
+    // made by the build as one ring of a hall round the control room (Created: ControlTower.CxTowerTrack.Install) -- raced as island 9 drawn
+    // from it (RaceFile) in a copy of Island CX's outside scene, 300 (CopiesScene). Round the island under its corner towers' cannons, which
+    // fire at whichever car outside they like (HuntingGuns); down the south-west trench and through its door, down under the gas and twice
+    // round the ring past its gas monsters, up and out of the north-east trench's door. The plan: tools/RaceTrackPlan/cxtower_design.py.
+    public static readonly RaceTrackIsland CxTower = new("Island CX", LBAAssembler.Terrain.ControlTower.ControlTowerIsland.IleFile,
+        LBAAssembler.Terrain.ControlTower.ControlTowerIsland.OblFile, LBAAssembler.Terrain.ControlTower.CxTowerTrack.IslandByte,
+        LBAAssembler.Terrain.ControlTower.CxTowerTrack.Scene, LBAAssembler.Terrain.ControlTower.CxTowerTrack.Scene,
+        LBAAssembler.Terrain.ControlTower.ControlTowerIsland.PaletteEntry, LBAAssembler.Terrain.ControlTower.CxTowerTrack.PlanResource, null)
+    {
+        Created = true, RaceFile = "cxtower", CopiesScene = LBAAssembler.Terrain.ControlTower.CxTowerTrack.SourceScene, NoHolomap = true, RailHeld = true,
+        Roster = RaceDriver.CxTower,
+        HuntingGuns = (LBAAssembler.Terrain.ControlTower.CxTowerTrack.CannonEntity, LBAAssembler.Terrain.ControlTower.CxTowerTrack.CannonReach),
+        Title = "Island CX: round the island under its cannons, down through a door and twice round the halls under the gas",
+    };
+
+    // The Temple of Bú (the user, 2026-10-16: "Port the temple of Bu from LBA1 into LBA2 as a separate island ... generate a Halloween inspired
+    // race track for it. This will be a separate release for a Halloween special track"), LBA1's three temple scenes ported as an island of
+    // their own (Terrain/Temple: TEMPLE.ILE and TEMPLE.OBL, made by the build from the LBA1 folder in the settings -- Created; LBA1's colours
+    // in a palette of its own, RESS 40, under a night sky, RESS 24: Look), raced as Otringal's island 4 drawn from the temple's file (RaceFile),
+    // in scenes of its own from 301, a cube of the route each (TempleTrack). A lap round the temple on a raised road a little over its floors,
+    // through doorways cut where it passes the walls: west along the long corridor, through the first floor's south side and its lower hall,
+    // out over its open south edge and down a spiral through the dark to the crypt, through the crypt's rooms -- the start on the straight
+    // through its west room -- and up a spiral to the corridor. The plan: tools/RaceTrackPlan/temple_design.py.
+    public static readonly RaceTrackIsland Temple = new("The Temple of Bú", LBAAssembler.Terrain.Temple.TempleIsland.IleFile, LBAAssembler.Terrain.Temple.TempleIsland.OblFile,
+        LBAAssembler.Terrain.Temple.TempleTrack.IslandByte, LBAAssembler.Terrain.Temple.TempleTrack.FirstScene, LBAAssembler.Terrain.Temple.TempleTrack.LastScene,
+        LBAAssembler.Terrain.Temple.TempleIsland.PaletteEntry, LBAAssembler.Terrain.Temple.TempleTrack.PlanResource, null)
+    {
+        Created = true, RaceFile = "temple", Look = (LBAAssembler.Terrain.Temple.TempleIsland.PaletteEntry, LBAAssembler.Terrain.Temple.TempleIsland.SkyEntry),
+        NoHolomap = true, RailHeld = true, OwnScenes = true, FromLba1 = true, Roster = RaceDriver.Temple, Levels = RaceDifficulty.Temple, RaceLaps = 5,
+        FlagMarshal = true,
+        Title = "The Temple of Bú: the Halloween race through LBA1's temple, down to its crypt and back (LBA1's scenes, made by the build)",
+        // (the giant web's still copy among the decor -- the editor's -- hidden: the race-track mode draws the web, TempleHalloween.PlaceGiantWebs)
+        HeldVars = new[] { (LBAAssembler.Terrain.Temple.TempleHalloween.GiantWebVar, 1) },
+    };
+
+    // An island drawn in a palette and under a sky of its own (RESS.HQR entries: the car file's island_palette=, island_sky=) -- the Temple of
+    // Bú's, LBA1's colours.
+    public (int Palette, int Sky)? Look { get; init; }
+    // The build makes the island from LBA1's own scenes (the LBA1 folder in the settings): the Temple of Bú.
+    public bool FromLba1 { get; init; }
+    // A race over laps of its own (the race-track mode's race_laps=: the race is over at the last lap's line, the display counts them) --
+    // the Temple of Bú's five (the user, 2026-10-17: "Let's make the temple track a 5 lap race"). Not for a story's race, which has its own.
+    public int? RaceLaps { get; init; }
+    // A flag marshal by the start line, dropping a flag at GO and waving the chequered flag at the finish (Temple.TempleMarshal; the
+    // race-track mode's marshal=): the Temple of Bú's, the School of Magic's assistant.
+    public bool FlagMarshal { get; init; }
+
+    // Guns of the island's own scene the race-track mode fires at the cars (gunner= with gunner_hunt=): their entity, kept in the scene with
+    // their scripts emptied, and how far they reach (cells) -- Island CX's cannons.
+    public (int Entity, double Reach)? HuntingGuns { get; init; }
+
+    // A sprint whose end the build makes (the Emperor's palace's: its lines and the teleport to Celebration Island, PalaceTrack) -- not a
+    // dream (Dream: Polar Island's, which new games start in).
+    public bool Sprint { get; init; }
+    // Scenes of its own the build makes, FirstScene to LastScene (the palace's): a story set tells its track from the island's own by them.
+    public bool OwnScenes { get; init; }
+    // The rail holds the car on the raised road everywhere, even where it lies over flat ground (the race-track mode's rail_held=): the
+    // Emperor's palace's road along the hilltop, 60 over it, let cars drive off onto the rocks.
+    public bool RailHeld { get; init; }
+
+    public static readonly RaceTrackIsland[] All = { Desert, Citadel, CitadelStorm, Mosquibe, Celebration, CelebrationLava, Elevator, Sendell, Moon, Emerald, Polar, Knartas, Otringal, Volcano, Palace, Wannies, CxTower, Temple };
 
     public static RaceTrackIsland ByName(string name) => All.FirstOrDefault(i => string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase)) ?? Desert;
 

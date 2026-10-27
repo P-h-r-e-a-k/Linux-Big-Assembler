@@ -9,9 +9,19 @@ namespace LBAAssembler.Terrain;
 // and the race's result is whether Twinsen finished ahead of him. The others' skills are drawn at random each race (RaceCarEngineFile).
 //
 // The rosters are the user's (CharactersForTrack.txt, 2026-10-03): an island with none races the retail track's racer, Baldino and the biker.
-internal sealed record RaceDriver(string Name, int Body, RaceTrackBuilder.RacingLine Line, bool Main = false, bool Bike = false, bool Ghost = false)
+//
+// A driver may drive one of the cast's cars (Cast: its number in RACECARS.JSON, RaceTrackCharacterCars.CastFirst on), a body of an entity
+// of its own -- a copy of the racer's, its animations the same -- rather than the racer entity's: Body is then its body in that entity, and
+// the build puts the cars in the scenes as that entity (RaceTrackScenes, from the folder's RACECARS.JSON). (2026-10-17: the Temple of Bú's
+// Halloween monsters.)
+internal sealed record RaceDriver(string Name, int Body, RaceTrackBuilder.RacingLine Line, bool Main = false, bool Bike = false, bool Ghost = false, int Cast = -1)
 {
     public const int RacerBody = 0;
+
+    // A car that flies (2026-10-18: the Temple of Bú's witch on her broomstick, no wheels): how far it bobs up and down over its line (units;
+    // 0 none), once every HoverMs -- drawn only (RACEMOD.CPP opponent_hover=): its line, its box and what meets it are any car's.
+    public int Hover { get; init; }
+    public const int HoverMs = RaceTrackCharacterCars.WitchBobMs;
 
     // the racer, Baldino and the biker: every track's before the rosters, and still any track's with none (the racer the one to beat)
     public static readonly RaceDriver Racer = new("The racer", RacerBody, RaceTrackBuilder.RacerLine, Main: true);
@@ -20,6 +30,10 @@ internal sealed record RaceDriver(string Name, int Body, RaceTrackBuilder.Racing
 
     private static RaceDriver Of(RaceTrackCharacterCars.Car car, string name, double side, double top, double grip, bool main = false) =>
         new(name, car.Generic, new RaceTrackBuilder.RacingLine(side, 4, top, grip), main);
+
+    // ... and in a car of the cast's, by its number (its body in its own entity: a hundred to an entity, InstallCast)
+    private static RaceDriver OfCast(int number, string name, double side, double top, double grip, bool main = false) =>
+        new(name, (number - RaceTrackCharacterCars.CastFirst) % RaceTrackCharacterCars.CastPerEntity, new RaceTrackBuilder.RacingLine(side, 4, top, grip), main, Cast: number);
 
     // Citadel Island, the storm track: Raph, the lighthouse keeper, too busy racing to let the weather wizard up the lighthouse -- "beat my
     // time" (StoryNotes.txt). His time is his lap at the setup's skill.
@@ -98,5 +112,46 @@ internal sealed record RaceDriver(string Name, int Body, RaceTrackBuilder.Racing
         Of(RaceTrackCharacterCars.LavaSlab, "The hide-out's Mosquibee", 2.0, 1.02, 0.97),
     };
 
-    // Otringal's palace has no track yet; its drivers are Stan, the pighead with the broom and the two-headed monster (CharactersForTrack.txt)
+    // Wannies Island (2026-10-14): the Wannie miner in his undergas bulldozer (the one to beat), a Wannie in a mine cart and the old Wannie
+    // on her firefly tart
+    public static readonly List<RaceDriver> Wannies = new()
+    {
+        Of(RaceTrackCharacterCars.Bulldozer, "The Wannie miner", 0, 1.0, 1.0, main: true),
+        Of(RaceTrackCharacterCars.Wannie, "The mine cart", -2.0, 0.99, 1.02),
+        Of(RaceTrackCharacterCars.Tart, "The old Wannie", 2.0, 1.02, 0.97),
+    };
+
+    // Island CX (2026-10-15): its own people's cars -- one of the Emperor's soldiers in his rocket launcher (the one to beat), a Franco
+    // trooper's tank and the Franco survivor on his raft
+    public static readonly List<RaceDriver> CxTower = new()
+    {
+        Of(RaceTrackCharacterCars.Launcher, "The Emperor's soldier", 0, 1.0, 1.0, main: true),
+        Of(RaceTrackCharacterCars.Tank, "The Franco trooper", -1.8, 0.99, 1.02),
+        Of(RaceTrackCharacterCars.Survivor, "The survivor", 1.8, 1.02, 0.97),
+    };
+
+    // The Temple of Bú's Halloween race: Halloween's own monsters in cars made for them (2026-10-18, the user: "Let's also create different
+    // opponents for Twinsen, a vampire driving a coffin, A witch flying on a broom (so no wheels), A zombie driving a hurst") -- the vampire
+    // in his coffin (the one to beat), the witch on her broomstick (flying: it bobs over its line, Hover) and the zombie in his hearse
+    // (RaceTrackCharacterCars.Monsters), on the lines, the places on the grid and with the characters the three before them had: the
+    // skeleton in his ghost car, the ghost in hers and the two-headed monster in his monster truck, the cast's cars (2026-10-17; the Dark
+    // Monk, Ker'aooc and Tabata before them), which stay in the catalogue, anyone's to drive.
+    public static readonly List<RaceDriver> Temple = new()
+    {
+        Of(RaceTrackCharacterCars.Coffin, "The vampire", 0, 1.0, 1.0, main: true),
+        Of(RaceTrackCharacterCars.Broomstick, "The witch", -1.2, 0.99, 1.02) with { Hover = RaceTrackCharacterCars.WitchBob },
+        Of(RaceTrackCharacterCars.Hearse, "The zombie", 1.2, 1.02, 0.97),
+    };
+
+    // The Emperor's palace (2026-10-12): racing out of the palace ahead of the Dark Monk to his teleporter -- Stan in his time machine (the
+    // one to beat), the pighead with the broom in his road sweeper (CharactersForTrack.txt) and the Emperor himself, fleeing his own palace,
+    // a little to either side of the road's middle: the rooms' doors are two bricks wide. (The user's list has the palace's two-headed
+    // monster too: its car is one of the cast's, bodies of entities of their own, which an opponent couldn't be then -- it can since
+    // 2026-10-17, RaceDriver.Cast, and raced on the Temple of Bú until 2026-10-18; the palace's line-up is as it was.)
+    public static readonly List<RaceDriver> Palace = new()
+    {
+        Of(RaceTrackCharacterCars.Stan, "Stan", 0, 1.0, 1.0, main: true),
+        Of(RaceTrackCharacterCars.Sweeper, "The road sweeper", -1.2, 0.99, 1.02),
+        Of(RaceTrackCharacterCars.Emperor, "The Emperor", 1.2, 1.02, 0.97),
+    };
 }

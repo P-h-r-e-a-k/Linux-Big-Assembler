@@ -175,7 +175,7 @@ public partial class MainWindow
         lba2CurrentTiles = tiles;
         lba2AreaIslandFile = islandFile;
         lba2JoinedImage = image;
-        SetMode(EditMode.Explore);
+        if (editMode == EditMode.Script) SetMode(EditMode.Explore);       // (a joined map's scripts are edited a scene at a time; Build edits its scenes in the view)
         interiorContent = new Rect(0, 0, image.Width, image.Height);
         nativeViewActive = false;
         interiorSceneActive = true;
@@ -191,7 +191,7 @@ public partial class MainWindow
         var island = islandFile is null ? "LBA2" : Lba2IslandLabel(islandFile);
         DocumentTitle.Text = $"{island} — {areaName}";
         DocumentSummary.Text = $"{scenes.Count} scenes / {scenes.Values.Sum(s => s.Actors.Count - 1)} actors / {scenes.Values.Sum(s => s.Zones.Count)} zones";
-        FileLabel.Text = $"●  LBA2  ·  joined scenes {string.Join(", ", tiles.Select(t => t.Scene).Distinct())}  ·  view only: double-click an actor to open its scene";
+        FileLabel.Text = $"●  LBA2  ·  joined scenes {string.Join(", ", tiles.Select(t => t.Scene).Distinct())}  ·  double-click an actor to open its scene on its own; Build edits the map's scenes here";
         BuildSceneMinimap(bitmap, interiorContent);
         ApplyInteriorView();
         RefreshZoneListIfVisible();
@@ -213,6 +213,15 @@ public partial class MainWindow
         if (((FrameworkElement)sender).Tag is not int key) return;
         e.Handled = true;
         selectedActorIndex = key;
+        selectedPoint = null;
+        // (Build: the scene panel shows the actor, and it can be dragged where the map shows it)
+        if (ScenePanelActive && e.ClickCount < 2)
+        {
+            SceneItemPickedInView(key / 1000, SceneItemKind.Actor, key % 1000);
+            RefreshActorOverlayForSelection();
+            BeginSceneDrag(SceneItemKind.Actor, key / 1000, key % 1000, e.GetPosition(ActorMarkerCanvas));
+            return;
+        }
         RefreshActorOverlayForSelection();
         if (e.ClickCount < 2) return;
         var scene = key / 1000;

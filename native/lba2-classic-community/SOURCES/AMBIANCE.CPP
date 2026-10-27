@@ -3,6 +3,7 @@
 #include "DIRECTORIES.H"
 #include "MUSIC.H"
 #include "SETTINGS.H"
+#include "RACEMOD.H"
 
 #include <AIL/STREAM.H>
 #include <SVGA/DIRTYBOX.H>
@@ -454,6 +455,8 @@ void InitPalette(void) {
         TheEndCheckFile(tmpFilePath);
 }
 
+S32 IslandPaletteOverride = -1;
+
 /*──────────────────────────────────────────────────────────────────────────*/
 void ChoicePalette(void) {
     char tmpFilePath[ADELINE_MAX_PATH];
@@ -463,7 +466,11 @@ void ChoicePalette(void) {
         IdxPalette = RESS_XPL00; // citabau
     } else {
         IdxPalette = RESS_XPL0 + Island;
+        // (an island of LBA Assembler's with a palette of its own, raced: the Temple of Bú's)
+        if (RaceMod_IslandPalette(Island) >= 0) IdxPalette = RaceMod_IslandPalette(Island);
     }
+    // (... and in the editor's view, whose island loads leave CubeMode as it was -- an island's own palette is only its colours there)
+    if (IslandPaletteOverride >= 0) IdxPalette = IslandPaletteOverride;
 
     if (IdxPalette != LastIdxPalette) {
         GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);

@@ -1,5 +1,10 @@
 #include "INITADEL.H"
 
+#ifdef __cplusplus
+extern "C"
+#endif
+const char *RaceGame_WindowTitle(void); /* RACEGAME.CPP: the race game's window title, or NULL */
+
 #include "C_EXTERN.H"
 #include "DIRECTORIES.H"
 #include "PERSO.H"      /* BootFatal — fatal exit for init failures */
@@ -282,7 +287,9 @@ void InitAdeline(S32 argc, char *argv[]) {
     /* Window/Render status lines are emitted after InitGraphics below, once the
        surface dimensions and mode are known. */
     {
-        if (!InitWindow(APPNAME)) {
+        /* the race game names its own window (RACEGAME.TXT window_title=: "Little Big Racing Adventure") */
+        const char *raceTitle = RaceGame_WindowTitle();
+        if (!InitWindow(raceTitle ? raceTitle : APPNAME)) {
             BootFatal("The game window could not be created.");
         }
     }

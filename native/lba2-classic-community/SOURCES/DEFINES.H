@@ -125,23 +125,27 @@
 // AvailableMem() byte fix, which lets these budgets reach their ceilings.
 #define MAX_ISLE_OBJ_MEM 16000000L
 
+// The island's per-cube caches, a whole island's (16 x 16 cubes) at the most -- 20 cubes' once, the retail engine drawing only the 3 x 3
+// round the camera; but LBA Assembler's editor draws every cube of an island each frame, and its own islands are bigger (the Emperor's
+// palace: 54 cubes, its decor lists 18 KB a cube, 200 KB of them held 10): each frame unpacked most of the island's cubes again (2026-10-13:
+// "it's very laggy to view in our editor window"). Some 35 MB in all.
 #define MIN_CUBE_INFOS_MEM 100L
-#define MAX_CUBE_INFOS_MEM 1000L
+#define MAX_CUBE_INFOS_MEM 65536L
 
 #define MIN_LIST_DECORS_MEM 20000L // a determiner dynamiquement par mounfrac
-#define MAX_LIST_DECORS_MEM 200000L
+#define MAX_LIST_DECORS_MEM 16000000L // (1,000 decors of 48 bytes a cube: MAX_OBJ_DECORS)
 
 #define MIN_MAP_PGROUND_MEM (64 * 64 * 2 * sizeof(T_HALF_POLY)) // 32768
-#define MAX_MAP_PGROUND_MEM 500000L
+#define MAX_MAP_PGROUND_MEM 9000000L
 
 #define MIN_LIST_TEXDEF_MEM 40000L // a determiner dynamiquement par mounfrac
-#define MAX_LIST_TEXDEF_MEM 200000L
+#define MAX_LIST_TEXDEF_MEM 4000000L
 
 #define MIN_MAP_SOMMETY_MEM (65 * 65 * 2) // 8450
-#define MAX_MAP_SOMMETY_MEM 300000L
+#define MAX_MAP_SOMMETY_MEM 2300000L
 
 #define MIN_MAP_INTENSITY_MEM (65 * 65 * 2)
-#define MAX_MAP_INTENSITY_MEM 200000L
+#define MAX_MAP_INTENSITY_MEM 1200000L
 
 /*──────────────────────────────────────────────────────────────────────────*/
 /*──────────────────────────────────────────────────────────────────────────*/
@@ -479,6 +483,9 @@ typedef struct
     U8 Num;
 
 } T_TABALLCUBE;
+// the scenes LBA_BKG.HQR's scene-to-grid table can name: 256 retail, more for LBA Assembler's maps (File > New map, an LBA2 interior: its
+// scene numbered from 400 on, 2026-10-15)
+#define MAX_GRID_SCENES 1024
 
 #ifndef EDITLBA2
 

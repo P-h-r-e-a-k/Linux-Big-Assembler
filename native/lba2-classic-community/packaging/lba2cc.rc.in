@@ -10,6 +10,14 @@
 // Application icon — Windows picks numeric ID 1 as the .exe's default icon.
 1 ICON "@CMAKE_SOURCE_DIR@/packaging/lba2cc.ico"
 
+// The manifest (RT_MANIFEST 24, ID 1), in place of the toolchain's default one (default-manifest.o: the same trust level and
+// supported systems; linked after this, so this is the one used), with the UTF-8 code page besides: SDL's main hands the program
+// its command line as UTF-8, and the CRT's narrow file calls (stat, fopen) and getenv read paths in the process's code page. With
+// the system's own (Cyrillic, Western), a game, user or race-file folder with any letter outside ASCII was "Invalid user
+// directory" and the game ended before its window opened (2026-10-12). Windows 10 1903 and later; older ones ignore it.
+// (No comments in lba2cc.manifest itself: an XML comment can't hold a double hyphen, and a bad manifest stops the program loading.)
+1 24 "@CMAKE_SOURCE_DIR@/packaging/lba2cc.manifest"
+
 1 VERSIONINFO
 FILEVERSION    @LBA2_VERSION_TUPLE@
 PRODUCTVERSION @LBA2_VERSION_TUPLE@

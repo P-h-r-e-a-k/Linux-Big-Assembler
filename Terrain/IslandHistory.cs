@@ -33,12 +33,20 @@ internal sealed class IslandHistory
         }
     }
 
-    private sealed record Entry(string Label, Dictionary<int, (CubeState Before, CubeState After)> Cubes);
+    // (the ground atlas too, when the edit changed it -- a tile put in from a picture or an LBA1 brick: before and after)
+    // (and the object pages, when the edit changed them -- an object made of bricks, its tiles put on one)
+    private sealed record Entry(string Label, Dictionary<int, (CubeState Before, CubeState After)> Cubes, (byte[] Before, byte[] After)? Atlas = null,
+        (List<byte[]> Before, List<byte[]> After)? Pages = null);
 
     private readonly IslandFile island;
     private readonly List<Entry> undo = new();
     private readonly List<Entry> redo = new();
     private Dictionary<int, CubeState>? pending;
+    private byte[]? pendingAtlas;
+    private List<byte[]>? pendingPages;
+    private static List<byte[]> Copy(List<byte[]> pages) => pages.Select(p => (byte[])p.Clone()).ToList();
+    private static bool Same(List<byte[]> a, List<byte[]> b) => a.Count == b.Count && a.Zip(b).All(p => p.First.AsSpan().SequenceEqual(p.Second));
+    private void SetPages(List<byte[]> pages) { island.ObjectPages.Clear(); island.ObjectPages.AddRange(Copy(pages)); }
 
     public IslandHistory(IslandFile island) => this.island = island;
 
@@ -53,7 +61,12 @@ internal sealed class IslandHistory
     public bool Dirty { get; private set; }
     public void MarkSaved() => Dirty = false;
 
-    public void Begin() => pending = island.Cubes.ToDictionary(kv => kv.Key, kv => CubeState.Of(kv.Value));
+    public void Begin()
+    {
+        pending = island.Cubes.ToDictionary(kv => kv.Key, kv => CubeState.Of(kv.Value));
+        pendingAtlas = (byte[])island.GroundTexture.Clone();
+        pendingPages = Copy(island.ObjectPages);
+    }
 
     // Returns false (and records nothing) when the edit changed nothing.
     public bool Commit(string label)
@@ -66,20 +79,38 @@ internal sealed class IslandHistory
             if (!before.SameAs(now)) changed[id] = (before, now);
         }
         pending = null;
-        if (changed.Count == 0) return false;
-        undo.Add(new Entry(label, changed));
+        (byte[], byte[])? atlas = pendingAtlas is { } was && !was.AsSpan().SequenceEqual(island.GroundTexture) ? (was, (byte[])island.GroundTexture.Clone()) : null;
+        pendingAtlas = null;
+        (List<byte[]>, List<byte[]>)? pages = pendingPages is { } were && !Same(were, island.ObjectPages) ? (were, Copy(island.ObjectPages)) : null;
+        pendingPages = null;
+        if (changed.Count == 0 && atlas is null && pages is null) return false;
+        undo.Add(new Entry(label, changed, atlas, pages));
         redo.Clear();
         Dirty = true;
         return true;
     }
 
-    public void Cancel() => pending = null;
+    public void Cancel() { pending = null; pendingAtlas = null; pendingPages = null; }
+
+    // Puts the island back as it was at Begin, leaving the edit open (a preview tried and taken back: the heightmap import shows its result live
+    // and puts it back on each change and on Cancel); then Commit or Cancel as usual.
+    public bool Pending => pending is not null;
+    public void RestorePending()
+    {
+        if (pending is null) return;
+        foreach (var (id, before) in pending)
+            if (island.Cubes.TryGetValue(id, out var cube)) before.ApplyTo(cube);
+        pendingAtlas?.CopyTo(island.GroundTexture, 0);
+        if (pendingPages is { } pages) SetPages(pages);
+    }
 
     public bool Undo()
     {
         if (undo.Count == 0) return false;
         var entry = undo[^1]; undo.RemoveAt(undo.Count - 1);
         foreach (var (id, (before, _)) in entry.Cubes) before.ApplyTo(island.Cubes[id]);
+        entry.Atlas?.Before.CopyTo(island.GroundTexture, 0);
+        if (entry.Pages is { } pages) SetPages(pages.Before);
         redo.Add(entry);
         Dirty = true;
         Changed?.Invoke();
@@ -91,6 +122,8 @@ internal sealed class IslandHistory
         if (redo.Count == 0) return false;
         var entry = redo[^1]; redo.RemoveAt(redo.Count - 1);
         foreach (var (id, (_, after)) in entry.Cubes) after.ApplyTo(island.Cubes[id]);
+        entry.Atlas?.After.CopyTo(island.GroundTexture, 0);
+        if (entry.Pages is { } pages) SetPages(pages.After);
         undo.Add(entry);
         Dirty = true;
         Changed?.Invoke();

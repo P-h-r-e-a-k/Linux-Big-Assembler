@@ -126,8 +126,20 @@ internal sealed class IslandEditorView
     private readonly Image mapImage = new();
     private readonly Canvas overlay = new();
     private readonly Grid viewport = new() { Background = Brushes.Transparent, ClipToBounds = true };
-    private readonly Ellipse brushCircle = new() { Stroke = Brushes.White, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-    private readonly Slider radius = new() { Minimum = 1, Maximum = 60, Value = 8, Width = 200 };
+    private readonly Rectangle brushCircle = new() { Stroke = Brushes.White, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+    private readonly Slider radius = new() { Minimum = 0, Maximum = 60, Value = 8, Width = 200 };
+    // A square brush, its sides along the cells and its middle on the vertex nearest the pointer: every vertex in it at full strength,
+    // `radius` vertices out each way (0: the one vertex) -- for ground in steps and terraces with straight edges, as LBA1's grids are built
+    // (2026-10-23, recreating LBA1's Hamalayi by hand: a round brush's soft edge leaves no straight terrace edge or cliff).
+    private readonly CheckBox squareBox = new() { Content = "Square brush (whole cells, full strength)" };
+    private readonly CheckBox slopeTileBox = new() { Content = "Stand the tile up the slope (cliffs)" };
+    private readonly TextBox tileXBox = new() { Text = "0" };
+    private readonly TextBox tileYBox = new() { Text = "0" };
+    private readonly TextBox tileSizeBox = new() { Text = "32" };
+    private readonly TextBox vertexXBox = new() { Text = "0" };
+    private readonly TextBox vertexZBox = new() { Text = "0" };
+    // where the tool was last used (a vertex): a typed stroke starts there
+    private (double Gx, double Gz)? lastUsed;
     private readonly Slider hardness = new() { Minimum = 0, Maximum = 0.95, Value = 0.4, Width = 200 };
     private readonly Slider strength = new() { Minimum = 1, Maximum = 100, Value = 40, Width = 200 };
     private readonly TextBox levelBox = new() { Text = "1000" };
@@ -137,6 +149,10 @@ internal sealed class IslandEditorView
     private readonly TextBox bodyBox = new() { Text = "0" };
     private readonly ComboBox codeBox = new();
     private readonly ComboBox usedBodiesBox = new();
+    // the Object maker's window, and the boxes of the bodies it made that no object uses yet (Add object copies an object of the same body
+    // for its box; a new body has none)
+    private ObjectMakerWindow? maker;
+    private readonly Dictionary<int, IslandDecor> madeTemplates = new();
     private string usedBodiesKey = "";
     private readonly CheckBox horizontalBox = new() { Content = "Horizontal (flatten the slope too)" };
     private readonly CheckBox followBox = new() { Content = "Objects follow the ground", IsChecked = true };
@@ -152,6 +168,7 @@ internal sealed class IslandEditorView
     private readonly CheckBox terrainShadowBox = new() { Content = "Terrain casts shadows", IsChecked = true };
     private readonly CheckBox decorShadowBox = new() { Content = "Objects cast shadows" };
     private readonly TextBlock info = new() { TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
+    private readonly TextBlock heightmapSize = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11 };
     private readonly Canvas profile = new() { Height = 96, ClipToBounds = true };
     private readonly Image atlasImage = new() { Width = 256, Height = 256, Stretch = Stretch.Fill };
     private readonly Canvas atlasCanvas = new() { Width = 256, Height = 256 };
@@ -170,6 +187,7 @@ internal sealed class IslandEditorView
     public event Action? StateChanged;
     public event Action? Edited;                 // the island changed (a stroke tick, a commit, an undo): the host can refresh its own view
     public event Action<bool>? MapRequested;     // the top-down map was ticked / unticked in the panel
+    public event Action? BodiesAdded;            // a body was added to the island's OBL (the Object maker): the host's 3D view reads it again
 
     public UIElement MapArea { get; private set; } = null!;
     public UIElement Panel { get; private set; } = null!;
@@ -283,8 +301,31 @@ internal sealed class IslandEditorView
         }
         stack.Children.Add(Section("Tools", tools, open: true, out _));
 
+        // a heightmap picture in and out (the tester SIN, 2026-10-17: "have it tell you what pixel x pixel it needs")
+        var heightmap = new StackPanel();
+        heightmapSize.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+        heightmap.Children.Add(heightmapSize);
+        var heightmapButtons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+        foreach (var (text, tip, handler) in new (string, string, Action)[]
+        {
+            ("Import heightmap…", "Shapes the island's ground from a greyscale picture (PNG, 8 or 16 bits; raw 16-bit; numbers in a CSV): black the lowest ground, white the highest. Shows the result live; one undo step", () => ImportHeightmap()),
+            ("Export heightmap…", "Writes the island's heights as a picture of exactly the size Import wants (16-bit PNG keeps every height), to edit in a paint program and import again", ExportHeightmap),
+        })
+        {
+            var b = new Button { Content = text, ToolTip = tip, Style = ButtonStyle, Margin = new Thickness(0, 0, 6, 6) };
+            b.Click += (_, _) => handler();
+            heightmapButtons.Children.Add(b);
+        }
+        heightmap.Children.Add(heightmapButtons);
+        var heightmapSection = Section("Heightmap", heightmap, open: true, out _);
+        terrainOnlyParts.Add(heightmapSection);
+        stack.Children.Add(heightmapSection);
+
         var brush = new StackPanel();
         brush.Children.Add(SliderRow("Radius", radius, "vertices (cells); [ and ] change it"));
+        squareBox.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+        squareBox.ToolTip = "The brush a square along the cells, its middle on the vertex nearest the pointer, every vertex in it at full strength (Hardness doesn't apply): Radius 0 is one vertex, 1 a 3 x 3, 2 a 5 x 5. For straight terrace edges and cliffs.";
+        brush.Children.Add(squareBox);
         brush.Children.Add(SliderRow("Hardness", hardness, "how much of the radius is full strength"));
         brush.Children.Add(SliderRow("Strength", strength, "rate while held"));
         var brushSection = Section("Brush", brush, open: true, out _);
@@ -305,11 +346,47 @@ internal sealed class IslandEditorView
         steepUnwalkableBox.ToolTip = "While raising, lowering, smoothing or otherwise reshaping the ground, marks any ground triangle steeper than this as blocked (Twinsen can't step onto it) -- and un-marks one that flattens back below it.";
         settings.Children.Add(steepUnwalkableBox);
         settings.Children.Add(FieldRow("Unwalkable angle °", steepAngleBox, "from horizontal; a cliff face is close to 90°"));
+        // (the same, all over the island at once: ground shaped before the box was ticked, or by another tool)
+        var steepAll = new Button { Content = "Block steep ground on the whole island", Style = ButtonStyle, Margin = new Thickness(0, 4, 6, 6), HorizontalAlignment = HorizontalAlignment.Left,
+            ToolTip = "Marks every ground triangle steeper than the angle as blocked, and every one flatter as walkable, all over the island (one undo step)" };
+        System.Windows.Automation.AutomationProperties.SetHelpText(steepAll, (string)steepAll.ToolTip);
+        steepAll.Click += (_, _) =>
+        {
+            if (island is null || history is null) return;
+            history.Begin();
+            var n = IslandGround.SetSteepCollision(island, new WholeIslandRegion(), Number(steepAngleBox, 45));
+            history.Commit("block steep ground");
+            RedrawAll(); UpdateButtons();
+            SetStatus($"Steep ground on the whole island: {n} triangles changed (blocked where steeper than {Number(steepAngleBox, 45):0}°, walkable where flatter).");
+        };
+        settings.Children.Add(steepAll);
         var settingsSection = Section("Tool settings", settings, open: true, out _);
         terrainOnlyParts.Add(settingsSection);
         stack.Children.Add(settingsSection);
 
         stack.Children.Add(Section("Under the pointer", info, open: true, out _));
+
+        // the tool at a vertex typed in: one dab, or a straight stroke from the last place to it -- exact without a steady hand, and from the
+        // keyboard (the arrow keys move the brush a vertex, Shift eight; Space dabs: HandleKey)
+        var at = new StackPanel();
+        at.Children.Add(FieldRow("Vertex X", vertexXBox, "the island's vertex number across (as 'Under the pointer' shows it)"));
+        at.Children.Add(FieldRow("Vertex Z", vertexZBox, "the island's vertex number down"));
+        var atButtons = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        foreach (var (text, tip, handler) in new (string, string, Action)[]
+                 {
+                     ("Apply the tool here", "One dab of the chosen tool at that vertex (as one click of the mouse there)", () => ApplyAtTyped(stroke: false)),
+                     ("Stroke to here", "A straight stroke of the chosen tool from where it was last used to that vertex (as a drag of the mouse)", () => ApplyAtTyped(stroke: true)),
+                 })
+        {
+            var b = new Button { Content = text, ToolTip = tip, Style = ButtonStyle, Margin = new Thickness(0, 0, 6, 6) };
+            System.Windows.Automation.AutomationProperties.SetHelpText(b, tip);
+            b.Click += (_, _) => handler();
+            atButtons.Children.Add(b);
+        }
+        at.Children.Add(atButtons);
+        // (in Buildings and decor too: Add object or Select at a vertex typed in)
+        var atSection = Section("Brush at a vertex", at, open: true, out _);
+        stack.Children.Add(atSection);
 
         var place = new StackPanel();
         place.Children.Add(FieldRow("Object body", bodyBox, "Body number in the island's OBL file, for Add object (selecting an object fills it in)"));
@@ -317,6 +394,11 @@ internal sealed class IslandEditorView
         usedBodiesBox.SelectionChanged += (_, _) => { if (usedBodiesBox.SelectedItem is ComboBoxItem { Tag: int body }) bodyBox.Text = body.ToString(); };
         place.Children.Add(FieldRow("Used here", usedBodiesBox, "The bodies this island already uses, with how many objects each has: pick one to place more of it"));
         place.Children.Add(followBox);
+        var makeButton = new Button { Content = "Make an object…", Style = ButtonStyle, Margin = new Thickness(0, 6, 6, 6), HorizontalAlignment = HorizontalAlignment.Left,
+            ToolTip = "The Object maker: build a new object of LBA1's bricks, cell by cell, and add it to the island's bodies for Add object to place" };
+        System.Windows.Automation.AutomationProperties.SetHelpText(makeButton, (string)makeButton.ToolTip);
+        makeButton.Click += (_, _) => OpenMaker();
+        place.Children.Add(makeButton);
         stack.Children.Add(Section("Place objects", place, open: true, out _));
 
         BuildDecorPanel();
@@ -355,6 +437,28 @@ internal sealed class IslandEditorView
         var atlasBorder = new Border { BorderThickness = new Thickness(1), Child = atlasCanvas, HorizontalAlignment = HorizontalAlignment.Left };
         atlasBorder.SetResourceReference(Border.BorderBrushProperty, "ThemeTextMutedBrush");
         atlas.Children.Add(atlasBorder);
+        // (the tile typed in too -- its corner and size in pixels -- and a picture or an LBA1 brick's face put into it: new ground for the
+        // island, 2026-10-23, recreating LBA1's Hamalayi by hand needed its snow and ice cliffs on the ground)
+        slopeTileBox.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+        slopeTileBox.ToolTip = "Paint atlas tile stands the tile up each cell's slope -- its top along the cell's high edge -- so a cliff's picture hangs down the cliff whichever way it faces (level cells get it as usual)";
+        atlas.Children.Add(slopeTileBox);
+        atlas.Children.Add(FieldRow("Tile X", tileXBox, "the tile's left edge in the atlas (pixels, 0-255)"));
+        atlas.Children.Add(FieldRow("Tile Y", tileYBox, "the tile's top edge in the atlas (pixels, 0-255)"));
+        atlas.Children.Add(FieldRow("Tile size", tileSizeBox, "the tile's width and height (pixels: 32 is a retail island's tile)"));
+        var atlasButtons = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        foreach (var (text, tip, handler) in new (string, string, Action)[]
+                 {
+                     ("Choose this tile", "The tile typed in above, for Paint atlas tile (as dragging a square on the atlas)", ChooseTypedTile),
+                     ("Put an LBA1 brick here…", "One of LBA1's bricks -- its top, a side, or a side over another brick's -- into the chosen tile, in the island's colours", PutLba1Brick),
+                     ("Put a picture here…", "A picture (PNG, BMP, JPG) into the chosen tile, scaled to it, in the island's colours", PutPicture),
+                 })
+        {
+            var b = new Button { Content = text, ToolTip = tip, Style = ButtonStyle, Margin = new Thickness(0, 0, 6, 6) };
+            System.Windows.Automation.AutomationProperties.SetHelpText(b, tip);
+            b.Click += (_, _) => handler();
+            atlasButtons.Children.Add(b);
+        }
+        atlas.Children.Add(atlasButtons);
         var atlasSection = Section("Ground atlas", atlas, open: false, out openAtlas);
         terrainOnlyParts.Add(atlasSection);
         stack.Children.Add(atlasSection);
@@ -388,15 +492,32 @@ internal sealed class IslandEditorView
     private static UIElement Section(string title, UIElement content, bool open, out Action<bool> setOpen)
     {
         var body = new Border { Child = content, Visibility = open ? Visibility.Visible : Visibility.Collapsed, Padding = new Thickness(0, 2, 0, 4) };
-        var header = new TextBlock { Text = (open ? "▾  " : "▸  ") + title, FontFamily = new FontFamily("Consolas"), FontSize = 10.5, Cursor = Cursors.Hand, Margin = new Thickness(0, 12, 0, 2) };
+        var header = new TextBlock { Text = (open ? "▾  " : "▸  ") + title, FontFamily = new FontFamily("Consolas"), FontSize = 10.5 };
         header.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
-        void Set(bool show) { body.Visibility = show ? Visibility.Visible : Visibility.Collapsed; header.Text = (show ? "▾  " : "▸  ") + title; }
-        header.MouseLeftButtonDown += (_, _) => Set(body.Visibility != Visibility.Visible);
+        // (a button drawn as the heading alone -- reached by Tab, opened with Space or Enter, and by screen readers and UI Automation as
+        // "<title>", which a heading the mouse alone could click wasn't, 2026-10-23)
+        var toggle = new Button { Content = header, Cursor = Cursors.Hand, Margin = new Thickness(0, 12, 0, 2), HorizontalAlignment = HorizontalAlignment.Left,
+            Template = HeadingTemplate, Focusable = true };
+        System.Windows.Automation.AutomationProperties.SetName(toggle, title);
+        void Set(bool show)
+        {
+            body.Visibility = show ? Visibility.Visible : Visibility.Collapsed; header.Text = (show ? "▾  " : "▸  ") + title;
+            System.Windows.Automation.AutomationProperties.SetHelpText(toggle, show ? "open: click to close" : "closed: click to open");
+        }
+        Set(open);
+        toggle.Click += (_, _) => Set(body.Visibility != Visibility.Visible);
         setOpen = Set;
         var panel = new StackPanel();
-        panel.Children.Add(header); panel.Children.Add(body);
+        panel.Children.Add(toggle); panel.Children.Add(body);
         return panel;
     }
+
+    // a button that is only its content (a section's heading), a dotted outline when it has the keyboard's focus
+    private static readonly ControlTemplate HeadingTemplate = (ControlTemplate)System.Windows.Markup.XamlReader.Parse(
+        "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'>" +
+        "<Border x:Name='b' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='Transparent' BorderThickness='1' BorderBrush='Transparent'><ContentPresenter/></Border>" +
+        "<ControlTemplate.Triggers><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='b' Property='BorderBrush' Value='Gray'/></Trigger></ControlTemplate.Triggers>" +
+        "</ControlTemplate>");
 
     private static TextBlock Label(string text)
     {
@@ -420,6 +541,9 @@ internal sealed class IslandEditorView
         var text = Label(label); text.ToolTip = tip;
         grid.Children.Add(text);
         box.ToolTip = tip; box.Padding = new Thickness(3);
+        // (named for screen readers and UI Automation by its label)
+        System.Windows.Automation.AutomationProperties.SetName(box, label);
+        System.Windows.Automation.AutomationProperties.SetHelpText(box, tip);
         if (box is TextBox)
         {
             box.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
@@ -439,8 +563,19 @@ internal sealed class IslandEditorView
         var text = Label(label); text.ToolTip = tip;
         grid.Children.Add(text);
         slider.Width = double.NaN; slider.ToolTip = tip;
+        System.Windows.Automation.AutomationProperties.SetName(slider, label);
+        System.Windows.Automation.AutomationProperties.SetHelpText(slider, tip);
         Grid.SetColumn(slider, 1);
         grid.Children.Add(slider);
+        // (its value beside it: a brush set to an exact size needs to show it)
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
+        var value = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), FontSize = 11 };
+        value.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+        void Show() => value.Text = slider.Maximum <= 1 ? slider.Value.ToString("0.00") : slider.Value.ToString("0.#");
+        slider.ValueChanged += (_, _) => Show();
+        Show();
+        Grid.SetColumn(value, 2);
+        grid.Children.Add(value);
         return grid;
     }
 
@@ -478,7 +613,7 @@ internal sealed class IslandEditorView
             var path = System.IO.Path.Combine(gameDirectory, name);
             island = IslandFile.Load(path);
             history = new IslandHistory(island);
-            history.Changed += () => { RedrawAll(); UpdateButtons(); };
+            history.Changed += () => { atlasImage.Source = AtlasBitmap(); RedrawAll(); UpdateButtons(); };
             palette = IslandMapRenderer.LoadPalette(gameDirectory, System.IO.Path.GetFileNameWithoutExtension(name));
             var (mapCells, _) = (Math.Max(island.PresentBounds().MaxX - island.PresentBounds().MinX + 1, island.PresentBounds().MaxZ - island.PresentBounds().MinZ + 1) * 64, 0);
             renderer = new IslandMapRenderer(island, palette, Math.Clamp(1800 / mapCells, 2, 8));
@@ -492,6 +627,9 @@ internal sealed class IslandEditorView
             RedrawAll(); FitView(); UpdateButtons();
             var (lo, hi) = IslandOps.HeightRange(island);
             SetStatus($"{name}: {island.Cubes.Count} cubes, height {lo}..{hi}, {island.Cubes.Values.Sum(c => c.Decors.Count)} objects. Left button edits, right/middle drag pans, wheel zooms.");
+            var layout = HeightmapLayout.Of(island);
+            heightmapSize.Text = $"{System.IO.Path.GetFileNameWithoutExtension(name)} is {layout.CubesX} × {layout.CubesZ} cubes, so its heightmap is {layout.Width} × {layout.Height} pixels "
+                + $"(64 cells a cube plus one: neighbouring cubes share their edge). It lies as the top-down map shows the island: top-left = lowest X and Z.";
             currentName = name;
             StateChanged?.Invoke();
             return true;
@@ -818,7 +956,15 @@ internal sealed class IslandEditorView
         Whole("remove shadows", () => IslandBake.LiftShadows(island, new WholeIslandRegion(), options));
     }
 
-    private BrushRegion Brush() => new(pointer.Gx, pointer.Gz, radius.Value, hardness.Value);
+    private IslandRegion Brush()
+    {
+        if (squareBox.IsChecked != true) return new BrushRegion(pointer.Gx, pointer.Gz, radius.Value, hardness.Value);
+        var (cx, cz, r) = SquareBrush();
+        return new RectRegion(cx - r, cz - r, cx + r, cz + r);
+    }
+
+    // the square brush's middle vertex and reach (vertices)
+    private (int Cx, int Cz, int R) SquareBrush() => ((int)Math.Round(pointer.Gx), (int)Math.Round(pointer.Gz), (int)Math.Round(radius.Value));
 
     // ---- the pointer: from the top-down map here, or from the host's 3D view through PointerDown / Move / Up ----------------------------------
 
@@ -827,7 +973,7 @@ internal sealed class IslandEditorView
     private void Capture() { if (mapActive) viewport.CaptureMouse(); }
     private void ReleaseCapture() { if (mapActive) viewport.ReleaseMouseCapture(); }
 
-    public bool Busy => stroking || draggingDecor || rotatingDecor;
+    public bool Busy => stroking || draggingDecor || rotatingDecor || previewing;
     public bool NavigateTool => tool == Tool.Navigate;
     // tools that paint with the round brush (the host draws the brush ring for them)
     public bool BrushTool => tool is not (Tool.Navigate or Tool.Eyedropper or Tool.Ramp or Tool.SelectDecor or Tool.RotateDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow);
@@ -949,6 +1095,7 @@ internal sealed class IslandEditorView
         if (rotatingDecor) { FinishRotate(); return; }
         if (!stroking) return;
         stroking = false;
+        lastUsed = (pointer.Gx, pointer.Gz);
         strokeTimer.Stop();
         ReleaseCapture();
         var label = ToolGroups.SelectMany(g => g.Items).First(i => i.Tool == tool).Name.ToLowerInvariant();
@@ -971,10 +1118,8 @@ internal sealed class IslandEditorView
         }
         if (!mapActive || renderer is null || island is null) return;
         pointer = ToCell(screen);
-        var r = radius.Value * renderer.Scale;
-        brushCircle.Visibility = !BrushTool ? Visibility.Collapsed : Visibility.Visible;
-        brushCircle.Width = brushCircle.Height = r * 2;
-        Canvas.SetLeft(brushCircle, CellToPixelX(pointer.Gx) - r); Canvas.SetTop(brushCircle, CellToPixelZ(pointer.Gz) - r);
+        // (the square brush's outline: round its vertices, half a cell out -- the cells whose corners it moves)
+        PlaceBrushOutline();
         if (draggingDecor && selected is { } s) MoveDecorTo(s);
         else if (rotatingDecor && selected is { } turning) RotateTo(turning);
         UpdateInfo();
@@ -1011,7 +1156,7 @@ internal sealed class IslandEditorView
                 n = IslandGround.Paint(island, region, picked, PolygonFields.Texture | (diagonalBox.IsChecked == true ? PolygonFields.Diagonal : PolygonFields.None)); break;
             case Tool.PaintTile:
                 if (tile is not { } t) { SetStatus("Drag a square on the ground atlas (right panel) to choose the tile."); return; }
-                n = IslandGround.PaintTile(island, region, t.X, t.Y, t.W, t.H); break;
+                n = slopeTileBox.IsChecked == true ? IslandGround.PaintTileOnSlope(island, region, t.X, t.Y, t.W, t.H) : IslandGround.PaintTile(island, region, t.X, t.Y, t.W, t.H); break;
             case Tool.PaintCode: n = IslandGround.PaintGameCode(island, region, codeBox.SelectedIndex); break;
             case Tool.FixDiagonals: n = IslandGround.OptimiseDiagonals(island, region); break;
         }
@@ -1104,22 +1249,22 @@ internal sealed class IslandEditorView
     private (IslandCube Cube, IslandDecor Decor)? DecorAt(double gx, double gz)
     {
         if (island is null) return null;
+        // (every object there, the likeliest first: the nearest on screen, or the smallest whose box the point is in)
+        var under = new List<((IslandCube Cube, IslandDecor Decor) Pick, double Score)>();
         if (ScreenPick is { } onScreen)
         {
-            (IslandCube, IslandDecor)? nearest = null; var nearestDepth = double.MaxValue;
             foreach (var (cx, cz, cube) in IslandOps.CubeCells(island))
             {
                 double ox = cx * IslandFile.CubeSize, oz = cz * IslandFile.CubeSize;
                 foreach (var d in cube.Decors)
                 {
                     double x0 = ox + d.XMin, x1 = ox + d.XMax, z0 = oz + d.ZMin, z1 = oz + d.ZMax, y0 = d.YMin, y1 = d.YMax;
-                    if (onScreen(new[] { (x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), (x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1) }) is { } depth && depth < nearestDepth)
-                    { nearestDepth = depth; nearest = (cube, d); }
+                    if (onScreen(new[] { (x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), (x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1) }) is { } depth)
+                        under.Add(((cube, d), depth));
                 }
             }
-            if (nearest is not null) return nearest;
+            if (under.Count > 0) return NextUnder(gx, gz, under);
         }
-        (IslandCube, IslandDecor)? best = null; var bestScore = double.MaxValue;
         const double cell = IslandFile.CellSize;
         foreach (var (cx, cz, cube) in IslandOps.CubeCells(island))
         {
@@ -1132,11 +1277,27 @@ internal sealed class IslandEditorView
                 double ex = Math.Max(Math.Max(x0 - gx, gx - x1), 0), ez = Math.Max(Math.Max(z0 - gz, gz - z1), 0);
                 var edge = Math.Sqrt(ex * ex + ez * ez);
                 if (edge > pointerTolerance && origin > pointerTolerance) continue;
-                var score = edge == 0 ? Math.Max(0, x1 - x0) * Math.Max(0, z1 - z0) : 1e6 + Math.Min(edge, origin);
-                if (score < bestScore) { bestScore = score; best = (cube, d); }
+                under.Add(((cube, d), edge == 0 ? Math.Max(0, x1 - x0) * Math.Max(0, z1 - z0) : 1e6 + Math.Min(edge, origin)));
             }
         }
-        return best;
+        return under.Count > 0 ? NextUnder(gx, gz, under) : null;
+    }
+
+    // Objects standing one in another (two at one spot, a tree by a hut) would always give the likeliest of them: picking again at the very
+    // same point (the same vertex typed in, a click where the mouse hasn't moved) while one of them is selected gives the next, so each can be
+    // reached. A click anywhere else gives the likeliest again, so pressing on a selected object to drag it still drags that one.
+    private (double Gx, double Gz)? lastPickAt;
+
+    private (IslandCube Cube, IslandDecor Decor) NextUnder(double gx, double gz, List<((IslandCube Cube, IslandDecor Decor) Pick, double Score)> under)
+    {
+        var order = under.OrderBy(u => u.Score).Select(u => u.Pick).ToList();
+        var samePoint = lastPickAt is { } last && last.Gx == gx && last.Gz == gz;
+        lastPickAt = (gx, gz);
+        if (order.Count < 2) return order[0];
+        var at = samePoint && selected is { } s ? order.FindIndex(e => ReferenceEquals(e.Decor, s.Decor)) : -1;
+        var next = order[(at + 1) % order.Count];
+        SetStatus($"{order.Count} objects here: object {order.IndexOf(next) + 1} of them selected -- select at this very point again for the next.");
+        return next;
     }
 
     private (double X, double Z) grab;          // the picked object's origin minus the pointer (cells): it moves with the pointer, it doesn't jump to it
@@ -1263,13 +1424,64 @@ internal sealed class IslandEditorView
         if (island is null || history is null) return;
         var body = (int)Number(bodyBox, 0);
         history.Begin();
-        var like = selected is { } s && (s.Decor.Body & 0xFFFF) == body ? s.Decor : island.Cubes.Values.SelectMany(c => c.Decors).FirstOrDefault(d => (d.Body & 0xFFFF) == body);
+        var like = selected is { } s && (s.Decor.Body & 0xFFFF) == body ? s.Decor : island.Cubes.Values.SelectMany(c => c.Decors).FirstOrDefault(d => (d.Body & 0xFFFF) == body)
+            ?? madeTemplates.GetValueOrDefault(body);
         var added = IslandDecors.Add(island, body, pointer.Gx * 512, pointer.Gz * 512, null, like);
         if (added is null) { history.Cancel(); SetStatus("Can't add an object there (off the island, or the cube already holds 200)."); return; }
         history.Commit("add object");
         selected = added; decorPanel.IsEnabled = true;
         LoadDecorFields(); RebuildOverlay(); UpdateButtons();
         SetStatus(like is null ? "Object added with a default 1x1 cell bounding box; adjust it in the game or copy an existing object of the same body." : "Object added (its bounding box copied from another object of the same body).");
+    }
+
+    // ---- the Object maker ----------------------------------------------------------------------------------------------------------------
+
+    private void OpenMaker()
+    {
+        if (island is null) { SetStatus("Open an island first."); return; }
+        var directory = EditorSettings.Current.Lba1Directory;
+        if (!Lba1.Lba1Game.IsInstalled(directory)) { MessageBox.Show(Owner, "Choose the LBA1 game folder under File > Settings first: the Object maker builds with LBA1's bricks.", Caption, MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        if (maker is { IsLoaded: true }) { maker.Activate(); return; }
+        maker = new ObjectMakerWindow(new Lba1.Lba1Game(directory), AddMadeObject) { Owner = Owner };
+        maker.Closed += (_, _) => maker = null;
+        maker.Show();
+    }
+
+    // The maker's object made a body: its tiles on an object page of the island (an undoable edit, saved with the island), the body added
+    // to the island's OBL beside it straight away (a body nothing places is harmless: an undo leaves it there unused), and Object body set
+    // to it for Add object. Returns what to tell the user.
+    private string AddMadeObject(IReadOnlyDictionary<(int X, int Layer, int Z), int> cells)
+    {
+        if (island is null || history is null) return "Open an island first.";
+        var oblPath = System.IO.Path.ChangeExtension(island.Path, ".OBL");
+        if (!File.Exists(oblPath)) return $"The island has no {System.IO.Path.GetFileName(oblPath)} beside it to add the body to.";
+        history.Begin();
+        BrickObject.Made made;
+        try { made = BrickObject.Make(cells, new Lba1.Lba1Game(EditorSettings.Current.Lba1Directory).ReadBrick, new Lba1.Lba1Game(EditorSettings.Current.Lba1Directory).Palette, palette, island); }
+        catch (InvalidOperationException e) { history.RestorePending(); history.Cancel(); return e.Message; }
+        int body;
+        try
+        {
+            var obl = File.ReadAllBytes(oblPath);
+            body = HqrArchive.CountEntries(oblPath);
+            new FileTransaction().Write(oblPath, HqrWriter.AppendEntry(obl, HqrWriter.StoredEntry(made.Body))).Commit();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            history.RestorePending(); history.Cancel();
+            return $"Couldn't add the body to {System.IO.Path.GetFileName(oblPath)}: {e.Message}";
+        }
+        history.Commit("make object");
+        var template = IslandDecors.Blank(body | (made.Page << IslandFile.DecorPageShift), 0, 0, 0);
+        template.XMin = made.XMin; template.XMax = made.XMax; template.YMin = 0; template.YMax = made.YMax; template.ZMin = made.ZMin; template.ZMax = made.ZMax;
+        madeTemplates[body] = template;
+        bodyBox.Text = body.ToString();
+        if (toolButtons.TryGetValue(Tool.AddDecor, out var addTool)) addTool.IsChecked = true;
+        UpdateButtons();
+        BodiesAdded?.Invoke();
+        var text = $"Body {body} added to {System.IO.Path.GetFileName(oblPath)} ({made.Faces} faces, {made.NewTiles} brick faces on object page {made.Page}). Add object now places it: click the ground, or type a vertex under Brush at a vertex and Apply the tool here.";
+        SetStatus(text);
+        return text;
     }
 
     private void LoadDecorFields()
@@ -1346,13 +1558,20 @@ internal sealed class IslandEditorView
         if (atlasCanvas.IsMouseCaptured) UpdateAtlasSelection(e.GetPosition(atlasCanvas));
     }
 
-    private void UpdateAtlasSelection(Point now)
+    // The tile typed in (Tile X / Y / size), chosen as a drag would choose it.
+    private void ChooseTypedTile()
     {
-        // a square from the press point towards the pointer
-        var size = (int)Math.Clamp(Math.Max(Math.Abs(now.X - atlasStart.X), Math.Abs(now.Y - atlasStart.Y)), 4, 128);
-        var x = (int)Math.Clamp(now.X < atlasStart.X ? atlasStart.X - size : atlasStart.X, 0, 256 - size);
-        var y = (int)Math.Clamp(now.Y < atlasStart.Y ? atlasStart.Y - size : atlasStart.Y, 0, 256 - size);
+        if (island is null) return;
+        if (!int.TryParse(tileXBox.Text.Trim(), out var x) || !int.TryParse(tileYBox.Text.Trim(), out var y) || !int.TryParse(tileSizeBox.Text.Trim(), out var size)
+            || size < 4 || size > 128 || x < 0 || y < 0 || x + size > 256 || y + size > 256)
+        { SetStatus("Type the tile's corner (0-255) and size (4-128) so it lies inside the 256 x 256 atlas."); return; }
+        ShowTile(x, y, size);
+    }
+
+    private void ShowTile(int x, int y, int size)
+    {
         tile = (x, y, size, size);
+        tileXBox.Text = x.ToString(); tileYBox.Text = y.ToString(); tileSizeBox.Text = size.ToString();
         Canvas.SetLeft(atlasSelection, x); Canvas.SetTop(atlasSelection, y);
         atlasSelection.Width = size; atlasSelection.Height = size;
         atlasSelection.Stroke = Brushes.Yellow; atlasSelection.Visibility = Visibility.Visible;
@@ -1360,13 +1579,266 @@ internal sealed class IslandEditorView
         toolButtons[Tool.PaintTile].IsChecked = true;
     }
 
+    // A tile's pixels (the island palette's indices) written into the atlas where the chosen tile is, as one undo step.
+    private void PutTile(byte[] pixels, string what)
+    {
+        if (island is null || history is null || tile is not { } t) return;
+        history.Begin();
+        for (var y = 0; y < t.H; y++)
+            for (var x = 0; x < t.W; x++)
+                island.GroundTexture[(t.Y + y) * 256 + t.X + x] = pixels[y * t.W + x];
+        history.Commit($"put {what} in the atlas");
+        atlasImage.Source = AtlasBitmap();
+        RedrawAll(); UpdateButtons();
+        Edited?.Invoke();
+        SetStatus($"{what} put in the atlas at ({t.X}, {t.Y}), {t.W}x{t.H}: paint it with Paint atlas tile.");
+    }
+
+    private void PutLba1Brick()
+    {
+        if (island is null || tile is not { } t) { SetStatus("Choose a tile first (drag a square on the atlas, or type it and Choose this tile)."); return; }
+        var directory = EditorSettings.Current.Lba1Directory;
+        if (!Lba1.Lba1Game.IsInstalled(directory)) { MessageBox.Show(Owner, "Choose the LBA1 game folder under File > Settings first: the bricks are LBA1's.", Caption, MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        var window = new AtlasBrickWindow(new Lba1.Lba1Game(directory), palette, t.W) { Owner = Owner };
+        if (window.ShowDialog() == true && window.Tile is { } pixels) PutTile(pixels, window.Description);
+    }
+
+    private void PutPicture()
+    {
+        if (island is null || tile is not { } t) { SetStatus("Choose a tile first (drag a square on the atlas, or type it and Choose this tile)."); return; }
+        var open = new Microsoft.Win32.OpenFileDialog { Filter = "Pictures (*.png;*.bmp;*.jpg;*.jpeg;*.gif;*.tif)|*.png;*.bmp;*.jpg;*.jpeg;*.gif;*.tif|All files|*.*", Title = "Put a picture in the ground atlas" };
+        if (open.ShowDialog(Owner) != true) return;
+        BitmapSource picture;
+        try
+        {
+            var decoder = BitmapDecoder.Create(new Uri(open.FileName), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+            picture = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
+        }
+        catch (Exception e) when (e is System.IO.IOException or NotSupportedException or ArgumentException or UnauthorizedAccessException)
+        { SetStatus($"Couldn't read {System.IO.Path.GetFileName(open.FileName)}: {e.Message}"); return; }
+        var (pw, ph) = (picture.PixelWidth, picture.PixelHeight);
+        var src = new byte[pw * ph * 4];
+        picture.CopyPixels(src, pw * 4, 0);
+        // (scaled to the tile: each of its pixels the picture's under it)
+        var pixels = new byte[t.W * t.H];
+        for (var y = 0; y < t.H; y++)
+            for (var x = 0; x < t.W; x++)
+            {
+                var i = (Math.Min(ph - 1, y * ph / t.H) * pw + Math.Min(pw - 1, x * pw / t.W)) * 4;
+                pixels[y * t.W + x] = (byte)Terrain.Snow.SnowColour.Nearest(palette, src[i + 2], src[i + 1], src[i]);
+            }
+        PutTile(pixels, System.IO.Path.GetFileName(open.FileName));
+    }
+
+    private void UpdateAtlasSelection(Point now)
+    {
+        // a square from the press point towards the pointer
+        var size = (int)Math.Clamp(Math.Max(Math.Abs(now.X - atlasStart.X), Math.Abs(now.Y - atlasStart.Y)), 4, 128);
+        var x = (int)Math.Clamp(now.X < atlasStart.X ? atlasStart.X - size : atlasStart.X, 0, 256 - size);
+        var y = (int)Math.Clamp(now.Y < atlasStart.Y ? atlasStart.Y - size : atlasStart.Y, 0, 256 - size);
+        ShowTile(x, y, size);
+    }
+
+    // ---- heightmaps -------------------------------------------------------------------------------------------------------------------------
+
+    private static string? heightmapFolder;
+    private bool previewing;            // the import dialog's result is on the island for the 3D view to show (history open since the first preview)
+
+    // Import heightmap: a picture onto the island's ground (HeightmapWindow says what size it needs and shows the result, live in the host's 3D
+    // view as it is changed), applied with every option as one undo step. `path`: the picture (else a file dialog asks).
+    public void ImportHeightmap(string? path = null)
+    {
+        if (island is null || history is null || Busy) return;
+        if (path is null)
+        {
+            var open = new Microsoft.Win32.OpenFileDialog { Filter = HeightmapWindow.Filter, Title = $"Import a heightmap into {currentName}", InitialDirectory = heightmapFolder };
+            if (open.ShowDialog(Owner) != true) return;
+            path = open.FileName;
+        }
+        heightmapFolder = System.IO.Path.GetDirectoryName(path);
+        var defaults = new HeightmapWindow.Defaults(BakeSettings(), BakeLight: true, steepUnwalkableBox.IsChecked == true, Number(steepAngleBox, 45), followBox.IsChecked == true);
+        var window = new HeightmapWindow(island, currentName ?? "This island", path, defaults, PreviewHeightmap) { Owner = Owner };
+        PlaceAtRight(window, Owner);
+        var accepted = false;
+        try { accepted = window.ShowDialog() == true && window.Picture is not null; }
+        finally { if (!accepted) EndHeightmapPreview(); }
+        if (!accepted) { SetStatus("Heightmap import cancelled: the ground is as it was."); return; }
+
+        var picture = window.Picture!;
+        var options = window.Options;
+        HeightmapImportResult result;
+        Mouse.OverrideCursor = Cursors.Wait;
+        try
+        {
+            // the island as it was, then the import with every option (cast shadows too): one undo step from the state before the dialog
+            if (previewing) history.RestorePending(); else history.Begin();
+            try { result = IslandHeightmap.Apply(island, picture, options); }
+            catch (InvalidDataException e)
+            {
+                history.RestorePending(); history.Cancel(); previewing = false;
+                ReselectAfterHistory();
+                MessageBox.Show(Owner, $"Couldn't import the heightmap: {e.Message}", Caption, MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            history.Commit("import heightmap");
+            previewing = false;
+        }
+        finally { Mouse.OverrideCursor = null; }
+        ReselectAfterHistory();
+        DrawProfile();
+        SetStatus($"Imported {System.IO.Path.GetFileName(path)}: {result.Vertices:N0} height points ({result.Changed:N0} changed), ground {result.Lowest:N0} to {result.Highest:N0}, "
+                  + $"{result.SeaCells:N0} sea and {result.LandCells:N0} land cells ({result.Retextured:N0} given new ground)"
+                  + (options.SteepAngle is { } a ? $", {result.Blocked:N0} triangles over {a:F0}° blocked" : "")
+                  + (options.Bake is not null ? $", light baked again ({result.Relit:N0} points)" : "")
+                  + (result.ObjectsMoved > 0 ? $", {result.ObjectsMoved} objects moved with the ground" : "")
+                  + (result.Clamped > 0 ? $"; {result.Clamped:N0} heights cut to the game's limits" : "")
+                  + ". Undo takes it back; Save writes the island.");
+    }
+
+    // The import dialog's live preview: the island put back as it was before the dialog, then (unless null) the picture applied with the dialog's
+    // options; the host's 3D view follows through Edited (Busy while previewing, so it is pushed even when nothing is committed yet).
+    private void PreviewHeightmap(HeightmapPicture? picture, HeightmapImportOptions? options)
+    {
+        if (island is null || history is null) return;
+        if (picture is null || options is null)
+        {
+            if (!previewing) return;
+            history.RestorePending();
+        }
+        else
+        {
+            if (!previewing) { history.Begin(); previewing = true; }
+            else history.RestorePending();
+            try { IslandHeightmap.Apply(island, picture, options); }
+            catch (InvalidDataException) { history.RestorePending(); }
+        }
+        selected = null; decorPanel.IsEnabled = false;
+        RedrawAll();
+    }
+
+    // Cancel: the ground put back (and shown) as it was, nothing recorded.
+    private void EndHeightmapPreview()
+    {
+        if (!previewing || history is null) return;
+        history.RestorePending();
+        RedrawAll();               // (still previewing: the host's 3D view is given the ground back)
+        history.Cancel();
+        previewing = false;
+        UpdateButtons();
+    }
+
+    // The dialog at the right of the main window, so the 3D view showing the preview stays in sight.
+    private static void PlaceAtRight(Window window, Window? owner)
+    {
+        if (owner is null || PresentationSource.FromVisual(owner) is not { CompositionTarget: { } target }) return;
+        var topRight = target.TransformFromDevice.Transform(owner.PointToScreen(new Point(owner.ActualWidth, 0)));
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Left = Math.Max(SystemParameters.WorkArea.Left, topRight.X - window.Width - 16);
+        window.Top = Math.Max(SystemParameters.WorkArea.Top, topRight.Y + 60);
+    }
+
+    // Export heightmap: the island's heights as a picture of exactly the size Import wants, black its lowest ground and white its highest (a
+    // PNG keeps the two in a text chunk, so Import reads them back and the heights come back exactly).
+    public void ExportHeightmap()
+    {
+        if (island is null) return;
+        var stem = System.IO.Path.GetFileNameWithoutExtension(currentName ?? "island");
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "16-bit greyscale PNG, every height kept (*.png)|*.png|8-bit greyscale PNG, 256 levels (*.png)|*.png|Raw 16-bit heights, little-endian (*.r16)|*.r16|Heights as numbers, world units (*.csv)|*.csv",
+            FileName = stem.ToLowerInvariant() + "_heightmap.png", Title = $"Export {stem}'s heightmap", InitialDirectory = heightmapFolder,
+        };
+        if (dialog.ShowDialog(Owner) != true) return;
+        var format = dialog.FilterIndex switch { 2 => IslandHeightmap.ExportFormat.Png8, 3 => IslandHeightmap.ExportFormat.Raw16, 4 => IslandHeightmap.ExportFormat.Csv, _ => IslandHeightmap.ExportFormat.Png16 };
+        heightmapFolder = System.IO.Path.GetDirectoryName(dialog.FileName);
+        try
+        {
+            var (black, white) = IslandHeightmap.Export(island, dialog.FileName, format, null, currentName);
+            var layout = HeightmapLayout.Of(island);
+            SetStatus($"Exported {stem}'s heightmap to {dialog.FileName}: {layout.Width} × {layout.Height} pixels"
+                      + (format == IslandHeightmap.ExportFormat.Csv ? ", heights in world units." : $", black = {black:N0}, white = {white:N0}"
+                      + (format == IslandHeightmap.ExportFormat.Raw16 ? " (a raw file can't say so: give Import the same two)." : " (kept in the picture: Import reads them back)."))
+                      + " Edit it and use Import heightmap to bring it back.");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(Owner, $"Couldn't write the heightmap: {e.Message}", Caption, MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     // ---- keyboard, info ---------------------------------------------------------------------------------------------------------------------
+
+    // The tool used at the vertex typed in (Brush at a vertex): one dab, or a stroke from where it was last used.
+    private void ApplyAtTyped(bool stroke)
+    {
+        if (island is null || history is null) return;
+        if (!int.TryParse(vertexXBox.Text.Trim(), out var x) || !int.TryParse(vertexZBox.Text.Trim(), out var z)) { SetStatus("Type the vertex's X and Z (whole numbers)."); return; }
+        if (!island.HasVertex(x, z)) { SetStatus($"Vertex {x}, {z} isn't on the island."); return; }
+        ApplyAt(x, z, stroke);
+    }
+
+    // One dab of the tool at a vertex, or (`stroke`) a straight stroke to it from where the tool was last used: as the mouse would do it.
+    private void ApplyAt(double x, double z, bool stroke)
+    {
+        if (island is null || history is null) return;
+        (double Gx, double Gz) from = stroke && lastUsed is { } last ? last : (x, z);
+        pointer = (from.Gx, from.Gz);
+        PointerDownCore();
+        if (stroking)
+        {
+            // (the stroke a dab every half vertex along the way, as a drag's moves are)
+            var steps = (int)Math.Ceiling(Math.Max(Math.Abs(x - from.Gx), Math.Abs(z - from.Gz)) * 2);
+            for (var i = 1; i <= steps; i++)
+            {
+                pointer = (from.Gx + (x - from.Gx) * i / steps, from.Gz + (z - from.Gz) * i / steps);
+                StrokeTick();
+            }
+        }
+        PointerUpCore();
+        lastUsed = (x, z);
+        PlaceBrushOutline();
+        UpdateInfo();
+    }
+
+    // The brush's outline where the pointer is (the mouse's moves, the typed place, the arrow keys).
+    private void PlaceBrushOutline()
+    {
+        if (renderer is null) return;
+        var r = radius.Value * renderer.Scale;
+        brushCircle.Visibility = !BrushTool ? Visibility.Collapsed : Visibility.Visible;
+        if (squareBox.IsChecked == true)
+        {
+            var (cx, cz, sr) = SquareBrush();
+            var half = (sr + 0.5) * renderer.Scale;
+            brushCircle.RadiusX = brushCircle.RadiusY = 0;
+            brushCircle.Width = brushCircle.Height = half * 2;
+            Canvas.SetLeft(brushCircle, CellToPixelX(cx) - half); Canvas.SetTop(brushCircle, CellToPixelZ(cz) - half);
+        }
+        else
+        {
+            brushCircle.RadiusX = brushCircle.RadiusY = r;
+            brushCircle.Width = brushCircle.Height = r * 2;
+            Canvas.SetLeft(brushCircle, CellToPixelX(pointer.Gx) - r); Canvas.SetTop(brushCircle, CellToPixelZ(pointer.Gz) - r);
+        }
+    }
 
     // Keys while the host shows this editor (false = not one of ours).
     public bool HandleKey(KeyEventArgs e)
     {
         if (Keyboard.FocusedElement is TextBox) return false;
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        // (the brush by the keyboard: the arrows a vertex, Shift eight; Space a dab there)
+        if (!ctrl && BrushTool && island is not null && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            var step = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 8 : 1;
+            var (gx, gz) = ((int)Math.Round(pointer.Gx), (int)Math.Round(pointer.Gz));
+            if (e.Key == Key.Left) gx -= step; else if (e.Key == Key.Right) gx += step; else if (e.Key == Key.Up) gz -= step; else gz += step;
+            pointer = (gx, gz);
+            vertexXBox.Text = gx.ToString(); vertexZBox.Text = gz.ToString();
+            PlaceBrushOutline(); UpdateInfo();
+            return true;
+        }
+        if (!ctrl && e.Key == Key.Space && island is not null) { ApplyAt(Math.Round(pointer.Gx), Math.Round(pointer.Gz), stroke: false); return true; }
         if (ctrl && e.Key == Key.Z) DoUndo();
         else if (ctrl && e.Key == Key.Y) DoRedo();
         else if (ctrl && e.Key == Key.S) Save();

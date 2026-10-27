@@ -22,6 +22,9 @@ extern void ReadConfigFile(void);
  * override is currently forcing are written back at their stored preference. */
 extern void WriteConfigFile(void);
 
+/* Full screen <-> a window: the setting (DisplayFullScreen) flipped, applied and saved -- F11 / Alt+Enter, and the race game's Options. */
+extern void ToggleDisplayFullscreen(void);
+
 /* Persist one key without rewriting the rest. */
 extern S32 WriteConfigValue(const char *ident, S32 value);
 

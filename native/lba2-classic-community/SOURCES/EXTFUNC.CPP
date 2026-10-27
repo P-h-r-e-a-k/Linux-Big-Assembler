@@ -9,6 +9,7 @@
 
 #include "C_EXTERN.H"
 #include "DIRECTORIES.H"
+#include "MAPPACK.H"
 #include "INPUT.H"
 
 #include <POLYGON/POLY_JMP.H>
@@ -105,10 +106,126 @@ S32 FlagHeroOutZ = FALSE; // Twinsen sort du cube en Z
 
 T_DECORS *PtrDecorsCol = 0; // Objet du decors en collision
 S16 NumDecorsCol = -1;      // avec l'objet courant
+S32 HeroDecorHit = -1;      // the last decor Twinsen's move ran into, and when (RACEMOD.CPP StuckCar says it)
+S32 HeroDecorHitAt = 0;
 
 U8 *PtrNuances; // Nuances gouraud
 
 S32 LastIsland = -1;
+// (the island file last loaded: a scene drawn on a file of its own -- ISLANDS.TXT, SceneIslandFile -- shares its island's number with the
+// island's own scenes, and going from one to the other loads the other file)
+static char LastIslandFile[ADELINE_MAX_PATH] = "";
+
+// A scene drawn on an island file of its own (LBA Assembler's maps, File > New map, an island; 2026-10-15): the game folder's ISLANDS.TXT,
+// its lines "scene <number> <file>" (the file's name, no extension; '#' a comment; "island <file> <number>" lines are the editor's), read
+// once. Its scenes carry an island's number -- whose sky, palette, music and holomap they borrow -- and are drawn from their own file
+// instead of that island's.
+#define MAX_SCENE_ISLAND_FILES 1024
+static const char *SceneIslandFile(S32 scene) {
+    // (an island map in the MAPS folder: its scenes are drawn from its own ILE and OBL, MAPPACK.CPP)
+    if (const char *map = MapPack_IslandFile(scene)) return map;
+    static int loaded = 0, count = 0;
+    static S32 scenes[MAX_SCENE_ISLAND_FILES];
+    static char names[MAX_SCENE_ISLAND_FILES][16];
+    if (!loaded) {
+        loaded = 1;
+        char path[ADELINE_MAX_PATH];
+        GetResPath(path, ADELINE_MAX_PATH, "ISLANDS.TXT");
+        FILE *f = fopen(path, "r");
+        if (f) {
+            char line[128];
+            while (count < MAX_SCENE_ISLAND_FILES && fgets(line, sizeof(line), f)) {
+                int s;
+                char name[16];
+                if (line[0] == '#' || sscanf(line, "scene %d %15s", &s, name) != 2) continue;
+                scenes[count] = s;
+                strcpy(names[count], name);
+                count++;
+            }
+            fclose(f);
+        }
+    }
+    for (int i = 0; i < count; i++)
+        if (scenes[i] == scene) return names[i];
+    return NULL;
+}
+
+// (for MAPPACK.CPP MapPack_Text: an installed island map's own text, beside its file)
+const char *SceneIslandFileName(S32 scene) { return SceneIslandFile(scene); }
+
+// Whether snow falls on a scene's island (SNOW.CPP; LBA Assembler's snow island, 2026-10-22): a map's in the MAPS folder by its MAP.TXT's
+// "weather = snow", one installed into the game's files by ISLANDS.TXT's "weather <file> snow" lines.
+#define MAX_SNOW_ISLANDS 64
+S32 SceneSnows(S32 scene) {
+    if (MapPack_IslandFile(scene)) return MapPack_Snows(scene);
+    const char *file = SceneIslandFile(scene);
+    if (!file) return FALSE;
+    static int loaded = 0, count = 0;
+    static char names[MAX_SNOW_ISLANDS][16];
+    if (!loaded) {
+        loaded = 1;
+        char path[ADELINE_MAX_PATH];
+        GetResPath(path, ADELINE_MAX_PATH, "ISLANDS.TXT");
+        FILE *f = fopen(path, "r");
+        if (f) {
+            char line[128];
+            while (count < MAX_SNOW_ISLANDS && fgets(line, sizeof(line), f)) {
+                char name[16], kind[16];
+                if (line[0] == '#' || sscanf(line, "weather %15s %15s", name, kind) != 2 || strcasecmp(kind, "snow")) continue;
+                strcpy(names[count++], name);
+            }
+            fclose(f);
+        }
+    }
+    for (int i = 0; i < count; i++)
+        if (!strcasecmp(names[i], file)) return TRUE;
+    return FALSE;
+}
+
+// Whether a scene's cliffs can be walked off (LBA Assembler, 2026-10-23: LBA1's Hamalayi ski resort, whose snowboarder rides off its
+// ledges -- and Twinsen can walk off them -- where the game's islands' cliffs are walls unless jumped): a map's in the MAPS folder by its
+// MAP.TXT's "ledges = drop", one installed into the game's files by ISLANDS.TXT's "ledges <file> drop" lines.
+static S32 SceneDropLedges(S32 scene) {
+    if (MapPack_IslandFile(scene)) return MapPack_DropLedges(scene);
+    const char *file = SceneIslandFile(scene);
+    if (!file) return FALSE;
+    static int loaded = 0, count = 0;
+    static char names[MAX_SNOW_ISLANDS][16];
+    if (!loaded) {
+        loaded = 1;
+        char path[ADELINE_MAX_PATH];
+        GetResPath(path, ADELINE_MAX_PATH, "ISLANDS.TXT");
+        FILE *f = fopen(path, "r");
+        if (f) {
+            char line[128];
+            while (count < MAX_SNOW_ISLANDS && fgets(line, sizeof(line), f)) {
+                char name[16], kind[16];
+                if (line[0] == '#' || sscanf(line, "ledges %15s %15s", name, kind) != 2 || strcasecmp(kind, "drop")) continue;
+                strcpy(names[count++], name);
+            }
+            fclose(f);
+        }
+    }
+    for (int i = 0; i < count; i++)
+        if (!strcasecmp(names[i], file)) return TRUE;
+    return FALSE;
+}
+
+// ... for the scene being played (asked again when it changes)
+static S32 DropLedgesHere(void) {
+    static S32 scene = -2, drop = FALSE;
+    if (CubeMode != CUBE_EXTERIEUR) return FALSE;
+    if (NumCube != scene) {
+        scene = NumCube;
+        drop = SceneDropLedges(NumCube);
+    }
+    return drop;
+}
+
+// A ledge at (x, z): the cliff's ground there no higher than `y`, where the object was -- it is going over the cliff or down it, not up.
+static S32 LedgeBelow(S32 x, S32 z, S32 y) {
+    return CalculAltitudeObjet(x, z, 0) <= y;
+}
 
 #ifdef LBA_EDITOR
 char *GenAnimSkate; /* identificateur anim en cours */
@@ -359,15 +476,20 @@ void InitGrilleExt(U32 numcube) {
         // a race-track mod's track on an island file the game never loads (MOON.ILE, the Emerald Moon's older copy): raced as this
         // island's, with its sky and palette (RACEMOD.CPP RaceMod_IslandFile)
         if (const char *raced = RaceMod_IslandFile(Island)) strcpy(IslandName, raced);
+        // (and under its own sky, when the race-track mod gives it one: island_sky=)
+        if (RaceMod_IslandSky(Island) >= 0) numskysea = RaceMod_IslandSky(Island);
     }
+    // (a scene drawn on an island file of its own: ISLANDS.TXT)
+    if (const char *own = SceneIslandFile(NumCube)) strcpy(IslandName, own);
 
     if (NumCube != NUM_CUBE_PHANTOM) {
-        if (LastIsland != Island) {
+        if (LastIsland != Island || strcmp(LastIslandFile, IslandName)) {
             GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
             Load_HQR(tmpFilePath, SkySeaTexture, numskysea);
 
             LoadIsland();
             LastIsland = Island;
+            strcpy(LastIslandFile, IslandName);
         }
 
         ManageSystem(); // for streaming
@@ -469,6 +591,7 @@ void AffichageActorsZBuf(void) {
         // SPRITE_3D branch. Left for later; this covers real 3D-bodied NPCs.
         if (ptrobj->Flags & SPRITE_3D) continue;
         if (ptrobj->Obj.Body.Num < 0) continue; // no body assigned/loaded
+        if (!RendererShowHiddenActors && ((ptrobj->Flags & INVISIBLE) || ptrobj->Obj.Y <= -10000)) continue; // (hidden: the game's, GLOBAL.CPP)
 
         LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
         if (!LongProjectPoint(X0, Y0, Z0)) continue;
@@ -1050,10 +1173,12 @@ void AffGrilleExtArea(int x0, int z0, int x1, int z1) {
 
     ManageSystem();
 
+    // (the cubes round the camera's own are drawn by the loop below when they are in the area: drawn here too they were drawn twice)
+    const int ringInArea = CurrentCubeX - 1 >= x0 && CurrentCubeX + 1 <= x1 && CurrentCubeY - 1 >= z0 && CurrentCubeY + 1 <= z1;
 #ifdef LBA_EDITOR
-    if ((FlagInfos & INFO_HORIZON) && RendererDrawSky)
+    if ((FlagInfos & INFO_HORIZON) && RendererDrawSky && !ringInArea)
 #else
-    if (FlagDrawHorizon && RendererDrawSky)
+    if (FlagDrawHorizon && RendererDrawSky && !ringInArea)
 #endif
     {
         DrawHorizon2ZBuf();
@@ -1067,6 +1192,16 @@ void AffGrilleExtArea(int x0, int z0, int x1, int z1) {
 
             S32 localOffsetX = centerWorldX - cx * WIDE_WORLD_CUBE_SIZE;
             S32 localOffsetZ = centerWorldZ - cy * WIDE_WORLD_CUBE_SIZE;
+            // A cube wholly out of the view is not loaded nor drawn (the Emperor's palace's island is 54 cubes, each drawn every frame:
+            // 2026-10-13, "it's very laggy to view in our editor window too"): its column, from under the sea floor to well over the
+            // tallest decor, half a cube wider all round (a decor may stand out of its cube), against the view (DECORS.CPP BoxOutOfView).
+            {
+                extern int BoxOutOfView(const S32 lo[3], const S32 hi[3], S32 nearZ);
+                SetFollowCamera(localOffsetX, centerWorldY, localOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
+                const S32 lo[3] = {-WIDE_WORLD_CUBE_SIZE / 2, -20000, -WIDE_WORLD_CUBE_SIZE / 2};
+                const S32 hi[3] = {WIDE_WORLD_CUBE_SIZE + WIDE_WORLD_CUBE_SIZE / 2, 140000, WIDE_WORLD_CUBE_SIZE + WIDE_WORLD_CUBE_SIZE / 2};
+                if (BoxOutOfView(lo, hi, 1)) continue;
+            }
             // Every cube in the loop -- including (dx,dy)==(0,0), the
             // primary/camera-target cube -- reloads its own terrain/scene
             // here, with no special case that skips it. An earlier version
@@ -1120,7 +1255,7 @@ void AffGrilleExtArea(int x0, int z0, int x1, int z1) {
 
     ManageSystem();
 
-    if (RendererDrawSky)
+    if (RendererDrawSky && !RaceMod_NoSky())
         DrawSkySeaZBuf();
 
     ManageSystem();
@@ -1172,9 +1307,11 @@ void AffGrilleExt() {
 
     AffichageActorsZBuf();
 
+    { extern void RaceMod_DrawBackdrop(void); RaceMod_DrawBackdrop(); }  /* a race-track mod's giant frog, into the background (RACEMOD.CPP) */
+
     ManageSystem(); // for streaming
 
-    if (RendererDrawSky)
+    if (RendererDrawSky && !RaceMod_NoSky())
         DrawSkySeaZBuf();
 
     ManageSystem(); // for streaming
@@ -1299,6 +1436,10 @@ void TestCameraPosObjets(void) {
 // A race-track mod's super jet-pack: the moving object Twinsen's car on it -- the island's objects aren't there for it (RACEMOD.CPP
 // RaceMod_JetGhost): it neither runs into them nor is pushed back out of them.
 static S32 JetGhost(void) { return APtObj == &ListObjet[NUM_PERSO] AND RaceMod_JetGhost(); }
+// ... but one it is on still holds it up: an object whose top is no more than half a brick over where the car was, as the game's own
+// "on top of it" test has it (DoCornerReajustDecors) -- Mosquibees Island's bridge is a deck of the island's objects, and the car on
+// the super jet-pack went through it into the valley under it, at the bridge's start, nearly every jet-pack, 2026-10-16.
+static S32 GhostSkips(const T_DECORS *d) { return JetGhost() AND OldY < d->YMax - DEMI_BRICK_Y; }
 
 U8 WorldColBrickExt(S32 xw, S32 yw, S32 zw) {
     U32 i;
@@ -1307,7 +1448,9 @@ U8 WorldColBrickExt(S32 xw, S32 yw, S32 zw) {
     PtrDecorsCol = ListDecors;
 
     // decors
-    for (i = 0; i < (JetGhost() ? 0 : NbObjDecors); i++, PtrDecorsCol++) {
+    for (i = 0; i < NbObjDecors; i++, PtrDecorsCol++) {
+        if (GhostSkips(PtrDecorsCol))
+            continue;
         if (TestZVDecors(xw, yw, zw, PtrDecorsCol)) {
             // verifie qu'il n'y ait pas de terrain au-dessus
             // de l'objet
@@ -1426,11 +1569,10 @@ U8 WorldColBrickDecors(S32 xpmin, S32 ypmin, S32 zpmin,
     U16 i;
 
     PtrDecorsCol = ListDecors;
-    if (JetGhost()) { PtrDecorsCol = NULL; return 0; }
 
     // decors
     for (i = 0; i < NbObjDecors; i++, PtrDecorsCol++) {
-        if (i == NumDecorsCol)
+        if (i == NumDecorsCol OR GhostSkips(PtrDecorsCol))
             continue;
 
         if (TestZVDecorsZV(PtrDecorsCol,
@@ -1518,6 +1660,9 @@ void InitSkating(void) {
     S32 beta;
 
     if (APtObj->WorkFlags & SKATING)
+        return;
+    // (not a race car flying a jump: the skating would end the flight in the air -- RACEMOD.CPP RaceMod_InFlight)
+    if (APtObj == &ListObjet[NUM_PERSO] AND RaceMod_InFlight())
         return;
 
     beta = GetSkateBeta(OldX, OldZ);
@@ -1681,15 +1826,48 @@ void ReajustPosExt(U8 col) {
     }
 
 /*──────────────────────────────────────────────────────────────────────────*/
+// A race car's glancing blow (RACEMOD.CPP RaceMod_Glance): stopped on one axis by a decor box it overlaps on the other by no more than the
+// glance -- a building's corner at the road's edge, a gantry's post, a pit wall's end met square on -- it is pushed aside along that other
+// axis, past the box, to its nearer side, instead of being held there with its wheels turning. (The stress test, 2026-10-16: the test
+// pilot held for the rest of the race by Otringal's pit wall's end, the start gantries' posts on Celebration Island and the old moon, a
+// building's corner on Citadel Island's town circuit. The boxes are all square to the island, so no shape of theirs could turn a car
+// aside.) `asideX`: blocked in z, pushed in x. Non-zero: pushed.
+
+static S32 GlanceAside(S32 asideX) {
+    const S32 glance = APtObj == &ListObjet[NUM_PERSO] ? RaceMod_Glance() : 0;
+    if (glance <= 0 || PtrDecorsCol == NULL)
+        return 0;
+    const T_DECORS *d = PtrDecorsCol;
+    // (only met head on, blocked along the way it mostly moves: blocked across it, it slides along the box as the game has it -- pushed
+    // aside to the nearer side there, a car running past a post beside it was pushed back, frame after frame, the old moon's and
+    // Celebration Island's gantries)
+    const S32 movedX = abs(Nxw - OldX), movedZ = abs(Nzw - OldZ);
+    if (asideX ? movedZ < movedX : movedX < movedZ)
+        return 0;
+    if (asideX) {
+        const S32 lo = Nxw + APtObj->XMin, hi = Nxw + APtObj->XMax;
+        const S32 over = ade_min(hi, d->XMax) - ade_max(lo, d->XMin);
+        if (over < 0 OR over > glance)
+            return 0;
+        Nxw = (lo + hi < d->XMin + d->XMax) ? d->XMin - APtObj->XMax - 1 : d->XMax - APtObj->XMin + 1;
+    } else {
+        const S32 lo = Nzw + APtObj->ZMin, hi = Nzw + APtObj->ZMax;
+        const S32 over = ade_min(hi, d->ZMax) - ade_max(lo, d->ZMin);
+        if (over < 0 OR over > glance)
+            return 0;
+        Nzw = (lo + hi < d->ZMin + d->ZMax) ? d->ZMin - APtObj->ZMax - 1 : d->ZMax - APtObj->ZMin + 1;
+    }
+    return 1;
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
 // Reajuste l'objet scénarique courant contre les objets du décors
 // probablement optimisable !
 
 S32 DoCornerReajustDecors() {
     S32 xpmin, ypmin, zpmin, xpmax, ypmax, zpmax;
 
-    if (JetGhost())
-        return 0;
-
+    // (the super jet-pack's car: WorldColBrickDecors finds only the objects it is on -- GhostSkips -- and it is put on top of them)
     if (Nxw < 0)
         return 0;
     if (Nzw < 0)
@@ -1710,8 +1888,16 @@ S32 DoCornerReajustDecors() {
     // appels a TestZVDecorsZV
 
     if (WorldColBrickDecors(xpmin, ypmin, zpmin, xpmax, ypmax, zpmax) == 1) {
+        if (APtObj == &ListObjet[NUM_PERSO]) {
+            HeroDecorHit = NumDecorsCol;
+            HeroDecorHitAt = TimerRefHR;
+        }
         // On est en collision avec un objet du decors
-        if (OldY >= PtrDecorsCol->YMax - SIZE_BRICK_Y / 2) {
+        // (a race-track mod's Twinsen out of his car exploring -- on_foot=, RACEMOD.CPP RaceMod_StepUp: up a step as high as a stair's of
+        // the Temple of Bú's, a quarter of LBA1's layer three times as big -- 192 -- not half a brick only)
+        extern S32 RaceMod_StepUp(void);
+        const S32 stepUp = APtObj == &ListObjet[NUM_PERSO] ? RaceMod_StepUp() : 0;
+        if (OldY >= PtrDecorsCol->YMax - (stepUp > 0 ? stepUp : SIZE_BRICK_Y / 2)) {
             Nyw = CalculAltitudeObjet(Nxw, Nzw, APtObj->CodeJeu >> 4);
 
             if (Nyw <= PtrDecorsCol->YMax) {
@@ -1738,7 +1924,8 @@ S32 DoCornerReajustDecors() {
                 if (!TestZVDecorsZV(PtrDecorsCol,
                                     OldX + APtObj->XMin, ypmin, zpmin,
                                     OldX + APtObj->XMax, ypmax, zpmax)) {
-                    RecaleXExt(PtrDecorsCol);
+                    if (!GlanceAside(FALSE))
+                        RecaleXExt(PtrDecorsCol);
                 } else {
                     if (!TestZVDecorsZV(PtrDecorsCol,
                                         OldX + APtObj->XMin, ypmin, OldZ + APtObj->ZMin,
@@ -1751,7 +1938,8 @@ S32 DoCornerReajustDecors() {
                 if (TestZVDecorsZV(PtrDecorsCol,
                                    OldX + APtObj->XMin, ypmin, zpmin,
                                    OldX + APtObj->XMax, ypmax, zpmax)) {
-                    RecaleZExt(PtrDecorsCol);
+                    if (!GlanceAside(TRUE))
+                        RecaleZExt(PtrDecorsCol);
                 }
             }
         }
@@ -1774,6 +1962,11 @@ S32 DoCornerReajustExtPt(void) {
     S32 modif = FALSE;
 
     // teste des decors en meme temps ?
+
+    // (an island whose ledges can be walked off: a cliff cell the object is going over or down -- its ground no higher than it was -- doesn't push it
+    // back; past the edge it falls, as the move's own test has it, an object over a forbidden polygon)
+    if (DropLedgesHere() AND GiveTerrainCol(Nxw, Nzw) == 1 AND LedgeBelow(Nxw, Nzw, OldY))
+        return FALSE;
 
     if (GiveTerrainCol(Nxw, Nzw) == 1) {
         // s'il y a un objet du decors entre le sol et nous,
@@ -1979,6 +2172,7 @@ static void DoAnimExtGround(U8 numobj);
 // passes at its height.)
 void DoAnimExt(U8 numobj) {
     RaceMod_FloorFor(ListObjet[numobj].Obj.Y);
+    if (numobj == NUM_PERSO) RaceMod_FloorForFoot();      // (Twinsen on foot: the road his floor a step up only)
     DoAnimExtGround(numobj);
     RaceMod_FloorForNothing();
 }
@@ -2058,6 +2252,14 @@ static void DoAnimExtGround(U8 numobj) {
         APtObj->Obj.Z = Nzw;
         validepos = FALSE;
         goto findoanimext;
+    }
+    // ... and off the raised road's edge where its rail lets go (RACEMOD.CPP rail_open=, RaceMod_Drop) the car falls to the road below at
+    // its own speed: nothing else moves it on the way down
+    // (past its collisions, its floor and its rail to the cube's edges -- crossing into the next cube on the way down as on the road)
+    if (numobj == NUM_PERSO AND RaceMod_Drop(OldX, OldY, OldZ, &Nxw, &Nyw, &Nzw)) {
+        APtObj->WorkFlags &= ~(FALLING | SKATING);
+        validepos = FALSE;
+        goto racedropext;
     }
 
     if (!(APtObj->WorkFlags & FALLING)
@@ -2375,9 +2577,11 @@ static void DoAnimExtGround(U8 numobj) {
     // stands on one, in more than one place above -- still inside its rail, and not through the road he stood on
     if (numobj == NUM_PERSO) {
         RaceMod_Rail(OldX, OldY, OldZ, &Nxw, &Nzw);
+        RaceMod_OpenWall(OldX, OldY, OldZ, &Nxw, &Nzw);
         RaceMod_Floor(OldX, OldY, OldZ, Nxw, &Nyw, Nzw);
     }
 
+racedropext:
     /* protege sortie du cube */
 
     // à virer puisqu'on pourra descendre en dessous de 0
@@ -2440,6 +2644,11 @@ static void DoAnimExtGround(U8 numobj) {
         }
     }
 
+    // (a race-track mod's car held at the edge: noted, for the race-track mode to carry it over where no zone does -- RACEMOD.CPP; the
+    // flags themselves are cleared by the next object's move, before the scene is drawn)
+    if (numobj == NUM_PERSO)
+        RaceMod_EdgeHeld(FlagHeroOutX, FlagHeroOutZ);
+
     if (!GereCodesJeu(numobj))
         validepos = FALSE;
 
@@ -2459,7 +2668,12 @@ static void DoAnimExtGround(U8 numobj) {
         index = (CurrentCubeY + PhantomY) * 16 + (CurrentCubeX + PhantomX);
         index = IsleMapIndex[index] & 127; // bug compilo ou debug ?
 
-        if (!index) // pas de cube
+        // (a race car off the island's edge: held at it and put back on the road -- RACEMOD.CPP RaceMod_OffIsland -- not sent into the
+        // phantom cube, which took Twinsen out of his car: he came back from it on foot, the race at a standstill, 2026-10-16)
+        if (!index AND RaceMod_OffIsland()) {
+            Nxw = OldX;
+            Nzw = OldZ;
+        } else if (!index) // pas de cube
         {
             // allez, on va mourir dans le cube phantom !
             NewCube = NUM_CUBE_PHANTOM;

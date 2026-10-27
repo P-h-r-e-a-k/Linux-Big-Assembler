@@ -183,8 +183,9 @@ internal sealed class BodyStudioWindow : Window
 
         wire.Checked += (_, _) => { preview.Wire = true; preview.Invalidate(); }; wire.Unchecked += (_, _) => { preview.Wire = false; preview.Invalidate(); };
         bones.Checked += (_, _) => { preview.Bones = true; preview.Invalidate(); }; bones.Unchecked += (_, _) => { preview.Bones = false; preview.Invalidate(); };
-        front.Click += (_, _) => { preview.Yaw = negative.IsChecked == true ? 0 : MathF.PI; preview.Invalidate(); };
-        back.Click += (_, _) => { preview.Yaw = negative.IsChecked == true ? MathF.PI : 0; preview.Invalidate(); };
+        // (the renderer shows a body's +Z side at yaw 0)
+        front.Click += (_, _) => { preview.Yaw = negative.IsChecked == true ? MathF.PI : 0; preview.Invalidate(); };
+        back.Click += (_, _) => { preview.Yaw = negative.IsChecked == true ? 0 : MathF.PI; preview.Invalidate(); };
         previewGame.SelectionChanged += (_, _) => ShowGenerated();
         generate.Click += async (_, _) => await Generate();
         export.Click += async (_, _) => await Export();

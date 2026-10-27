@@ -369,17 +369,31 @@ public sealed class SceneScripts
         // existing bytes mean); name -> offset answers about the CURRENT one.
         public string? TrackName(int actor, int offset) => Name(owner.track, actor, offset);
         public string? LifeName(int actor, int offset) => Name(owner.life, actor, offset);
-        public int? TrackOffset(int actor, string name) => Offset(owner.track, actor, name);
-        public int? LifeOffset(int actor, string name) => Offset(owner.life, actor, name);
+        public int? TrackOffset(int actor, string name) => Offset(owner.track, actor, name, track: true);
+        public int? LifeOffset(int actor, string name) => Offset(owner.life, actor, name, track: false);
 
         private static string? Name(Entry[] table, int actor, int offset) =>
             (uint)actor < (uint)table.Length && table[actor].OriginalNames.TryGetValue(offset, out var n) ? n : null;
 
-        private static int? Offset(Entry[] table, int actor, string name)
+        // (an edited script not built yet answers from its edited text, laid out on demand -- a script checked while another names its
+        // labels or comportements before either is saved; `laying` keeps two that name each other from laying each other out for ever)
+        private readonly HashSet<(bool, int)> laying = new();
+
+        private int? Offset(Entry[] table, int actor, string name, bool track)
         {
             if ((uint)actor >= (uint)table.Length) return null;
             var e = table[actor];
             if (e.Compiled is not null) return e.Compiled.Symbols.TryGetValue(name, out var off) ? off : null;
+            if (e.EditedText is { } text && laying.Add((track, actor)))
+            {
+                try
+                {
+                    var laid = track ? TrackText.Compile(text) : LifeText.Compile(text, actor, this);
+                    return laid.Symbols.TryGetValue(name, out var off) ? off : null;
+                }
+                catch (ScriptCompileException) { return null; }
+                finally { laying.Remove((track, actor)); }
+            }
             foreach (var (off2, n) in e.OriginalNames) if (n == name) return off2;
             return null;
         }

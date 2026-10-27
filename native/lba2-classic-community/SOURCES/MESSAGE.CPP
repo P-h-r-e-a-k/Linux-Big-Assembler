@@ -34,6 +34,7 @@
 #include <sys/stat.h>
 #include "AMBIANCE.H"
 #include "BOOT_EXIT.H"
+#include "MAPPACK.H"
 
 S32 FlagRestoreCD = 0;
 
@@ -1146,6 +1147,8 @@ S32 Speak(S32 text) {
 
     if (!FdNar)
         return (0L);
+    if (MapPack_Text(NumCube, text, NULL, NULL, NULL)) // (a map's own line: shown, not spoken)
+        return (0L);
 
     num = FindText(text);
 
@@ -1553,6 +1556,19 @@ S32 GetText(S32 text) {
     U16 offset0;
     U16 offset1;
     S32 num;
+
+    // (a map's own line, in its scenes: MAPPACK.CPP MapPack_Text)
+    {
+        U8 *line;
+        S32 size;
+        U8 attribute;
+        if (MapPack_Text(NumCube, text, &line, &size, &attribute)) {
+            PtText = line;
+            SizeText = size;
+            FlagDial = attribute;
+            return (1L);
+        }
+    }
 
     num = FindText(text); //     Must have good number
     if (num == -1)

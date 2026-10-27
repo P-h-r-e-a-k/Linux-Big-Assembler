@@ -313,7 +313,7 @@ public static class Generator
             using var preview=Renderer.Render(g.Body,g.Palette,900,1000,0.4f,false);preview.Save(Path.Combine(dir,"preview.png"));
             if(settings.HeadDetails)
             {
-                float frontYaw=settings.NegativeZFront?0:MathF.PI;
+                float frontYaw=settings.NegativeZFront?MathF.PI:0;   // (the renderer shows a body's +Z side at yaw 0)
                 using var headFront=Renderer.Render(g.Body,g.Palette,900,700,frontYaw,false,headOnly:true);headFront.Save(Path.Combine(dir,"head-front.png"));
                 using var headBack=Renderer.Render(g.Body,g.Palette,900,700,frontYaw+MathF.PI,false,headOnly:true);headBack.Save(Path.Combine(dir,"head-back.png"));
                 using var headAngle=Renderer.Render(g.Body,g.Palette,900,700,frontYaw+.55f,false,headOnly:true);headAngle.Save(Path.Combine(dir,"head-angle.png"));

@@ -498,6 +498,8 @@ internal static partial class RaceTrackCharacterCars
 
     // ---------------------------------------------------------------------------------------------------------------- installing
 
+    public const string FunFrockEmptyName = "FunFrock's car, empty";
+
     // Adds the cars to a game folder: each body at the end of BODY.HQR and, in the entity table (RESS.HQR entry 44), a body record giving it
     // to the racer's entity as its body 2, 3 or 4 (as RaceTrackBaldinoCar.Install). Returns the BODY.HQR indices and lines for the build's log.
     // (`only`: some of the cars, for a look at them while they are being made)
@@ -520,6 +522,15 @@ internal static partial class RaceTrackCharacterCars
             index[car.Name] = next;
             log.Add($"{car.Name}: BODY.HQR entry {next} ({body.Faces.Count} polygons, {body.Lines.Count} lines, {body.Spheres.Count} spheres, {body.Vertices.Count} points), " +
                     $"the racer's entity ({RaceTrackBaldinoCar.RacerEntity}) body {car.Generic}, {car.Driver} driving ({car.Island})");
+            next++;
+        }
+        // (and FunFrock's car empty, for Polar Island's story's start: no entity's, the race-track mode draws it by its entry -- chase_car=)
+        if (cars.Any(c => c.Car == FunFrock))
+        {
+            var empty = BuildFunFrockEmpty(Body.Read(bodies.Read(FunFrock.Character), 2), racer);
+            bodyFile = HqrWriter.AppendEntry(bodyFile, HqrWriter.StoredEntry(empty.Write()));
+            index[FunFrockEmptyName] = next;
+            log.Add($"{FunFrockEmptyName}: BODY.HQR entry {next} ({empty.Faces.Count} polygons), Polar Island's story's start");
             next++;
         }
         File.WriteAllBytes(bodyPath, bodyFile);

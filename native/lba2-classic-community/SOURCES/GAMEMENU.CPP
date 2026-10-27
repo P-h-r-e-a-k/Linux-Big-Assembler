@@ -15,6 +15,7 @@
 #include "MESSAGE.H"
 #include "IMAGE_LOAD.H"
 #include "MENU_LABELS.H"
+#include "RACEGAME.H" /* the race game's menu (RACEGAME.CPP) */
 
 #include <FILEIO/SAVEPNG.H>
 #include <SVGA/SCREEN.H>
@@ -49,9 +50,8 @@
 #define COUL_TEXT_MENU LBAWHITE // trouver blanc palette jeu
 #define COUL_LETTER_INPUT LBAWHITE
 
-#ifdef DEMO
+// (the demo's save and load rows, and the race game's rows not open yet: RACEGAME.CPP)
 #define COUL_TEXT_MENU_DISABLE (3 * 16 + 11) // trouver blanc palette jeu
-#endif
 
 #define SCREEN_SAVE_WIDTH 160
 #define SCREEN_SAVE_HEIGHT 120
@@ -397,6 +397,10 @@ const char *GetLocalizedResDialogLabel(int which) {
 }
 
 static void BuildCustomMenuText(S32 num, char *string) {
+    // the race game's rows (RACEGAME.CPP)
+    if (RaceGame_MenuText(num, string))
+        return;
+
     // Resolution sub-page rows: id in the reserved range maps to a catalog
     // entry's label (e.g. "1280x720 (16:9)"). s_resMenuCount is set by
     // GereResolutionMenu before the page is drawn.
@@ -474,7 +478,8 @@ static void BuildCustomMenuText(S32 num, char *string) {
         break;
 
     case MENU_ID_FOLLOW_CAMERA:
-        CopyUtf8ToCp850(string, 256, GetLocalizedMenuLabel(FollowCamera ? MENU_LABEL_AUTO_CAMERA : MENU_LABEL_CLASSIC_CAMERA));
+        CopyUtf8ToCp850(string, 256, GetLocalizedMenuLabel(FollowCameraInCar ? MENU_LABEL_AUTO_CAMERA_IN_CAR
+                                                           : FollowCamera ? MENU_LABEL_AUTO_CAMERA : MENU_LABEL_CLASSIC_CAMERA));
         break;
 
     case MENU_ID_DISPLAY_TEXT:
@@ -528,7 +533,31 @@ static void ApplyResolutionChoice(U32 w, U32 h) {
         // Persist immediately so the next launch boots at the chosen
         // resolution. Mirrors the Phase 0 keep/revert "Keep" path.
         WriteConfigFile();
+        Menu_RepaintAfterResolutionSwitch();
+    }
+}
 
+S32 MenuRelayoutReturns = 0;
+S32 (*MenuRedrawHook)(void) = NULL;
+
+void Menu_RepaintAfterWindowFit(void) {
+    // (the switch showed the scene's palette -- ChoicePalette, Palette(PtrPal) -- and the menus are shown in the menu's own; before
+    // any race PtrPal is the menu's too, as MainGameMenu set it)
+    if (!FlagShadeMenu)
+        PtrPal = PtrPalNormal;
+    Palette(PtrPalNormal);
+    // (in a race, the scene behind the menu drawn again at the game's time as the menu stopped it -- Esc's EscTimer, or a SaveTimer --
+    // not the menu's running clock: the race's own per-frame checks run with the drawing (AffScene: RaceMod_Frame), and saw a car
+    // standing still for as long as the menu had been open -- stuck, put back on the road)
+    const U32 live = TimerRefHR;
+    if (FlagShadeMenu)
+        TimerRefHR = EscTimer ? (U32)EscTimer : Timer_SavedRefHR();
+    Menu_RepaintAfterResolutionSwitch();
+    TimerRefHR = live;
+}
+
+void Menu_RepaintAfterResolutionSwitch(void) {
+    {
         // Res_Switch tears down Log/Screen and the cube reload inside
         // it may have clobbered SkySeaTexture (where the plasma fire
         // bar lives), so the next DoGameMenu redraw would show the
@@ -1570,7 +1599,8 @@ S32 ChoosePlayerName(S32 mess, S32 flagflip, S32 flagnew) {
             if (MyKey == K_GRAY_UP || MyKey == K_GRAY_DOWN)
                 MyKey = 0;
             Input &= ~(I_UP | I_DOWN);
-        } else if (!MyKey) {
+        } else if (!MyKey || MyKey >= K_GAMEPAD_BASE) {
+            /* (a pad scancode in MyKey too -- the pass the pad is pushed: its way recorded then, or the next pass steps again) */
             S32 jdir = JoystickMenuNavOnly();
             if (jdir != padNavDir) {
                 padNavDir = jdir;
@@ -2357,6 +2387,11 @@ void DrawGameMenu(U16 *ptrmenu, S32 justone) {
         if (n == s_menuMarkRow)
             sel |= 2;
 
+        // (a race game's row not open yet, greyed: RACEGAME.CPP)
+        const U8 keepColour = CoulTextMenu;
+        if (RaceGame_RowDisabled(num))
+            CoulTextMenu = COUL_TEXT_MENU_DISABLE;
+
         if (justone) {
             // Per-frame redraw animates the plasma. Refresh the cursor row and,
             // when set, the green marker row, so the marker persists and animates
@@ -2367,6 +2402,7 @@ void DrawGameMenu(U16 *ptrmenu, S32 justone) {
         } else {
             DrawOneChoice(UI_CENTER_X, y, type, num, sel);
         }
+        CoulTextMenu = keepColour;
 
         y += HAUTEUR_STANDARD + MENU_SPACE;
     }
@@ -2615,10 +2651,32 @@ S32 DoGameMenu(U16 *ptrmenu) {
         ManageTime();
         MyGetInput();
 
+        // (the race game's window resized: its picture fitted to the window, RES_SWITCH.CPP -- the backdrop made again at the new size,
+        // and the rows drawn again on it; a race game's page draws itself again first: MENU_RELAYOUT)
+        if (Res_ApplyWindowFit()) {
+            Menu_RepaintAfterWindowFit();
+            if (MenuRelayoutReturns) {
+                ptrmenu[0] = selected;
+                AsciiMode = FALSE;
+                return MENU_RELAYOUT;
+            }
+            flag = 1;
+        }
+        // (a race game's page whose own text has changed while the menu waits -- the updater's word on the Updates page: drawn again,
+        // MENU_RELAYOUT, the row chosen kept)
+        if (MenuRelayoutReturns && MenuRedrawHook && MenuRedrawHook()) {
+            ptrmenu[0] = selected;
+            AsciiMode = FALSE;
+            return MENU_RELAYOUT;
+        }
+
         // Gamepad D-pad / left stick feed the same codes as keyboard arrows.
         // Edge-only: fire one K_GRAY_* on the direction change so a held
         // stick/dpad behaves like a held keyboard arrow (one step, stay).
-        if (!MyKey) {
+        // (MyKey a pad scancode too: the pass the pad is pushed MyGetInput hands
+        // its own scancode on; the way left unrecorded then, the next pass took
+        // it for a new push and stepped twice)
+        if (!MyKey || MyKey >= K_GAMEPAD_BASE) {
             S32 rawDir = JoystickMenuNavOnly();
             if (rawDir != padNavDir) {
                 padNavDir = rawDir;
@@ -2649,7 +2707,12 @@ S32 DoGameMenu(U16 *ptrmenu) {
 
         // rustine Démo non jouable ...
         if (ptrmenu == GameMainMenu) {
-            if ((TimerRefHR - chrono > 50 * 20 * 60)
+            /* (LBA2_NO_ATTRACT: no idle demo -- a recording run on the fixed-dt clock, FRAMEDUMP.CPP, whose menu clock
+               outruns the wall's and reached the minute before a script could pick a track) */
+            static int noAttract = -1;
+            if (noAttract < 0)
+                noAttract = getenv("LBA2_NO_ATTRACT") && *getenv("LBA2_NO_ATTRACT") && *getenv("LBA2_NO_ATTRACT") != '0';
+            if ((!noAttract && TimerRefHR - chrono > 50 * 20 * 60)
                     OR(CheckKey(K_D) AND(CheckKey(K_SHIFT) OR CheckKey(K_SHIFT_LEFT) OR CheckKey(K_SHIFT_RIGHT)))) {
 #ifdef DEMO
                 //                                if( SlideShow() )
@@ -2720,6 +2783,9 @@ S32 DoGameMenu(U16 *ptrmenu) {
 
             if (selected >= nb)
                 selected = 0;
+            // (past a race game's greyed rows: RACEGAME.CPP)
+            for (S32 guard = 0; guard < nb AND RaceGame_RowDisabled(ptrmenu[4 + 1 + selected * 2]); guard++)
+                selected = (S16)(selected + 1 < nb ? selected + 1 : 0);
             flag = 1;
         }
 
@@ -2737,6 +2803,8 @@ S32 DoGameMenu(U16 *ptrmenu) {
 
             if (selected < 0)
                 selected = (U16)(nb - 1);
+            for (S32 guard = 0; guard < nb AND RaceGame_RowDisabled(ptrmenu[4 + 1 + selected * 2]); guard++)
+                selected = (S16)(selected > 0 ? selected - 1 : nb - 1);
             flag = 1;
         }
 
@@ -2980,6 +3048,18 @@ S32 DoGameMenu(U16 *ptrmenu) {
                     if (FlagShadeMenu)
                         ShadeBoxBlk(0, 0, 150, 19, SCREEN_SHADE_LVL);
                 }
+            }
+        }
+
+        /* The console's screenshot (PERSO.CPP takes it in the game's loop) taken in a menu too: the menu as it
+           stands drawn in Log, the menu running on (unlike the harness's one-shot capture below, which closes it). */
+        {
+            char shotPath[ADELINE_MAX_PATH];
+            int is_png = 0;
+            if (Console_HasPendingScreenshot(shotPath, sizeof(shotPath), &is_png)) {
+                if (is_png)
+                    SavePNG(shotPath, Log, (S32)ModeDesiredX, (S32)ModeDesiredY, PtrPal);
+                Console_ClearPendingScreenshot();
             }
         }
 
@@ -3365,7 +3445,15 @@ S32 GereAdvancedOptionsMenu(void) {
             break;
 
         case MENU_ID_FOLLOW_CAMERA:
-            FollowCamera ^= 1;
+            /* Classic -> Auto -> Auto in a car (Classic on foot) -> Classic */
+            if (FollowCameraInCar) {
+                FollowCameraInCar = FALSE;
+                FollowCamera = FALSE;
+            } else if (FollowCamera) {
+                FollowCameraInCar = TRUE;
+            } else {
+                FollowCamera = TRUE;
+            }
             break;
 
         case MENU_ID_VIDEO_SIZE:
@@ -3493,11 +3581,13 @@ S32 OptionsMenu(S32 flagflip) {
 #endif
 
     GameOptionMenu[1] = 6;
+    // (the race game's own rows after the game's: its power-ups and its controls, RACEGAME.CPP)
+    U16 *const optionMenu = RaceGame_OptionsMenu(GameOptionMenu);
 
     MenuMouseAcquire();
 
     while (!flag) {
-        select = DoGameMenu(GameOptionMenu);
+        select = DoGameMenu(optionMenu);
 
         switch (select) // num mess
         {
@@ -3525,6 +3615,10 @@ S32 OptionsMenu(S32 flagflip) {
 
         case MENU_ID_DISPLAY:
             GereDisplayMenu();
+            break;
+
+        default:
+            RaceGame_OptionsRow(select);
             break;
         }
     }
@@ -3873,7 +3967,8 @@ S32 MainGameMenu(S32 load, S32 resumeInGame) {
         goto load_game;
     }
 #else
-    if (!resumeInGame AND IsFirstGameLaunched()) {
+    // (the race game has no introduction: its menu first, RACEGAME.CPP)
+    if (!resumeInGame AND !RaceGame_On() AND IsFirstGameLaunched()) {
         FlagPlayAcf = TRUE;
         goto new_game;
     }
@@ -3956,6 +4051,8 @@ S32 MainGameMenu(S32 load, S32 resumeInGame) {
 
             BackupScreen(FALSE);
 
+            Log_Info("[menu] the game left for the menu: %s (saving %s, life %d, cube %d)", ret == 0 ? "the menu key" : ret == 1 ? "won" : ret == 2 ? "game over" : "?",
+                     SavingEnable ? "on" : "off", (int)ListObjet[NUM_PERSO].LifePoint, (int)NumCube);
             switch (ret) {
             case 0: // <ESC>
                 if (SavingEnable)
@@ -4001,6 +4098,8 @@ S32 MainGameMenu(S32 load, S32 resumeInGame) {
                 break;
             }
 
+            // (a race's mini-map taken off the scene behind the menu, and kept off while it is up: RACEMOD.CPP)
+            { extern void RaceMod_MinimapHide(S32 hide); RaceMod_MinimapHide(TRUE); }
             CopyScreen(Log, Screen);
             BoxReset();
 
@@ -4037,7 +4136,9 @@ S32 MainGameMenu(S32 load, S32 resumeInGame) {
 
         //              GetMultiText( 49, PleaseWait ) ;
 
-        select = DoGameMenu(GameMainMenu);
+        // (the race game's own main menu and its pages: RACEGAME.CPP)
+        select = RaceGame_On() ? RaceGame_Menu(!firstloop) : DoGameMenu(GameMainMenu);
+        Log_Info("[menu] chosen %d (first loop %d, game in progress %d, demo %d)", (int)select, (int)firstloop, (int)GameInProgress, (int)DemoSlide);
         switch (select) // num mess
         {
         case 1000: // <ESC>, on reprend la partie en cours
@@ -4063,6 +4164,7 @@ S32 MainGameMenu(S32 load, S32 resumeInGame) {
                 RestoreTimer();
             } else {
                 GetSavePath(tmpFilePathSave, ADELINE_MAX_PATH, CURRENTSAVE_FILENAME);
+                Log_Info("[menu] resumed from the current save, %s", tmpFilePathSave);
                 if (ExistsFileOrDir(tmpFilePathSave)) {
                     char memoplayername[256];
                     char memogamepathname[256];
@@ -4240,6 +4342,19 @@ S32 MainGameMenu(S32 load, S32 resumeInGame) {
             Cls();
             BoxUpdate();
             flag = 1;
+            break;
+
+        case RACEGAME_START: // the race game's race, set up (RACEGAME.CPP): a new game at its start line, no introduction
+            firstloop = FALSE;
+            strcpy(PlayerName, "");
+            PtrPal = PtrPalNormal;
+            StopMusic();
+            InitGame(1);
+            HQ_StopSample();
+            HQ_ResumeSamples();
+            FlagFade = TRUE;
+            gogame = TRUE;
+            EscTimer = 0;
             break;
 
 #ifdef DEBUG_TOOLS

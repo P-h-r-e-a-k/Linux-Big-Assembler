@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LBAAssembler.Maps;
 
 namespace LBAAssembler;
 
@@ -53,6 +54,15 @@ public partial class MainWindow
     {
         if (((FrameworkElement)sender).Tag is not ZoneRef zone) return;
         e.Handled = true;
+        selectedPoint = null;
+        // (Build: the scene panel shows the zone, and dragging its outline moves it)
+        if (ScenePanelActive)
+        {
+            SelectZone(zone, showTab: false);
+            SceneItemPickedInView(zone.Scene, SceneItemKind.Zone, zone.Index);
+            BeginSceneDrag(SceneItemKind.Zone, zone.Scene, zone.Index, e.GetPosition(ActorMarkerCanvas));
+            return;
+        }
         SelectZone(zone, showTab: true);
     }
 
@@ -77,6 +87,7 @@ public partial class MainWindow
 
     private void RefreshZoneListIfVisible()
     {
+        SyncScenePanelToView();
         if (ZoneDetailsTab.IsSelected) RefreshZoneList();
         // The Zones tab's own "Actors in view" list (MainWindow.Modes.cs) needs refreshing at the same
         // points as the zone list above -- both go stale for the same reason (the view changed) -- so
@@ -307,7 +318,9 @@ public partial class MainWindow
         }
         SelectZone(reference, showTab: false);
         RefreshZoneListIfVisible();
-        ZoneStatus.Text = "Saved to SCENE.HQR (the first save keeps SCENE.HQR.bak).";
+        ZoneStatus.Text = MapWorkspace.For(edited.Game == 1 ? EditorSettings.Current.Lba1Directory : gameRoot) is { } map
+            ? $"Saved into the map \"{map.Name}\" (File > Save map writes its file)."
+            : "Saved to SCENE.HQR (the first save keeps SCENE.HQR.bak).";
     }
 
     private void ZoneGoto_Click(object sender, RoutedEventArgs e)

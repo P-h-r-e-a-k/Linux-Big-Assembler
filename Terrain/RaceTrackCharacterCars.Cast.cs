@@ -221,6 +221,13 @@ internal static partial class RaceTrackCharacterCars
 
     public static string CastName(CastMember c) => $"{c.Short}'s {Noun(StyleOf(c))}";
 
+    // A cast's car by its driver's body (BODY.HQR): its number (RACECARS.JSON), -1 none.
+    public static int CastCar(int character)
+    {
+        var i = Array.FindIndex(Cast, c => c.Character == character);
+        return i < 0 ? -1 : CastFirst + i;
+    }
+
     // The cast's cars, numbered on from the cars made by hand.
     public static Car[] CastCars => Cast.Select((c, i) => new Car(CastName(c), c.Driver, c.Character, CastFirst + i, (ch, racer) => BuildCast(c, i, ch, racer), c.Island)).ToArray();
 
@@ -654,7 +661,13 @@ internal static partial class RaceTrackCharacterCars
 
     // One line of RACECARS.JSON: a car by its number -- its name, who drives, the island, the entity and body number it is in the entity
     // table, and its BODY.HQR bodies (its own and its half-size copy, -1 none).
-    public sealed record CatalogueEntry(int Number, string Name, string Driver, string Island, int Entity, int Generic, int Body, int Small);
+    public sealed record CatalogueEntry(int Number, string Name, string Driver, string Island, int Entity, int Generic, int Body, int Small)
+    {
+        // A copy of the car drawn on the islands whose palette draws a violet -- its BODY.HQR body and its half-size copy (the toy truck's
+        // violet-wheeled copy: InstallToyTruckViolet, VioletIslands) --; left out of the file for every other car.
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public int[]? Violet { get; init; }
+    }
 
     // Adds the cast's cars to a game folder (after the cars made by hand and their half-size copies, RaceTrackSmallCars): the entities they
     // are bodies of -- copies of the racer's animations -- each car's body and its half-size copy at the end of BODY.HQR, and RACECARS.JSON

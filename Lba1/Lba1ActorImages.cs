@@ -91,11 +91,23 @@ internal sealed class Lba1ActorImages
         }
     }
 
-    // A fully shaded render for the actor window, background opaque.
-    public BitmapSource? RenderPreview(int bodyIndex, int width, int height, float yaw, System.Numerics.Vector3[]? pose = null)
+    // A fully shaded render for the actor window, background opaque: the body in a pose (bone frames as the animation player gives
+    // them; null = as modelled), lit as the game lights it (each normal's own range keeps a polygon inside its colour ramp) under a
+    // scene's light angles (null = the game's default light), the view taken as the iso camera's (yaw 0 = facing the camera).
+    public BitmapSource? RenderPreview(int bodyIndex, int width, int height, float yaw, IReadOnlyList<(int Type, double X, double Y, double Z)>? bones = null,
+        (int Alpha, int Beta)? light = null)
     {
         if (Body(bodyIndex) is not { } body || width < 1 || height < 1) return null;
-        using var bitmap = LbaBodyStudio.Renderer.Render(body, palette, width, height, yaw, wire: false, pose: pose, background: LbaBodyStudio.Renderer.ViewBackground, gridLine: LbaBodyStudio.Renderer.ViewGrid);
+        var points = Lba1Pose.World(body, bones ?? Array.Empty<(int, double, double, double)>(), out var matrices);
+        var shading = version == 1 && body.Normals.Count > 0
+            ? new LbaBodyStudio.Lba1Shading
+            {
+                BoneMatrices = matrices, ActorBeta = LbaBodyStudio.Lba1Shading.BetaOfYaw(yaw),
+                AlphaLight = light?.Alpha ?? LbaBodyStudio.Lba1Shading.DefaultAlphaLight, BetaLight = light?.Beta ?? LbaBodyStudio.Lba1Shading.DefaultBetaLight,
+            }
+            : null;
+        using var bitmap = LbaBodyStudio.Renderer.Render(body, palette, width, height, yaw, wire: false, pose: bones is null ? null : points, shading: shading,
+            background: LbaBodyStudio.Renderer.ViewBackground, gridLine: LbaBodyStudio.Renderer.ViewGrid);
         var handle = bitmap.GetHbitmap();
         try
         {

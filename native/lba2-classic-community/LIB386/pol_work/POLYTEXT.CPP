@@ -1293,6 +1293,269 @@ S32 Filler_TextureChromaKeyFogZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax
     return Triangle_ReadNextEdge(NULL, NULL);
 }
 
+// Filler_TextureFogZBuf and Filler_TextureChromaKeyFogZBuf with each pixel's fog by its own depth (Fill_FogPerPixel, POLY.H): a texel's
+// colour from its depth's fog band of the CLUT's palette row, where those take it from Fill_Logical_Palette (the polygon's one band).
+static PTR_U8 POLYTEXT_FogRow = NULL;
+#define POLYTEXT_FOG_PAL(z) (POLYTEXT_FogRow + Fill_FogBandOf[((z) & 0xFFFF) >> 6])
+
+S32 Filler_TextureFogZBufPix(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax) {
+    U32 diffY = nbLines + 1;
+    Fill_CurY += diffY;
+    U32 u = Fill_CurMapUMin;
+    U32 v = Fill_CurMapVMin;
+    U32 patch = Fill_Patch - 1;
+
+    if (patch == 0) {
+        Fill_Patch = patch;
+
+        POLYTEXT_DecMapUIntZBuf = (Fill_MapU_XSlope << 16) | ((Fill_ZBuf_XSlope >> 8) & 0xFFFF);
+        POLYTEXT_DecMapV = Fill_MapV_XSlope << 16;
+        POLYTEXT_PtrMapPatch = PtrMap;
+        POLYTEXT_RepMaskPatch = RepMask;
+        POLYTEXT_IntMapU = (Fill_MapU_XSlope >> 16) & 0xFF;
+        POLYTEXT_IntMapV = (Fill_MapV_XSlope >> 16) & 0xFF;
+        POLYTEXT_PtrZBufferPatch = PtrZBuffer;
+        POLYTEXT_PtrZBuffer1 = PtrZBuffer;
+        POLYTEXT_DecZBuf = Fill_ZBuf_XSlope << 24;
+        POLYTEXT_PtrLog = (PTR_U8)Log;
+        POLYTEXT_FogRow = PtrCLUTFog + ((U32)(PtrTruePal - PtrCLUTFog) & 0x0F00);
+    } else {
+        Fill_CurOffLine += ScreenPitch;
+        fillCurXMin += Fill_LeftSlope;
+        fillCurXMax += Fill_RightSlope;
+        u += Fill_MapU_LeftSlope;
+        v += Fill_MapV_LeftSlope;
+        Fill_CurZBufMin += Fill_ZBuf_LeftSlope;
+    }
+
+    while (1) {
+        U32 fillWidth = (fillCurXMax >> 16) - (fillCurXMin >> 16);
+        if ((fillCurXMax >> 16) > (fillCurXMin >> 16)) {
+            U8 *line = (fillCurXMin >> 16) + Fill_CurOffLine;
+            U32 lineV = v;
+            U32 lineU = u;
+            U32 factor = (fillCurXMin & 0xFFFF) ^ 0xFFFF;
+            if (fillWidth > 16) {
+                U64 addU = ((S64)(S32)factor * (S64)(S32)Fill_MapU_XSlope);
+                U32 addUDec = (U32)(addU >> 32);
+                U32 addUInt = (U32)(addU & 0xFFFFFFFF);
+                addUDec = addUDec << 16;
+                addUInt = addUInt >> 16;
+                addUDec |= addUInt;
+                lineU += addUDec;
+
+                U64 addV = ((S64)(S32)factor * (S64)(S32)Fill_MapV_XSlope);
+                U32 addVDec = (U32)(addV >> 32);
+                U32 addVInt = (U32)(addV & 0xFFFFFFFF);
+                addVDec = addVDec << 16;
+                addVInt = addVInt >> 16;
+                addVInt |= addVDec;
+                lineV += addVInt;
+            }
+            U32 lineVDec = lineV << 16;
+            U32 mapIndex = RepMask & (((lineU >> 16) & 0xFF) | ((lineV & 0xFF0000) >> 8));
+            U32 decZ = Fill_CurZBufMin << 24;
+            U32 offset = line - (U8 *)Log;
+            U32 decU_intZ = (Fill_CurZBufMin >> 8) | (lineU << 16);
+
+            do {
+                if ((decU_intZ & 0xFFFF) <= POLYTEXT_PtrZBufferPatch[offset]) {
+                    POLYTEXT_PtrZBuffer1[offset] = decU_intZ & 0xFFFF;
+                    const PTR_U8 pal = POLYTEXT_FOG_PAL(decU_intZ);
+                    U8 outIdx = pal[POLYTEXT_PtrMapPatch[mapIndex]];
+                    if (PolyTexFilter != POLY_TEX_FILTER_OFF) {
+                        const U32 qu = ((decU_intZ >> 24) & 0xFF) >> 6;
+                        const U32 iU = ((mapIndex & 0xFF00) | ((mapIndex + 1) & 0xFF)) &
+                                       POLYTEXT_RepMaskPatch;
+                        const U8 bU = pal[POLYTEXT_PtrMapPatch[iU]];
+                        outIdx = POLY_BLEND(outIdx, bU, qu);
+                        if (PolyTexFilter == POLY_TEX_FILTER_BILINEAR) {
+                            const U32 iV = (((mapIndex + 0x100) & 0xFF00) | (mapIndex & 0xFF)) &
+                                           POLYTEXT_RepMaskPatch;
+                            const U32 iUV = ((iV & 0xFF00) | (iU & 0xFF)) & POLYTEXT_RepMaskPatch;
+                            const U8 aV = pal[POLYTEXT_PtrMapPatch[iV]];
+                            const U8 bV = pal[POLYTEXT_PtrMapPatch[iUV]];
+                            const U8 lower = POLY_BLEND(aV, bV, qu);
+                            const U32 qv = ((lineVDec >> 24) & 0xFF) >> 6;
+                            outIdx = POLY_BLEND(outIdx, lower, qv);
+                        }
+                    }
+                    POLYTEXT_PtrLog[offset] = outIdx;
+                }
+
+                offset++;
+
+                U8 carry = (decZ > (0xFFFFFFFF - POLYTEXT_DecZBuf));
+                decZ += POLYTEXT_DecZBuf;
+                U8 carry2 = (decU_intZ > (0xFFFFFFFF - POLYTEXT_DecMapUIntZBuf - carry));
+                decU_intZ += POLYTEXT_DecMapUIntZBuf + carry;
+                mapIndex = (mapIndex & 0xFFFFFF00) | (((POLYTEXT_IntMapU & 0xFF) + (mapIndex & 0xFF) + carry2) & 0xFF);
+
+                carry = (lineVDec > (0xFFFFFFFF - POLYTEXT_DecMapV));
+                lineVDec += POLYTEXT_DecMapV;
+                mapIndex = (mapIndex & 0xFFFF00FF) | (((POLYTEXT_IntMapV & 0xFF) + (((mapIndex >> 8) & 0xFF) + carry) & 0xFF) << 8);
+
+                mapIndex &= POLYTEXT_RepMaskPatch;
+                --fillWidth;
+            } while (fillWidth);
+        }
+        diffY--;
+        if (diffY == 0) {
+            break;
+        }
+
+        Fill_CurOffLine += ScreenPitch;
+        fillCurXMin += Fill_LeftSlope;
+        fillCurXMax += Fill_RightSlope;
+        u += Fill_MapU_LeftSlope;
+        v += Fill_MapV_LeftSlope;
+        Fill_CurZBufMin += Fill_ZBuf_LeftSlope;
+    }
+
+    Fill_CurXMin = fillCurXMin;
+    Fill_CurXMax = fillCurXMax;
+    Fill_CurMapUMin = u;
+    Fill_CurMapVMin = v;
+
+    return Triangle_ReadNextEdge(NULL, NULL);
+}
+
+S32 Filler_TextureChromaKeyFogZBufPix(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax) {
+    U32 diffY = nbLines + 1;
+    Fill_CurY += diffY;
+    U32 u = Fill_CurMapUMin;
+    U32 v = Fill_CurMapVMin;
+    U32 patch = Fill_Patch - 1;
+
+    if (patch == 0) {
+        Fill_Patch = patch;
+
+        POLYTEXT_PtrMapPatch = PtrMap;
+        POLYTEXT_DecMapU = Fill_MapU_XSlope << 16;
+        POLYTEXT_DecMapV = Fill_MapV_XSlope << 16;
+        POLYTEXT_RepMaskPatch = RepMask;
+        POLYTEXT_IntMapU = (Fill_MapU_XSlope >> 16) & 0xFF;
+        POLYTEXT_IntMapV = (Fill_MapV_XSlope >> 16) & 0xFF;
+        POLYTEXT_PtrZBufferPatch = PtrZBuffer;
+        POLYTEXT_PtrZBuffer1 = PtrZBuffer;
+        POLYTEXT_DecZBuf = Fill_ZBuf_XSlope << 24;
+        POLYTEXT_IntZBuf = (Fill_ZBuf_XSlope >> 8) & 0xFFFF;
+        POLYTEXT_DecMapUIntZBuf = (Fill_MapU_XSlope << 16) | POLYTEXT_IntZBuf;
+        POLYTEXT_PtrLog = (PTR_U8)Log;
+        POLYTEXT_FogRow = PtrCLUTFog + ((U32)(PtrTruePal - PtrCLUTFog) & 0x0F00);
+    } else {
+        Fill_CurOffLine += ScreenPitch;
+        fillCurXMin += Fill_LeftSlope;
+        fillCurXMax += Fill_RightSlope;
+        u += Fill_MapU_LeftSlope;
+        v += Fill_MapV_LeftSlope;
+        Fill_CurZBufMin += Fill_ZBuf_LeftSlope;
+    }
+
+    while (1) {
+        U32 fillWidth = (fillCurXMax >> 16) - (fillCurXMin >> 16);
+        if ((fillCurXMax >> 16) > (fillCurXMin >> 16)) {
+            U8 *line = (fillCurXMin >> 16) + Fill_CurOffLine;
+            U32 lineV = v;
+            U32 lineU = u;
+            U32 factor = (fillCurXMin & 0xFFFF) ^ 0xFFFF;
+            if (fillWidth > 16) {
+                U64 addU = ((S64)(S32)factor * (S64)(S32)Fill_MapU_XSlope);
+                U32 addUDec = (U32)(addU >> 32);
+                U32 addUInt = (U32)(addU & 0xFFFFFFFF);
+                addUDec = addUDec << 16;
+                addUInt = addUInt >> 16;
+                addUDec |= addUInt;
+                lineU += addUDec;
+
+                U64 addV = ((S64)(S32)factor * (S64)(S32)Fill_MapV_XSlope);
+                U32 addVDec = (U32)(addV >> 32);
+                U32 addVInt = (U32)(addV & 0xFFFFFFFF);
+                addVDec = addVDec << 16;
+                addVInt = addVInt >> 16;
+                addVInt |= addVDec;
+                lineV += addVInt;
+            }
+            U32 lineVDec = lineV << 16;
+            U32 mapIndex = RepMask & (((lineU >> 16) & 0xFF) | ((lineV & 0xFF0000) >> 8));
+            U32 decZ = Fill_CurZBufMin << 24;
+            U32 offset = line - (U8 *)Log;
+            U32 decU_intZ = (Fill_CurZBufMin >> 8) | (lineU << 16);
+
+            do {
+                if ((decU_intZ & 0xFFFF) <= POLYTEXT_PtrZBufferPatch[offset]) {
+                    U8 textureColor = POLYTEXT_PtrMapPatch[mapIndex];
+
+                    // Chroma key test - skip transparent pixels (color 0)
+                    if (textureColor != 0) {
+                        POLYTEXT_PtrZBuffer1[offset] = decU_intZ & 0xFFFF;
+                        const PTR_U8 pal = POLYTEXT_FOG_PAL(decU_intZ);
+                        U8 foggedColor = pal[textureColor];
+                        if (PolyTexFilter != POLY_TEX_FILTER_OFF) {
+                            const U32 qu = ((decU_intZ >> 24) & 0xFF) >> 6;
+                            const U32 iU = ((mapIndex & 0xFF00) | ((mapIndex + 1) & 0xFF)) &
+                                           POLYTEXT_RepMaskPatch;
+                            const U8 tU = POLYTEXT_PtrMapPatch[iU];
+                            if (tU != 0) {
+                                foggedColor = POLY_BLEND(foggedColor, pal[tU], qu);
+                            }
+                            if (PolyTexFilter == POLY_TEX_FILTER_BILINEAR) {
+                                const U32 iV = (((mapIndex + 0x100) & 0xFF00) |
+                                                (mapIndex & 0xFF)) &
+                                               POLYTEXT_RepMaskPatch;
+                                const U32 iUV = ((iV & 0xFF00) | (iU & 0xFF)) &
+                                                POLYTEXT_RepMaskPatch;
+                                const U8 tV = POLYTEXT_PtrMapPatch[iV];
+                                const U8 tUV = POLYTEXT_PtrMapPatch[iUV];
+                                if (tV != 0 && tUV != 0) {
+                                    const U8 lower = POLY_BLEND(pal[tV], pal[tUV], qu);
+                                    const U32 qv = ((lineVDec >> 24) & 0xFF) >> 6;
+                                    foggedColor = POLY_BLEND(foggedColor, lower, qv);
+                                }
+                            }
+                        }
+                        POLYTEXT_PtrLog[offset] = foggedColor;
+                    }
+                }
+
+                U8 carry = (decZ > (0xFFFFFFFF - POLYTEXT_DecZBuf));
+                decZ += POLYTEXT_DecZBuf;
+                U8 carry2 = (decU_intZ > (0xFFFFFFFF - POLYTEXT_DecMapUIntZBuf - carry));
+                decU_intZ += POLYTEXT_DecMapUIntZBuf + carry;
+
+                offset++;
+
+                mapIndex = (mapIndex & 0xFFFFFF00) | (((POLYTEXT_IntMapU & 0xFF) + (mapIndex & 0xFF) + carry2) & 0xFF);
+
+                carry = (lineVDec > (0xFFFFFFFF - POLYTEXT_DecMapV));
+                lineVDec += POLYTEXT_DecMapV;
+                mapIndex = (mapIndex & 0xFFFF00FF) | (((POLYTEXT_IntMapV & 0xFF) + (((mapIndex >> 8) & 0xFF) + carry) & 0xFF) << 8);
+
+                mapIndex &= POLYTEXT_RepMaskPatch;
+                --fillWidth;
+            } while (fillWidth);
+        }
+        diffY--;
+        if (diffY == 0) {
+            break;
+        }
+
+        Fill_CurOffLine += ScreenPitch;
+        fillCurXMin += Fill_LeftSlope;
+        fillCurXMax += Fill_RightSlope;
+        u += Fill_MapU_LeftSlope;
+        v += Fill_MapV_LeftSlope;
+        Fill_CurZBufMin += Fill_ZBuf_LeftSlope;
+    }
+
+    Fill_CurXMin = fillCurXMin;
+    Fill_CurXMax = fillCurXMax;
+    Fill_CurMapUMin = u;
+    Fill_CurMapVMin = v;
+
+    return Triangle_ReadNextEdge(NULL, NULL);
+}
+
 S32 Filler_TextureNZW(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax) {
     U32 diffY = nbLines + 1;
     Fill_CurY += diffY;

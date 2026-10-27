@@ -20,6 +20,12 @@ internal sealed class ScriptSession
     private readonly Dictionary<int, List<ActorSource>> exteriorMaps = new();
     private readonly string? commentsPathOverride;
     private CommentStore? commentStore;
+    // The game folder the scenes held here were read from. The folder open can change under the session (a map opened or closed, test
+    // edits started or ended: the editor's game folder is then a working copy, or the game's own again) and scene numbers mean another
+    // scene there -- an LBA1 map takes a scene slot of the game. Scenes are only ever shown from, and saved into, the folder they were
+    // read from: an LBA1 map's unsaved script edit, kept after Close map, showed as the game's own scene 28 and was saved over it
+    // (2026-10-17). MainWindow settles the edits (saves or drops them) before it changes the folder; this is the safety net.
+    private string? cacheFolder;
 
     // commentsPath: where comments are kept; by default a sidecar next to SCENE.HQR.
     // lba1: the game folder holds Little Big Adventure 1 (scene N in HQR entry N, LBA1 opcodes and scene layout).
@@ -37,7 +43,39 @@ internal sealed class ScriptSession
 
     public string HqrPath => Path.Combine(gameRoot(), "SCENE.HQR");
 
-    public string CommentsPath => commentsPathOverride ?? HqrPath + ".comments.json";
+    // The game folder open now (an open map's workspace while a map is open).
+    public string Folder => Normal(gameRoot());
+
+    // Where the scenes held here (and their edits) come from, when that isn't the folder open now; null when it is (or nothing is held).
+    public string? OtherFolder => cacheFolder is { } f && !string.Equals(f, Folder, StringComparison.OrdinalIgnoreCase) ? f : null;
+
+    private static string Normal(string folder)
+        => string.IsNullOrEmpty(folder) ? "" : Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+    // Forgets every scene held, edits and all (the caller has saved or given up what it wanted kept).
+    public void DiscardAll()
+    {
+        scenes.Clear();
+        exteriorMaps.Clear();
+        cacheFolder = null;
+        commentStore = null;
+    }
+
+    // Before a scene is read: scenes held from another folder go (they belong to it, not to the one open now) -- unless they have unsaved
+    // edits, which are never dropped behind the user's back: then nothing is read from this folder until they are settled.
+    private bool FolderReady()
+    {
+        if (OtherFolder is null) return true;
+        if (HasUnsavedEdits)
+        {
+            DebugLog.Log($"ScriptSession: unsaved script edits of {cacheFolder} (scene {string.Join(", ", EditedScenes)}) are held; {Folder} isn't read until they are saved or dropped");
+            return false;
+        }
+        DiscardAll();
+        return true;
+    }
+
+    public string CommentsPath => commentsPathOverride ?? Path.Combine(cacheFolder ?? gameRoot(), "SCENE.HQR") + ".comments.json";
 
     // Loaded on first use. If the file exists but could not be read, LoadError says
     // why and nothing is overwritten without keeping a copy first.
@@ -57,6 +95,7 @@ internal sealed class ScriptSession
 
     public SceneScripts? GetScene(int scene)
     {
+        if (!FolderReady()) return null;
         if (scenes.TryGetValue(scene, out var loaded)) return loaded;
         try
         {
@@ -65,6 +104,7 @@ internal sealed class ScriptSession
             if (scene < 0 || scene >= SceneEntryCount() || !archive.IsValid(Entry(scene))) return null;
             var s = SceneScripts.Load(archive.Read(Entry(scene)), scene, (actor, kind) => Comments.Get(scene, actor, kind), lba1);
             scenes[scene] = s;
+            cacheFolder = Folder;
             return s;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or ScriptFormatException or UnauthorizedAccessException)
@@ -101,13 +141,14 @@ internal sealed class ScriptSession
     // and have no scene record yet, so they resolve to null.
     public ActorSource? ExteriorActor(int islandIndex, int actorIndex)
     {
-        if (islandIndex < 0 || actorIndex < 0) return null;
+        if (islandIndex < 0 || actorIndex < 0 || !FolderReady()) return null;
         if (!exteriorMaps.TryGetValue(islandIndex, out var map)) exteriorMaps[islandIndex] = map = BuildExteriorMap(islandIndex);
         return actorIndex < map.Count ? map[actorIndex] : null;
     }
 
     public int ExteriorActorCount(int islandIndex)
     {
+        if (!FolderReady()) return 0;
         if (!exteriorMaps.TryGetValue(islandIndex, out var map)) exteriorMaps[islandIndex] = map = BuildExteriorMap(islandIndex);
         return map.Count;
     }
@@ -115,6 +156,7 @@ internal sealed class ScriptSession
     private List<ActorSource> BuildExteriorMap(int islandIndex)
     {
         var map = new List<ActorSource>();
+        cacheFolder ??= Folder;         // (the list is this folder's: another folder's numbering isn't kept for it)
         try
         {
             if (!File.Exists(HqrPath)) return map;
@@ -143,6 +185,11 @@ internal sealed class ScriptSession
     {
         var edited = EditedScenes;
         if (edited.Count == 0) return new SessionSaveResult(true, "No edited scripts to save.", Array.Empty<ScriptDiagnostic>());
+        // (edits go back into the folder their scenes were read from, never into another one's: scene N there is another scene here -- a
+        // map's working copy that is gone can't take them)
+        var folder = cacheFolder ?? Folder;
+        if (!File.Exists(Path.Combine(folder, "SCENE.HQR")))
+            return new SessionSaveResult(false, $"Not saved: the edited scripts (scene {string.Join(", ", edited)}) were made in {folder}, which isn't there any more.", Array.Empty<ScriptDiagnostic>());
 
         var built = new List<(int Scene, byte[] Record, IReadOnlyDictionary<(int Actor, ScriptKind Kind), CommentSet?> Comments)>();
         var errors = new List<ScriptDiagnostic>();
@@ -157,7 +204,7 @@ internal sealed class ScriptSession
 
         try
         {
-            var path = HqrPath;
+            var path = Path.Combine(folder, "SCENE.HQR");
             var archive = HqrArchive.Open(path);
 
             // Only scenes whose record really changed need SCENE.HQR rewritten: a save
@@ -183,9 +230,11 @@ internal sealed class ScriptSession
                 sceneStore.SaveMany(
                     changed.Select(c => new Scenes.SceneChange(c.Scene, Scenes.SceneSerializer.Parse(game, c.Record))).ToList(),
                     description: $"Save scripts of scene {string.Join(", ", changed.Select(b => b.Scene))}");
-                parts.Add($"scene {string.Join(", ", changed.Select(b => b.Scene))} written to {Path.GetFileName(path)} (backup: {Path.GetFileName(path)}.bak)");
+                parts.Add(Maps.MapWorkspace.For(folder) is { } map
+                    ? $"scene {string.Join(", ", changed.Select(b => b.Scene))} written into the map \"{map.Name}\" ({Maps.MapWorkspace.AfterSave(folder)})"
+                    : $"scene {string.Join(", ", changed.Select(b => b.Scene))} written to {Path.GetFileName(path)} (backup: {Path.GetFileName(path)}.bak)");
             }
-            else parts.Add("script bytes unchanged, SCENE.HQR left alone");
+            else parts.Add($"script bytes unchanged, {Maps.MapWorkspace.Target(folder)} left alone");
             if (commentsChanged) parts.Add($"comments saved to {Path.GetFileName(store.Path)}");
 
             // What was saved is the new baseline for those scenes.
@@ -195,7 +244,7 @@ internal sealed class ScriptSession
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or ScriptFormatException)
         {
-            try { File.Delete(HqrPath + ".tmp"); } catch (IOException) { }
+            try { File.Delete(Path.Combine(folder, "SCENE.HQR") + ".tmp"); } catch (IOException) { }
             if (e is Scenes.SceneValidationException) DebugLog.Log($"ScriptSession: save refused by the scene validator: {e.Message}");
             return new SessionSaveResult(false, $"Not saved: {e.Message}", Array.Empty<ScriptDiagnostic>());
         }

@@ -292,6 +292,71 @@ S32 Filler_FlatZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax) {
     return Triangle_ReadNextEdge(NULL, NULL);
 }
 
+// Filler_FlatZBuf with each pixel's fog by its own depth (Fill_FogPerPixel, POLY.H): Fill_Color.Num the polygon's colour unfogged, each
+// pixel's colour that colour in its depth's fog band of the CLUT's palette row (Jmp_SolidFogZBuf).
+static PTR_U8 POLYFLAT_FogRow = NULL;
+S32 Filler_FlatFogZBufPix(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax) {
+    U32 count = nbLines + 1;
+    U8 *curOffLine = Fill_CurOffLine;
+    Fill_CurY += count;
+    U32 curZ = Fill_CurZBufMin;
+    U32 patch = Fill_Patch - 1;
+
+    if (patch == 0) {
+        Fill_Patch = patch;
+        POLYFLAT_PtrZBufferPatch = PtrZBuffer;
+        POLYFLAT_PtrZBuffer1 = PtrZBuffer;
+        POLYFLAT_PtrLog = (U8 *)Log;
+        POLYFLAT_FogRow = PtrCLUTFog + ((U32)(PtrTruePal - PtrCLUTFog) & 0x0F00) + (Fill_Color.Num & 0xFF);
+    } else {
+        curOffLine += ScreenPitch;
+        fillCurXMin += Fill_LeftSlope;
+        fillCurXMax += Fill_RightSlope;
+        curZ += Fill_ZBuf_LeftSlope;
+    }
+
+    const PTR_U8 colour = POLYFLAT_FogRow;
+    while (1) {
+        U8 *screen = (fillCurXMin >> 16) + curOffLine;
+        U32 diffX = (fillCurXMax >> 16) - (fillCurXMin >> 16);
+        if ((fillCurXMax >> 16) > (fillCurXMin >> 16)) {
+            U32 zDec = curZ << 24;
+            U32 zDecSlope = Fill_ZBuf_XSlope << 24;
+            U32 zIntSlope = (U32)Fill_ZBuf_XSlope >> 8;
+            U32 offset = screen - (U8 *)Log;
+            U32 zInt = curZ >> 8;
+            do {
+                if (POLYFLAT_PtrZBufferPatch[offset] >= (zInt & 0xFFFF)) {
+                    POLYFLAT_PtrZBuffer1[offset] = zInt & 0xFFFF;
+                    POLYFLAT_PtrLog[offset] = colour[Fill_FogBandOf[(zInt & 0xFFFF) >> 6]];
+                }
+
+                ++offset;
+                U8 carry = (U64)zDec + (U64)zDecSlope > 0xFFFFFFFF;
+                zDec += zDecSlope;
+                zInt += zIntSlope + carry;
+                --diffX;
+            } while (diffX);
+        }
+
+        if (!--count) {
+            break;
+        }
+
+        curOffLine += ScreenPitch;
+        fillCurXMin += Fill_LeftSlope;
+        fillCurXMax += Fill_RightSlope;
+        curZ += Fill_ZBuf_LeftSlope;
+    }
+
+    Fill_CurZBufMin = curZ;
+    Fill_CurXMin = fillCurXMin;
+    Fill_CurXMax = fillCurXMax;
+    Fill_CurOffLine = curOffLine;
+
+    return Triangle_ReadNextEdge(NULL, NULL);
+}
+
 // TODO: Verify
 S32 Filler_TransparentZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax) {
     LIB386_TRACE_CPP("Filler_TransparentZBuf", "1", "nbLines=%u xmin=0x%08x xmax=0x%08x", nbLines, fillCurXMin, fillCurXMax);

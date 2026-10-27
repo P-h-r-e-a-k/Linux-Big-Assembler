@@ -46,8 +46,9 @@ public partial class Lba1ActorAttributesWindow : Window
 
     // scene / actorIndex locate the actor; apply saves the edited attributes (returning an error message,
     // or null on success); openScript opens the script editor for this actor.
+    // applyBehaviour: "Apply a behaviour…" (the main window gives the actor ready-made scripts, ActorBehaviours, and saves the scene).
     internal Lba1ActorAttributesWindow(Lba1Game game, Lba1ActorImages images, int scene, int actorIndex, string sceneTitle,
-        Func<Lba1ActorData, string?> apply, Action openScript)
+        Func<Lba1ActorData, string?> apply, Action openScript, Action? applyBehaviour = null)
     {
         InitializeComponent();
         this.game = game;
@@ -56,6 +57,8 @@ public partial class Lba1ActorAttributesWindow : Window
         this.actorIndex = actorIndex;
         this.apply = apply;
         this.openScript = openScript;
+        this.applyBehaviour = applyBehaviour;
+        BehaviourButton.IsEnabled = applyBehaviour is not null && actorIndex > 0;
 
         Title = actorIndex == 0 ? $"Twinsen - scene {scene}" : $"Actor {actorIndex} Attributes";
         TitleLabel.Text = (actorIndex == 0 ? "Twinsen (start position)" : $"Actor {actorIndex}") + $"   ·   {sceneTitle}";
@@ -100,7 +103,9 @@ public partial class Lba1ActorAttributesWindow : Window
         FlagsListLeft.ItemsSource = flagItems.Take(half).ToList();
         FlagsListRight.ItemsSource = flagItems.Skip(half).ToList();
 
-        var track = Lba1TrackScript.Points(game.LoadScene(scene).Actors.ElementAtOrDefault(actorIndex)?.TrackScript ?? Array.Empty<byte>());
+        var loadedScene = game.LoadScene(scene);
+        sceneLight = (loadedScene.AlphaLight, loadedScene.BetaLight);      // (the preview lights the body as this scene does)
+        var track = Lba1TrackScript.Points(loadedScene.Actors.ElementAtOrDefault(actorIndex)?.TrackScript ?? Array.Empty<byte>());
         WaypointsLabel.Text = actorIndex == 0 || track.Count == 0 ? "" : $"{track.Count} waypoint{(track.Count == 1 ? "" : "s")} on this actor's track script";
 
         ApplyActorKindLimits();
@@ -253,6 +258,7 @@ public partial class Lba1ActorAttributesWindow : Window
 
     private int? previewBodyIndex;
     private LbaBodyStudio.Body? previewBody;
+    private readonly (int Alpha, int Beta) sceneLight;
     private Lba1Animation.Player? player;
     private readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
     private long lastTick;
@@ -296,7 +302,7 @@ public partial class Lba1ActorAttributesWindow : Window
         }
         var w = (int)Math.Max(80, PreviewBorder.ActualWidth - 2);
         var h = (int)Math.Max(120, PreviewBorder.ActualHeight - 2);
-        if (images.RenderPreview(body, w, h, previewAngle * (float)(Math.PI * 2 / 4096), Pose()) is { } source)
+        if (images.RenderPreview(body, w, h, previewAngle * (float)(Math.PI * 2 / 4096), Pose(), sceneLight) is { } source)
         {
             BodyPreviewImage.Source = source;
             BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
@@ -309,7 +315,8 @@ public partial class Lba1ActorAttributesWindow : Window
         }
     }
 
-    private System.Numerics.Vector3[]? Pose() => player is not null && previewBody is not null ? Lba1Pose.World(previewBody, player.Current()) : null;
+    // The animation's current bone frames (null: the body as modelled).
+    private IReadOnlyList<(int Type, double X, double Y, double Z)>? Pose() => player is not null && previewBody is not null ? player.Current() : null;
 
     private void PauseAnimationCheck_Changed(object sender, RoutedEventArgs e)
     {
@@ -352,6 +359,7 @@ public partial class Lba1ActorAttributesWindow : Window
     {
         ApplyButton.IsEnabled = false;
         ApplyButton.ToolTip = "Explore mode only looks; switch to Build mode to change the actor.";
+        BehaviourButton.IsEnabled = false;
         Title += " (view only)";
     }
     // Ctrl+S applies, the same as every other window's own "save" shortcut.
@@ -393,7 +401,9 @@ public partial class Lba1ActorAttributesWindow : Window
 
         var error = apply(edited);
         if (error is not null) { StatusLabel.Text = error; return; }
-        StatusLabel.Text = "Saved to SCENE.HQR (the first save keeps SCENE.HQR.bak).";
+        StatusLabel.Text = Maps.MapWorkspace.For(EditorSettings.Current.Lba1Directory) is { } map
+            ? $"Saved into the map \"{map.Name}\" (File > Save map writes its file)."
+            : "Saved to SCENE.HQR (the first save keeps SCENE.HQR.bak).";
         CopyFrom(edited);
     }
 
@@ -406,6 +416,9 @@ public partial class Lba1ActorAttributesWindow : Window
     }
 
     private void EditScript_Click(object sender, RoutedEventArgs e) => openScript();
+
+    private readonly Action? applyBehaviour;
+    private void Behaviour_Click(object sender, RoutedEventArgs e) => applyBehaviour?.Invoke();
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 }

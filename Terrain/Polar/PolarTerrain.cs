@@ -24,8 +24,10 @@ internal static class PolarTerrain
     // the island's place in the cube map, twice LBA1's size (PolarLayout.Scale): a cell of the layout at (Scale * x + OffsetX, Scale * z +
     // OffsetZ) in the island's cells, so each LBA1 scene's grid (64 x 64 cells, at whole grids from 107's but for 106, 109 and the dock) is
     // two cubes by two or a little over -- 21 cubes have land, the fewest any placement gives -- and the island in cubes (5..9, 4..10), 107's
-    // grid in cubes (7..8, 6..7)
-    public const int CubeX0 = 5, CubeZ0 = 4, CubesX = 5, CubesZ = 7;
+    // grid in cubes (7..8, 6..7). Round them a cube of sea each way, (4..10, 3..11): past the island's last cubes the engine drew no sea --
+    // the race's start, in cube (8, 10), looked out at the edge of the world (the user, 2026-10-27: "connects to another scene without a
+    // water segment")
+    public const int CubeX0 = 4, CubeZ0 = 3, CubesX = 7, CubesZ = 9;
     public const int Scale = PolarLayout.Scale, OffsetX = 7 * 64, OffsetZ = 6 * 64;
     // a cell of the layout's first cell of the island (it has Scale x Scale), and an island cell's of the layout
     public static int IslandX(int x) => x * Scale + OffsetX;
@@ -92,8 +94,49 @@ internal static class PolarTerrain
             if (!IsGround(game, cell) || cell.Scene == PolarLayout.PlateauScene || layout.Peak.Contains((x, z))) continue;
             if (!columns.TryGetValue((x, z), out var c) || y > c.Top) columns[(x, z)] = new Column(y, cell);
         }
+        // (and the floors LBA1 never drew: a building's inside, under its roof, has no brick at all -- its camera never saw down there -- and
+        // the island showed the sea in it, a pool inside the walls (the user, 2026-10-27). A place with no brick at all, ground or water all
+        // round it within HoleReach cells along x and z -- land on two sides at least: a building by a canal has the water behind it -- has
+        // the lowest of that land's ground, and never over what stands there (a sunken frame kept its pit). (Inside the island LBA1 always
+        // drew its water: where it drew nothing, its camera never looked.))
+        var lowest = new Dictionary<(int X, int Z), int>();
+        foreach (var (x, y, z) in layout.Cells.Keys) if (!lowest.TryGetValue((x, z), out var l) || y < l) lowest[(x, z)] = y;
+        foreach (var at in Holes(columns))
+        {
+            var floor = HoleFloor(columns, at);
+            var top = lowest.TryGetValue(at, out var under) ? Math.Min(floor.Top, under - 1) : floor.Top;
+            if (top >= 0) columns[at] = floor with { Top = top };
+        }
         return columns;
     }
+
+    public const int HoleReach = 10;
+
+    // The places with no ground (not water's either), ground or water all round them within HoleReach along x and z, land on two sides
+    public static List<(int X, int Z)> Holes(IReadOnlyDictionary<(int X, int Z), Column> columns)
+    {
+        bool Land((int X, int Z) at) => columns.TryGetValue(at, out var c) && !c.Water;
+        var holes = new List<(int X, int Z)>();
+        if (columns.Count == 0) return holes;
+        int x0 = columns.Keys.Min(k => k.X), x1 = columns.Keys.Max(k => k.X), z0 = columns.Keys.Min(k => k.Z), z1 = columns.Keys.Max(k => k.Z);
+        for (var z = z0; z <= z1; z++)
+            for (var x = x0; x <= x1; x++)
+                if (!columns.ContainsKey((x, z)) && Bounds(columns, (x, z)) is { Count: 4 } b && b.Count(c => !c.Water) >= 2) holes.Add((x, z));
+        return holes;
+    }
+
+    // the ground or water nearest a place along +x, -x, +z and -z, within HoleReach (as many as there are)
+    private static List<Column> Bounds(IReadOnlyDictionary<(int X, int Z), Column> columns, (int X, int Z) at)
+    {
+        var found = new List<Column>();
+        foreach (var (dx, dz) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+            for (var n = 1; n <= HoleReach; n++)
+                if (columns.TryGetValue((at.X + dx * n, at.Z + dz * n), out var c)) { found.Add(c); break; }
+        return found;
+    }
+
+    private static Column HoleFloor(IReadOnlyDictionary<(int X, int Z), Column> columns, (int X, int Z) at) =>
+        Bounds(columns, at).Where(c => !c.Water).MinBy(c => c.Top);
 
     // The surface height of a column (world units on the island, the sea at 0), and as LBA1 has it (the layout's units: a layer 256).
     public static int SurfaceOf(Column c) => c.Water ? 0 : Math.Max(0, LayerY(c.Top));

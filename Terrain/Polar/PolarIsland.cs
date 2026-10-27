@@ -38,7 +38,14 @@ internal static class PolarIsland
             Writable(path);
         }
         var built = Build(lba1Directory, gameDirectory);
-        try { return Install(gameDirectory, built); }
+        try
+        {
+            var log = Install(gameDirectory, built);
+            // (LBA1's digger, Twinsen's car on the island outside a race, and the grobo with its key -- the user, 2026-10-27)
+            log.AddRange(RaceTrackCharacterCars.InstallPolarDigger(gameDirectory, lba1Directory));
+            log.AddRange(PolarGrobo.InstallBody(gameDirectory));
+            return log;
+        }
         catch
         {
             try { Remove(gameDirectory); } catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException) { }
@@ -67,6 +74,8 @@ internal static class PolarIsland
         }
 
         foreach (var f in SharedFiles) Writable(At(f));
+        // (the digger no longer the island's car: its ISLANDCARS.TXT line out; its body stays at the end of BODY.HQR, unused)
+        RaceTrackCharacterCars.SetIslandCar(gameDirectory, RaceTrackCharacterCars.PolarIslandNumber, -1, 0, 0);
         var scene = HqrFile.Parse(File.ReadAllBytes(At("SCENE.HQR")));
         var sceneBackup = Backup("SCENE.HQR");
         // (every number the island's scenes may have -- this version's and an earlier one's -- where the scene is island 12's)

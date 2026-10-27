@@ -129,6 +129,8 @@ typedef struct {
 #define MASK_OBJECT_ANIMATED (1 << 8)
 #define MASK_OBJECT_NO_SORT (1 << 9)
 #define MASK_OBJECT_TRANSPARENT (1 << 10)
+#define MASK_OBJECT_CLOSE (1 << 11) // (LBA Assembler, no retail body has it: drawn close to the camera, see AFF_OBJ.CPP ClipFill)
+#define CLOSE_NEAR 400              // (how close: its polygons cut that far in front of the camera, not at NearClip)
 
 // -----------------------------------------------------------------------------
 extern U8 *ObjPtrMap; // Ptr on the current texture page
@@ -137,6 +139,12 @@ extern T_OBJ_POINT Obj_ListRotatedPoints[];
 extern Func_TransNumPtr *TransFctBody; // Pointer to a conversion fct that converts a body number into its address
 
 // -----------------------------------------------------------------------------
+/// The bodies drawn while this is set are fogged by depth, not one level each (LBA Assembler, 2026-10-18; DECORS.CPP sets it for its
+/// drawn-only decors): each polygon whose corners are all in one fog band has that band (exactly what fogging each pixel would give
+/// it), one that spans bands -- the solid, flat and textured types -- is fogged pixel by pixel (POLY.H Fill_FogPerPixel), any other
+/// type by its corners' mean depth. Only with the fog Z-buffered fillers (FILL_POLY_FOG_ZBUFFER); the CLUT's palette row is kept.
+extern S32 ObjFogByDepth;
+
 extern S32 ObjectDisplay(T_OBJ_3D *obj);
 extern S32 BodyDisplay(S32 x, S32 y, S32 z, S32 alpha, S32 beta, S32 gamma,
                        void *obj);

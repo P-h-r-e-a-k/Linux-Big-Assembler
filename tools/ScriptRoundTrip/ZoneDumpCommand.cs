@@ -16,4 +16,18 @@ internal static class ZoneDumpCommand
         }
         return 0;
     }
+
+    // zoneon <game folder> <scene> <zone>: a scene's zone switched on from the start (its info word 7's bit 1) -- a test folder's, to come
+    // through a door a script would open
+    public static int On(string[] args)
+    {
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, args[1]);
+        var scene = int.Parse(args[2]);
+        var model = store.Load(scene);
+        var z = model.Zones[int.Parse(args[3])];
+        z.Info[7] |= 1;
+        store.Save(scene, model, allowErrors: true);
+        Console.WriteLine($"scene {scene} zone {args[3]}: on ({string.Join(",", z.Info)})");
+        return 0;
+    }
 }

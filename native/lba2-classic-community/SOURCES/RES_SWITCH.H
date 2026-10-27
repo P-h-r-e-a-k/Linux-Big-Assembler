@@ -121,6 +121,24 @@ bool Res_ResolutionShouldPersist(void);
    first (call GetCfgPath). */
 bool Res_LoadBootFullscreen(void);
 
+/* The race game's window (RACEGAME.TXT; never LBA Assembler's embedded Play):
+   once a resize of the window has settled, the render size is fitted to the
+   window's shape at the player's resolution's size class -- or, full screen,
+   put back to the player's resolution -- through the same switch as the
+   Display menu's, the window left as it is and nothing persisted as the
+   player's resolution. Call where a switch is safe (MainLoop's top, the menus'
+   loops: DoGameMenu, the race game's pages); true when the render size
+   changed, and the caller repaints what it shows (a menu its backdrop:
+   Menu_RepaintAfterResolutionSwitch). */
+bool Res_ApplyWindowFit(void);
+
+/* ReadConfigFile (boot): the race game's window given the size it was left at
+   (lba2.cfg WindowWidth / WindowHeight / WindowMaximized) -- windowed only, and
+   not with --resolution. WriteConfigFile: those keys written, once the window
+   has been resized or restored in this run. */
+void Res_RestoreWindowSize(void);
+void Res_WriteWindowSize(void);
+
 #ifdef __cplusplus
 }
 #endif

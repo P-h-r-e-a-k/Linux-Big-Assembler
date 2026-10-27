@@ -354,6 +354,60 @@ static void MixVoices(S16 *out, int numFrames) {
 /* ── SDL3 audio callback ─────────────────────────────────────────────────── */
 
 static S16 mixChunkBuf[MIX_CHUNK_FRAMES * 2];
+static volatile U32 mixedFrames = 0; /* SampleMixedFrames: for logs only */
+
+/* Capture (FRAMEDUMP.CPP, a video of the game recorded frame by frame on the fixed-dt clock):
+   with LBA2_AUDIO_CAPTURE set the device is given silence -- nothing heard on the machine --
+   and, while a dump runs, the mixer is pulled by the dump instead, one game frame's worth of
+   samples a frame, so the effects keep step with the picture however slowly the frames go. */
+static int captureSilent = -1;     /* -1: the environment not read yet */
+static volatile int captureActive = 0;
+
+static int CaptureSilent(void) {
+    if (captureSilent < 0) {
+        const char *e = getenv("LBA2_AUDIO_CAPTURE");
+        captureSilent = (e && *e && *e != '0') ? 1 : 0;
+    }
+    return captureSilent;
+}
+
+void Sample_CaptureBegin(void) {
+    LockVoices();
+    captureActive = 1;
+    UnlockVoices();
+}
+
+void Sample_CaptureEnd(void) {
+    LockVoices();
+    captureActive = 0;
+    UnlockVoices();
+}
+
+/* The next numFrames stereo frames of the effects' mix (44100 Hz, S16) into out; 0 when there is no mixer. */
+S32 Sample_CaptureMix(S16 *out, S32 numFrames) {
+    if (!sampleStream) {
+        memset(out, 0, (size_t)numFrames * 2 * sizeof(S16));
+        return 0;
+    }
+    LockVoices();
+    S32 done = 0;
+    while (done < numFrames) {
+        S32 n = numFrames - done;
+        if (n > MIX_CHUNK_FRAMES)
+            n = MIX_CHUNK_FRAMES;
+        if (samplesPaused)
+            memset(out + done * 2, 0, (size_t)n * 2 * sizeof(S16));
+        else
+            MixVoices(out + done * 2, n);
+        done += n;
+    }
+    UnlockVoices();
+    return 1;
+}
+
+S32 Sample_CaptureRate(void) {
+    return SAMPLE_RATE;
+}
 
 static void SDLCALL SampleStreamCallback(void *userdata, SDL_AudioStream *stream,
                                          int additional_amount, int total_amount) {
@@ -363,6 +417,7 @@ static void SDLCALL SampleStreamCallback(void *userdata, SDL_AudioStream *stream
     Crash_PrepareThread();
     if (samplesPaused || additional_amount <= 0)
         return;
+    const int silent = CaptureSilent();
     int bytesLeft = additional_amount;
     while (bytesLeft > 0) {
         int frames = bytesLeft / (2 * (int)sizeof(S16));
@@ -370,7 +425,16 @@ static void SDLCALL SampleStreamCallback(void *userdata, SDL_AudioStream *stream
             frames = MIX_CHUNK_FRAMES;
         if (frames <= 0)
             break;
+        if (silent && captureActive) {
+            memset(mixChunkBuf, 0, (size_t)frames * 2 * sizeof(S16));
+            SDL_PutAudioStreamData(stream, mixChunkBuf, frames * 2 * (int)sizeof(S16));
+            bytesLeft -= frames * 2 * (int)sizeof(S16);
+            continue;
+        }
         MixVoices(mixChunkBuf, frames);
+        if (silent)
+            memset(mixChunkBuf, 0, (size_t)frames * 2 * sizeof(S16));
+        mixedFrames += (U32)frames;
         SDL_PutAudioStreamData(stream, mixChunkBuf, frames * 2 * (int)sizeof(S16));
         bytesLeft -= frames * 2 * (int)sizeof(S16);
     }
@@ -515,32 +579,26 @@ U32 PlaySample(void *buffer, S32 sizeBytes, U32 userhandle, S32 pitchbend,
         }
     }
     if (slot < 0) {
-        U32 bestHandle = 0xFFFFFFFF;
+        /* Every voice busy: the quietest one gives way (the oldest of the quietest), and none louder than the new sound -- that
+           one is not played. (Before: a one-shot first, the lowest handle -- whose top byte is a counter that wraps, so not the
+           oldest. A race's cars each keep an engine loop going (SampleAlways), most of them far off or hidden at a volume of 0 to 9,
+           twelve of them filled every voice, and a loop restarted the next frame took the voice of whatever one-shot had just
+           started: the race items' pick-up sounds were cut off at once or part-way, 2026-10-19.) */
         int bestSlot = -1;
         for (int i = 0; i < NUM_VOICES; i++) {
-            if (voices[i].repeat == 1 && voices[i].handle < bestHandle) {
-                bestHandle = voices[i].handle;
+            if (bestSlot < 0 || voices[i].baseVolume < voices[bestSlot].baseVolume
+                || (voices[i].baseVolume == voices[bestSlot].baseVolume && (S32)(voices[i].timer - voices[bestSlot].timer) < 0))
                 bestSlot = i;
-            }
         }
-        if (bestSlot < 0) {
-            for (int i = 0; i < NUM_VOICES; i++) {
-                if (voices[i].repeat != 0 && voices[i].handle < bestHandle) {
-                    bestHandle = voices[i].handle;
-                    bestSlot = i;
-                }
-            }
+        const S32 newVolume = (volume > 127) ? 127 : volume;
+        if (bestSlot < 0 || voices[bestSlot].baseVolume > newVolume) {
+            if (sfxLogEnabled)
+                SDL_Log("[SFX] DROP user=0x%04X vol=%d: every voice louder | %d/%d active",
+                        userhandle & 0xFFFF, volume, activeCount, NUM_VOICES);
+            UnlockVoices();
+            return 0xFFFFFFFF;
         }
-        if (bestSlot < 0) {
-            bestHandle = 0xFFFFFFFF;
-            for (int i = 0; i < NUM_VOICES; i++) {
-                if (voices[i].handle < bestHandle) {
-                    bestHandle = voices[i].handle;
-                    bestSlot = i;
-                }
-            }
-        }
-        slot = (bestSlot >= 0) ? bestSlot : 0;
+        slot = bestSlot;
         if (sfxLogEnabled)
             SDL_Log("[SFX] STEAL voice %d (repeat=%d user=0x%04X) for user=0x%04X repeat=%d | %d/%d active",
                     slot, voices[slot].repeat, (voices[slot].handle >> 8) & 0xFFFF,
@@ -717,6 +775,11 @@ void ResumeSamples() {
 
 S32 GetSamplesPausedCount() {
     return samplesPaused;
+}
+
+/* The mixer's own count of frames made (SampleStreamCallback): a log line's place in what was heard. */
+U32 SampleMixedFrames(void) {
+    return mixedFrames;
 }
 
 U32 IsSamplePlaying(U32 sample) {

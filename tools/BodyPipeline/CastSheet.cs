@@ -60,7 +60,8 @@ internal static class CastSheet
         copy.Bones.AddRange(model.Bones); copy.Faces.AddRange(model.Faces); copy.Lines.AddRange(model.Lines); copy.Spheres.AddRange(model.Spheres);
         copy.Vertices.AddRange(turned);
         copy.SetWorld(turned.Select(p => p with { Y = p.Y - lowest }).ToArray());
-        return Renderer.Render(copy, palette, w, h, 0, false, background: Color.FromArgb(40, 60, 90), gridLine: Color.FromArgb(40, 60, 90));
+        // seen from its -Z side, which the tilt above tips towards (the renderer shows +Z at yaw 0)
+        return Renderer.Render(copy, palette, w, h, MathF.PI, false, background: Color.FromArgb(40, 60, 90), gridLine: Color.FromArgb(40, 60, 90));
     }
 
     private static void Save(List<(Entry Entry, Bitmap? Picture)> cars, string output, int columns, int w, int h, int text, string title)

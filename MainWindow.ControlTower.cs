@@ -28,9 +28,9 @@ public partial class MainWindow
         {
             var ok = MessageBox.Show(this,
                 "Build Island CX's control tower, lower level, in 3D?\n\n" +
-                $"Island CX is made {ControlTowerIsland.Times} times its size, with its buildings replaced by what is inside them (scene 181: the two halls round " +
-                "the control room) brick for brick, roofed, its three doors opening onto the yards where the landing pads are. The secret passage (scene 180) hangs " +
-                "under the floor, stretched so that each of its two shafts comes up under one of the grates. The control tower stands on the control room.\n\n" +
+                "Island CX as it is, with what is inside its buildings (scene 181: the two halls round the control room) brick for brick underneath it, under " +
+                "the gas the island stands in, each hall under its building. The secret passage (scene 180) hangs under the halls' floor, stretched so that each " +
+                "of its two shafts comes up under one of the grates.\n\n" +
                 "No scenes or track yet: a race track in through a door and out again comes later.\n\n" +
                 $"Folder: {gameRoot}\nNew: {ControlTowerIsland.IleFile}, {ControlTowerIsland.OblFile} (nothing else changes; this menu takes them out again)",
                 ControlTowerTitle, MessageBoxButton.OKCancel, MessageBoxImage.Question);

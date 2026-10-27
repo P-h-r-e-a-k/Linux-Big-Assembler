@@ -90,10 +90,13 @@ public static class HeadDecoration
         float X(int x)=>x==0?BandPoint(7,true).X:x==gridWidth?BandPoint(11,true).X:left+(x-1)*cellX;
         float Y(int y)=>y==0?.966f*h:y==9?.927f*h:topY-(y-1)*cellY;
         bool[,] black=new bool[gridWidth,9],used=new bool[gridWidth,9];
+        // The band's front faces -Z here, and seen from there (the games' views are right-handed) +X is on the viewer's LEFT: the text
+        // starts at +X. (It used to start at -X, which read correctly only in the body preview's old mirrored view, and backwards in the
+        // games and in the corrected preview.)
         for(int c=0;c<text.Length;c++)
         {
             string[] glyph=Font.TryGetValue(text[c],out var f)?f:Font[char.ToUpperInvariant(text[c])];
-            for(int y=0;y<7;y++)for(int x=0;x<5;x++)black[c*6+x+1,y+1]=glyph[y][x]=='1';
+            for(int y=0;y<7;y++)for(int x=0;x<5;x++)black[gridWidth-2-(c*6+x),y+1]=glyph[y][x]=='1';
         }
         for(int y=0;y<9;y++)for(int x=0;x<gridWidth;x++)
         {
