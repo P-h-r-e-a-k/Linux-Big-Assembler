@@ -1,0 +1,74 @@
+# Takes a published release down again: its page and, with it, the files people download from it. For a release that
+# should never have gone out -- one that crashes, or that was cut from the wrong commit. Run it from the Actions tab
+# with "Run workflow"; there is no trigger that can fire it by accident.
+#
+# Deleting a release cannot be undone, and anyone who already has the files keeps them, so the tag is asked for twice:
+# once as what to delete and once to confirm, and the two must match. The tag itself is left alone unless `delete_tag`
+# says otherwise -- keeping it costs nothing and still says which commit that version was built from.
+#
+# (This exists because the release workflow's own token can manage releases while a person's or an agent's session
+# token may not: see release.yml, which creates them the same way.)
+name: Delete a release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag of the release to delete, e.g. v1.1.0'
+        required: true
+        type: string
+      confirm:
+        description: 'The same tag again, to confirm'
+        required: true
+        type: string
+      delete_tag:
+        description: 'Also delete the tag itself (the commit stays)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write      # (to delete the release and, if asked, its tag)
+
+jobs:
+  delete:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the two tags match
+        run: |
+          tag='${{ inputs.tag }}'
+          confirm='${{ inputs.confirm }}'
+          if [ "$tag" != "$confirm" ]; then
+            echo "::error::'$tag' and '$confirm' are not the same tag; nothing was deleted."
+            exit 1
+          fi
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::'$tag' is not a release tag (they start with v); nothing was deleted."; exit 1 ;;
+          esac
+
+      - name: What is about to go
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view '${{ inputs.tag }}' --json tagName,name,publishedAt,assets \
+            --template '{{.tagName}} ({{.name}}), published {{.publishedAt}}{{"\n"}}{{range .assets}}  {{.name}} -- {{.downloadCount}} downloads{{"\n"}}{{end}}'
+
+      - name: Delete it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ '${{ inputs.delete_tag }}' = 'true' ]; then
+            gh release delete '${{ inputs.tag }}' --yes --cleanup-tag
+            echo "Deleted the release ${{ inputs.tag }} and its tag."
+          else
+            gh release delete '${{ inputs.tag }}' --yes
+            echo "Deleted the release ${{ inputs.tag }}; the tag is still there."
+          fi
+
+      - name: What is left
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release list --limit 20
