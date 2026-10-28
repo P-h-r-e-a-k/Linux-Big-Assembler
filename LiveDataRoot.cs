@@ -84,6 +84,13 @@ internal sealed class LiveDataRoot : IDisposable
         }
     }
 
+    // The game's data folders the engine reads besides its top-level files, mirrored as well in a full mirror (Test edits, a map's
+    // workspace), where Play runs the engine on the mirror: VIDEO\VIDEO.HQR is one it doesn't start without (ASSET_PREFLIGHT.CPP, "required
+    // game data is missing": Play in a map's workspace went black and straight back to the editor, 2026-10-17), the music and the voices
+    // (LBA1's speech too: its VOX folder), and the MAPS folder's maps (MAPPACK.CPP plays them; MapInstall numbers a map's scenes clear of them).
+    // Nothing writes into these folders of a mirror; their files are hard links like the rest.
+    private static readonly string[] DataFolders = { "VIDEO", "VOX", "MUSIC", "MAPS" };
+
     // Brings the links up to date with the game folder (a file replaced there since is linked again).
     public void Sync()
     {
@@ -96,13 +103,43 @@ internal sealed class LiveDataRoot : IDisposable
             if (File.Exists(target))
             {
                 if (isIsland) continue;
-                var a = new FileInfo(source); var b = new FileInfo(target);
-                if (a.Length == b.Length && a.LastWriteTimeUtc == b.LastWriteTimeUtc) continue;
+                if (SameFile(source, target)) continue;
                 File.Delete(target);
             }
             if (isIsland) { File.Copy(source, target); continue; }
-            if (!TryHardLink(source, target)) File.Copy(source, target);
+            Link(source, target);
         }
+        if (islandFile is not null) return;
+        foreach (var folder in System.IO.Directory.EnumerateDirectories(gameDirectory))
+            if (DataFolders.Contains(Path.GetFileName(folder), StringComparer.OrdinalIgnoreCase)) SyncFolder(folder, Path.Combine(Directory, Path.GetFileName(folder)));
+    }
+
+    // A data folder's files (and its folders') linked into the mirror, as the top-level files are.
+    private static void SyncFolder(string source, string target)
+    {
+        System.IO.Directory.CreateDirectory(target);
+        foreach (var file in System.IO.Directory.EnumerateFiles(source))
+        {
+            var to = Path.Combine(target, Path.GetFileName(file));
+            if (File.Exists(to))
+            {
+                if (SameFile(file, to)) continue;
+                File.Delete(to);
+            }
+            Link(file, to);
+        }
+        foreach (var folder in System.IO.Directory.EnumerateDirectories(source)) SyncFolder(folder, Path.Combine(target, Path.GetFileName(folder)));
+    }
+
+    private static bool SameFile(string a, string b)
+    {
+        var x = new FileInfo(a); var y = new FileInfo(b);
+        return x.Length == y.Length && x.LastWriteTimeUtc == y.LastWriteTimeUtc;
+    }
+
+    private static void Link(string source, string target)
+    {
+        if (!TryHardLink(source, target)) File.Copy(source, target);
     }
 
     public void WriteIsland(byte[] bytes)

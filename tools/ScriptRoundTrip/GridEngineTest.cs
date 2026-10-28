@@ -13,6 +13,16 @@ internal static class GridEngineTest
     private static readonly string Lba2Dir = Environment.GetEnvironmentVariable("LBA2_DIR") ?? @"E:\GOG Games\Little Big Adventure 2 - Level viewer";
 
 
+    // (the engine doesn't start without VIDEO\VIDEO.HQR: ASSET_PREFLIGHT.CPP)
+    private static void LinkVideo(string sandbox)
+    {
+        var video = Path.Combine(Lba2Dir, "VIDEO", "VIDEO.HQR");
+        if (!File.Exists(video)) return;
+        Directory.CreateDirectory(Path.Combine(sandbox, "VIDEO"));
+        var target = Path.Combine(sandbox, "VIDEO", "VIDEO.HQR");
+        if (!File.Exists(target)) Portable.HardLink(target, video);   // (the port keeps the one cross-platform hard link in Portable.cs)
+    }
+
     public static int Run(string[] args)
     {
         var engine = Lba2Engine.Find();
@@ -30,6 +40,7 @@ internal static class GridEngineTest
                 if (Path.GetFileName(file).Equals("LBA_BKG.HQR", StringComparison.OrdinalIgnoreCase)) File.Copy(file, target, true);
                 else Portable.HardLink(target, file);
             }
+            LinkVideo(sandbox);
             // scene -> grid: the table after the bricks in LBA_BKG.HQR is two bytes per scene (type, grid)
             var bkg = HqrFile.Parse(File.ReadAllBytes(Path.Combine(sandbox, "LBA_BKG.HQR")));
             var header = bkg.Read(0);
@@ -111,13 +122,15 @@ internal static class GridEngineTest
                 if (Path.GetFileName(file).Equals("LBA_BKG.HQR", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(file).Equals("SCENE.HQR", StringComparison.OrdinalIgnoreCase)) File.Copy(file, target, true);
                 else Portable.HardLink(target, file);
             }
+            LinkVideo(sandbox);
             var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, sandbox);
             var backend = new Lba2GridBackend(sandbox);
             var failures = 0;
             var scene = Enumerable.Range(0, 200).First(s => { try { return store.Load(s).CubeMode == 0 && backend.GridOfScene(s) is not null && s >= 5; } catch (Exception) { return false; } });
             var gridId = backend.GridOfScene(scene)!.Value;
             var (model, grid) = Lba2BlankScene.Create(store, backend, scene);
-            Check(ref failures, "a blank interior has just the hero, no zones", model.Actors.Count == 1 && model.Zones.Count == 0 && model.TrackPoints.Count == 0);
+            Check(ref failures, "a blank interior has just the hero (and actor 1, the Meca-penguin's slot), no zones",
+                model.Actors.Count == 2 && LBAAssembler.Scenes.SceneOps.IsMecaPenguinSlot(model.Actors[1]) && model.Zones.Count == 0 && model.TrackPoints.Count == 0);
             var floorCells = Lba1GridCodec.Decode(grid).Where((_, i) => i % 2 == 0).Count(b => b != 0);
             Check(ref failures, "and a 32 x 32 floor", floorCells == 32 * 32, $"{floorCells} cells");
             store.Save(scene, model);
@@ -132,7 +145,7 @@ internal static class GridEngineTest
             var line = output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).FirstOrDefault(l => l.Contains("Obj:"));
             Console.WriteLine($"  engine: {line?.Trim()}");
             Check(ref failures, "the engine enters the blank scene", output.Contains($"Cube: {scene}") && line is not null);
-            Check(ref failures, "with one object (the hero)", line is not null && line.Split("Obj:")[1].Trim().Split(' ')[0] == "1");
+            Check(ref failures, "with two objects (the hero, the penguin's slot)", line is not null && line.Split("Obj:")[1].Trim().Split(' ')[0] == "2");
             var keep = Environment.GetEnvironmentVariable("GRID_E2E_KEEP");
             if (keep is not null && File.Exists(Path.Combine(user, "blank.png"))) File.Copy(Path.Combine(user, "blank.png"), Path.Combine(keep, "blank_interior.png"), true);
             Console.WriteLine(failures == 0 ? "blank interior test: passed" : $"blank interior test: {failures} FAILED");

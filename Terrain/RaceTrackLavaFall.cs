@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace LBAAssembler.Terrain;
 
 // A lava fall beside the road (RaceTrackPlan.LavaFalls): a crag of rock made in the island's ground, a stream of lava across its top from
@@ -31,6 +33,20 @@ internal sealed class LavaFallRun
     // a cell of the island's rock and one of its lava (the plan's cells) to copy the ground of
     public double[] Rock { get; set; } = Array.Empty<double>();
     public double[] Lava { get; set; } = Array.Empty<double>();
+    // its lava carried on from the crag's back over the road to To and poured off there (null: none)
+    public AqueductRun? Aqueduct { get; set; }
+}
+
+// An aqueduct of rock carrying a fall's lava away from its crag's back (RaceTrackLavaFall.Aqueduct): Volcano Island's, west over the west
+// side of the plateau and off the bluff into the sea -- the user, 2026-10-11: "Perhaps we can cross by the lava waterfall twice, once
+// passing in front of it, and once under the lava flow". To where it ends (the plan's cells), its lava's surface (a height), its width
+// (units). Over the road its underside is level, Clear under the lava; beyond it, it goes down into the ground (the crag's rock at one
+// end, a pillar on the bluff's edge at the other). The lava pours off its end down the ground below, painted lava to the island's edge.
+internal sealed class AqueductRun
+{
+    public double[] To { get; set; } = Array.Empty<double>();
+    public double Surface { get; set; } = 16000;
+    public double Width { get; set; } = 1700;
 }
 
 internal static class RaceTrackLavaFall
@@ -41,7 +57,7 @@ internal static class RaceTrackLavaFall
     private const int Glow = 13;
     private const int MaxPlaces = 16;              // RACEMOD.CPP RACE_MAX_FALLS
 
-    public static void Make(IslandFile island, LavaFallRun run, int originX, int originZ, RaceTrackReport report)
+    public static void Make(IslandFile island, LavaFallRun run, int originX, int originZ, TrackRoad road, RaceTrackOptions o, RaceTrackReport report)
     {
         if (run.At is not { Length: >= 2 } || run.Rock is not { Length: >= 2 } || run.Lava is not { Length: >= 2 }) { report.Notes.Add("WARNING: a lava fall with no place, rock or lava"); return; }
         // (the face square to an axis: a face slanting across the cells is a staircase)
@@ -152,9 +168,149 @@ internal static class RaceTrackLavaFall
             report.LavaFalls.Add(new[] { (int)Math.Round(lx * 512), (int)Math.Round(lake), (int)Math.Round(lz * 512),
                                          (int)Math.Round(px * 512), (int)Math.Round(foot - PoolDrop), (int)Math.Round(pz * 512), beta });
         }
+        if (run.Aqueduct is { To.Length: >= 2 } aq)
+            Aqueduct(island, aq, fx - ux * (run.Depth - 0.8), fz - uz * (run.Depth - 0.8), aq.To[0] + originX, aq.To[1] + originZ, lava, road, o, report);
         var s = lava[0][0].Polygon;
         report.Notes.Add($"a lava fall at ({fx}, {fz}) facing ({ux}, {uz}): its crag's top {top:0} (the ground {foot}), {tiers} tier(s), {changed} heights, {rockCells} cells of rock, " +
                          $"{lavaCells} of lava (code {s.CodeJeu}, texture flag {s.TexFlag}, polygon flag {s.PolyFlag}), {removed} island object(s) inside it taken out");
+    }
+
+    // the aqueduct's look: its lava's surface over the floor of its channel's walls, the walls' thickness, its underside under the lava over
+    // the road (units); how far beyond the road it reaches down to the ground (cells); its colours, palette indices as the game draws its
+    // objects through the island's colour tables (an in-game swatch of all 256, 2026-10-11: each ramp's light end goes cream or yellow --
+    // the lava first drawn there came out pale): ramp 4's dark browns for its rock, ramp 6's red-orange for its lava, ramp 5's red
+    private const double WallUp = 250, Wall = 300, Clear = 700, Down = 2.5, PourDrop = 2600, Spill = 450;
+    private const int RockRamp = 4, LavaTop = 6 * 16 + 7, LavaSpill = 6 * 16 + 6, LavaDeep = 6 * 16 + 5, LavaEdge = 5 * 16 + 9;
+
+    private static void Aqueduct(IslandFile island, AqueductRun aq, double sx, double sz, double ex, double ez, List<IslandGround.Sample[]> lava, TrackRoad r,
+        RaceTrackOptions o, RaceTrackReport report)
+    {
+        if (o.NewBodyBase < 0) { report.Notes.Add("WARNING: an aqueduct: no place for new bodies"); return; }
+        double dx = ex - sx, dz = ez - sz, len = Math.Sqrt(dx * dx + dz * dz);
+        if (len < 2) return;
+        dx /= len; dz /= len;
+        // (the body's +x turned by the decor's beta is (cos, -sin) of it: along the aqueduct)
+        var beta = ((int)Math.Round(Math.Atan2(-dz, dx) * 4096 / (2 * Math.PI)) % 4096 + 4096) % 4096;
+        if (IslandDecors.Locate(island, sx * 512, sz * 512) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCubeRaceTrack)
+        { report.Notes.Add($"WARNING: the aqueduct from ({sx:0.#}, {sz:0.#}): no room"); return; }
+        // its underside along it: level over the road (within its rails and a cell, under the lava's level), down into the ground beyond
+        var n = Math.Max(4, (int)Math.Ceiling(len * 512 / 600));
+        var under = new double[n + 1];
+        bool OverRoad(double x, double z)
+        {
+            for (var k = 0; k < r.Count; k++)
+            {
+                if (r.H[k] > aq.Surface) continue;
+                var half = (r.RaisedHalfs?[k] ?? o.RaisedHalfWidth) + 1.2;
+                if ((r.X[k] - x) * (r.X[k] - x) + (r.Z[k] - z) * (r.Z[k] - z) < half * half) return true;
+            }
+            return false;
+        }
+        var over = Enumerable.Range(0, n + 1).Select(i => OverRoad(sx + dx * len * i / n, sz + dz * len * i / n)).ToArray();
+        var lowestDeck = double.MaxValue;
+        for (var k = 0; k < r.Count; k++)
+            for (var i = 0; i <= n; i++)
+                if (over[i] && Math.Abs(r.X[k] - (sx + dx * len * i / n)) < 6 && Math.Abs(r.Z[k] - (sz + dz * len * i / n)) < 6) lowestDeck = Math.Min(lowestDeck, r.H[k]);
+        for (var i = 0; i <= n; i++)
+        {
+            // (cells from the nearest part over the road)
+            var far = double.MaxValue;
+            for (var j = 0; j <= n; j++) if (over[j]) far = Math.Min(far, Math.Abs(i - j) * len / n);
+            var g = IslandOps.Altitude(island, (sx + dx * len * i / n) * 512, (sz + dz * len * i / n) * 512) ?? 0;
+            var deep = aq.Surface - (g - 300);
+            var f = far == double.MaxValue ? 1 : Math.Clamp(far / Down, 0, 1);
+            under[i] = -(Clear + (deep - Clear) * f * f * (3 - 2 * f));
+        }
+        var m = new RaceTrackRaisedBody.Mesh();
+        var light = Vector3.Normalize(new Vector3(0.35f, 0.85f, 0.4f));
+        int Shade(Vector3 nrm, int ramp, int lo) => ramp * 16 + Math.Clamp(lo + (int)Math.Round(5 * Math.Max(0, Vector3.Dot(Vector3.Normalize(nrm), light))), 0, 15);
+        float h = (float)(aq.Width / 2), inner = (float)(aq.Width / 2 - Wall);
+        var sections = new List<int[]>();
+        for (var i = 0; i <= n; i++)
+        {
+            var x = (float)(len * 512 * i / n); var u = (float)under[i];
+            // (its outer walls run with lava spilling over them, down to Spill under the lava, over the road: seen from under it, it is the
+            // lava's -- a rock bridge, its lava out of sight on top, until 2026-10-11)
+            var spill = over[i] ? (float)-Spill : (float)WallUp;
+            sections.Add(new[] { m.P(new(x, u, -h)), m.P(new(x, (float)WallUp, -h)), m.P(new(x, (float)WallUp, -inner)), m.P(new(x, 0, -inner)),
+                                 m.P(new(x, 0, inner)), m.P(new(x, (float)WallUp, inner)), m.P(new(x, (float)WallUp, h)), m.P(new(x, u, h)),
+                                 m.P(new(x, spill, -h)), m.P(new(x, spill, h)) });
+        }
+        var up = Vector3.UnitY; var side = Vector3.UnitZ; var along = Vector3.UnitX;
+        for (var i = 0; i < n; i++)
+        {
+            int[] a = sections[i], b = sections[i + 1];
+            void Q(int p, int q, int colour, Vector3 outward) => m.Quad(a[p], a[q], b[q], b[p], colour, outward);
+            Q(0, 8, Shade(-side, RockRamp, 2), -side);                 // the outer walls: rock under the lava spilling down them
+            Q(9, 7, Shade(side, RockRamp, 2), side);
+            Q(8, 1, LavaSpill, -side);
+            Q(6, 9, LavaSpill, side);
+            Q(1, 2, Shade(up, RockRamp, 4), up);                       // their tops
+            Q(5, 6, Shade(up, RockRamp, 4), up);
+            Q(2, 3, LavaEdge, side);                                   // the channel's sides, red
+            Q(4, 5, LavaEdge, -side);
+            Q(3, 4, LavaTop, up);                                      // the lava
+            Q(7, 0, Shade(-up, RockRamp, 0), -up);                     // the underside
+        }
+        // its ends: the crag's (inside its rock) and the pour's, with the lava's sheet falling off it
+        foreach (var (sec, outward) in new[] { (sections[0], -along), (sections[n], along) })
+            for (var t = 1; t + 1 < 8; t++) m.Tri(sec[0], sec[t], sec[t + 1], Shade(outward, RockRamp, 2), outward);
+        // drips of lava hanging under it over the road, a row down each side of its underside
+        var rnd = new Random(n * 31);
+        for (var i = 1; i < n; i++)
+        {
+            if (!over[i] || i % 2 == 1) continue;
+            foreach (var zs in new[] { -0.55f, 0.55f })
+            {
+                var x = (float)(len * 512 * i / n + (rnd.NextDouble() - 0.5) * 200); var z = zs * h; var u = (float)under[i];
+                var drip = (float)(350 + rnd.NextDouble() * 450);
+                int t0 = m.P(new(x - 110, u, z - 110)), t1 = m.P(new(x + 110, u, z - 110)), t2 = m.P(new(x, u, z + 130)), tip = m.P(new(x, u - drip, z));
+                m.Tri(t0, t1, tip, LavaTop, new Vector3(0, -0.3f, -1));
+                m.Tri(t1, t2, tip, LavaSpill, new Vector3(1, -0.3f, 0.5f));
+                m.Tri(t2, t0, tip, LavaDeep, new Vector3(-1, -0.3f, 0.5f));
+            }
+        }
+        {
+            var end = (float)(len * 512);
+            int p0 = m.P(new(end, 0, -inner)), p1 = m.P(new(end, 0, inner)), p2 = m.P(new(end + 350, (float)-PourDrop, inner + 120)), p3 = m.P(new(end + 350, (float)-PourDrop, -inner - 120));
+            m.Quad(p0, p1, p2, p3, LavaTop, along + up);
+            m.Quad(p3, p2, p1, p0, LavaSpill, -along);
+        }
+        var body = m.Write();
+        var d = IslandDecors.Blank(o.NewBodyBase + report.NewBodies.Count, at.X, (int)Math.Round(aq.Surface), at.Z, beta);
+        double bx0 = Math.Min(0, dx * len * 512), bx1 = Math.Max(0, dx * len * 512), bz0 = Math.Min(0, dz * len * 512), bz1 = Math.Max(0, dz * len * 512);
+        d.XMin = at.X + (int)Math.Floor(bx0 - aq.Width); d.XMax = at.X + (int)Math.Ceiling(bx1 + aq.Width);
+        d.ZMin = at.Z + (int)Math.Floor(bz0 - aq.Width); d.ZMax = at.Z + (int)Math.Ceiling(bz1 + aq.Width);
+        d.YMin = (int)Math.Round(aq.Surface + under.Min()); d.YMax = -32000;
+        at.Cube.Decors.Add(d);
+        report.NewBodies.Add(body);
+
+        // the lava down the ground below its end, to the island's edge: the cells along its way from its end on, two either side
+        int painted = 0;
+        for (var t = 0.0; t <= 8; t += 0.5)
+        {
+            double px = ex + dx * t, pz = ez + dz * t;
+            for (var w = -2; w <= 2; w++)
+            {
+                int gx = (int)Math.Floor(px - dz * w), gz = (int)Math.Floor(pz + dx * w);
+                if (island.HeightAt(gx, gz) is null || island.HeightAt(gx + 1, gz + 1) is null) continue;
+                PaintCell(island, gx, gz, lava[(gx * 7 + gz * 13 & 0x7FFF) % lava.Count]);
+                foreach (var (vx, vz) in new[] { (gx, gz), (gx + 1, gz), (gx, gz + 1), (gx + 1, gz + 1) })
+                    if (island.LightAt(vx, vz) is { } l && l < Glow) island.SetLight(vx, vz, Glow);
+                painted++;
+            }
+        }
+        // the race-track mode's spit and sparks at its end: off its lip, down to the foot of the ground below
+        var pourBeta = ((int)Math.Round(Math.Atan2(dx, dz) * 4096 / (2 * Math.PI)) % 4096 + 4096) % 4096;
+        foreach (var w in new[] { -0.4, 0.4 })
+        {
+            double lx = ex - dz * w, lz = ez + dx * w, fx2 = ex + dx * 3 - dz * w, fz2 = ez + dz * 3 + dx * w;
+            var foot = IslandOps.Altitude(island, fx2 * 512, fz2 * 512) ?? 0;
+            report.LavaFalls.Add(new[] { (int)Math.Round(lx * 512), (int)Math.Round(aq.Surface), (int)Math.Round(lz * 512), (int)Math.Round(fx2 * 512), (int)Math.Round(foot + 100),
+                                         (int)Math.Round(fz2 * 512), pourBeta });
+        }
+        report.Notes.Add($"an aqueduct of lava from ({sx:0.#}, {sz:0.#}) to ({ex:0.#}, {ez:0.#}), {len:0.0} cells, its lava at {aq.Surface:0}" +
+                         (lowestDeck < double.MaxValue ? $", {aq.Surface - Clear - lowestDeck:0} over the road under it" : ", over no road") + $"; {painted} cells of lava below its end");
     }
 
     // The ground of a cell and the three either side of it along x (both its triangles, as they are): copies to paint with. A cell's two

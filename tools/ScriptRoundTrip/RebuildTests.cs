@@ -45,9 +45,10 @@ internal static class RebuildTests
 
     private static void Rebuild(SceneModel retail, SceneModel blank, byte[] retailGrid, byte[] blankGrid, byte[] library)
     {
-        // the scene: the hero's record replaces the blank one's, every other actor / zone / track point is added in order
+        // the scene: the hero's record replaces the blank one's, every other actor / zone / track point is added in order (an LBA2 blank scene
+        // has actor 1 already: the Meca-penguin's slot, SceneOps.MecaPenguinSlot)
         blank.Actors[0] = retail.Actors[0].Clone();
-        foreach (var actor in retail.Actors.Skip(1)) SceneOps.AddActor(blank, actor.Clone());
+        foreach (var actor in retail.Actors.Skip(blank.Actors.Count)) SceneOps.AddActor(blank, actor.Clone());
         foreach (var zone in retail.Zones) SceneOps.AddZone(blank, zone.Clone());
         foreach (var point in retail.TrackPoints) SceneOps.AddTrackPoint(blank, point);
         blank.Tail = retail.Tail; blank.Checksum = retail.Checksum;

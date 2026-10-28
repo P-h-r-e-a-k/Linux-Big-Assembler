@@ -40,6 +40,13 @@ public partial class ActorAttributesWindow : Window
     // walk/run/idle/jump output) -- installed into a throwaway preview copy of ANIM.HQR instead
     // (MainWindow.BodyDebugPreview.cs's own LoadDebugAnim). Requires a debug body already active.
     public event Func<byte[], int?>? LoadDebugAnimRequested;
+    // A new actor's Apply moved the scene's actor numbers (the Meca-penguin's slot put in as actor 1 first): the scene number, for the main
+    // window to read the scene again.
+    public event Action<int>? SceneRenumbered;
+    // "Apply a behaviour…": the main window gives the actor (by its index here) ready-made scripts (ActorBehaviours) and saves its scene.
+    public event Action<int>? BehaviourRequested;
+    // A new actor was saved with its kind's usual behaviour: the scene number and what to say, for the main window to read the scene again.
+    public event Action<int, string>? NewActorSaved;
 
     private sealed class FlagCheckItem
     {
@@ -513,6 +520,7 @@ public partial class ActorAttributesWindow : Window
         if (!entityTableRead) { entityTable = Lba2EntityTable.Load(GameDirectory); entityTableRead = true; }
         var entity = entityTable?.Entities.FirstOrDefault(e => e.Id == entityId);
         newActorEntity = entityId;
+        UsualBehaviourLabel.Text = UsualBehaviour(entityId) is { } usual ? $"{usual.Name}: {usual.Description}" : "";
         if (entity is null)
         {
             StatusLabel.Text = $"Entity {entityId} isn't in this game's kind-of-actor table.";
@@ -815,6 +823,7 @@ public partial class ActorAttributesWindow : Window
     {
         ApplyButton.IsEnabled = false;
         ApplyButton.ToolTip = "Explore mode only looks; switch to Build mode to change the actor.";
+        BehaviourButton.IsEnabled = false;
         Title += " (view only)";
     }
     // Ctrl+S applies, the same as every other window's own "save" shortcut (ActorScriptWindow, the scene
@@ -886,13 +895,40 @@ public partial class ActorAttributesWindow : Window
             return "Applied for this session, but couldn't be saved to the game files (this actor's scene isn't the one currently loaded right now).";
 
         var updated = new Lba2ActorPersistence.Snapshot(x, y, z, beta, body, anim, lifePoint, armor, hitForce, move, flags);
-        var error = Lba2ActorPersistence.Save(GameDirectory, located.Scene, located.IndexInScene, original, updated, out var bodyAnimNote, newActorEntity);
+        // (a new actor: its kind's usual behaviour in the same save, when ticked)
+        Scenes.ActorBehaviour? usual = null;
+        if (newActorEntity is { } kind && UsualBehaviourCheck.IsChecked == true) usual = UsualBehaviour(kind);
+        var error = Lba2ActorPersistence.Save(GameDirectory, located.Scene, located.IndexInScene, original, updated, out var bodyAnimNote, newActorEntity,
+            usual is null ? null : (store, model, index) => Scenes.ActorBehaviours.Apply(store, model, index, usual));
         if (error is not null) return $"Applied for this session, but not saved to the game files: {error}";
 
         // The actor is now in the scene file: it isn't "new" any more, so the Entity picker (only ever offered
         // for one that wasn't yet) has nothing further to do, and a later Apply falls into the ordinary
         // existing-actor path above on its own (indexInScene now points at a real Actors[] entry).
-        if (newActorEntity is not null) { newActorEntity = null; EntityPanel.Visibility = Visibility.Collapsed; }
+        if (newActorEntity is not null)
+        {
+            newActorEntity = null; EntityPanel.Visibility = Visibility.Collapsed;
+            // (with its kind's usual behaviour: its scripts in the file are new to the views, which read the scene again -- closing this window)
+            if (usual is not null)
+            {
+                savedSnapshot = null;
+                NewActorSaved?.Invoke(located.Scene, $"{SavedTo()}: the new actor, with its kind's usual behaviour -- {usual.Name}: {usual.Description}.");
+                return $"{SavedTo()}, with its kind's usual behaviour: {usual.Name}.";
+            }
+            // (a scene without the Meca-penguin's slot as actor 1 got it first -- Lba2ActorPersistence, SceneOps.EnsureMecaPenguinSlot -- so the
+            // file has this actor, and any after the slot, one number further on than this session: nothing more from here goes to the file,
+            // and the main window reads the scene again, which closes this window)
+            try
+            {
+                if (new Scenes.SceneStore(Scenes.SceneGame.Lba2, GameDirectory).Load(located.Scene).Actors.Count - 1 != located.IndexInScene + 1)
+                {
+                    savedSnapshot = null;
+                    SceneRenumbered?.Invoke(located.Scene);
+                    return $"{SavedTo()}, after actor 1: the Meca-penguin's slot, which the game hides whatever is in, now in the scene too.";
+                }
+            }
+            catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { DebugLog.Log($"ActorAttributesWindow: re-reading scene {located.Scene}: {e.Message}"); }
+        }
 
         savedSnapshot = updated with
         {
@@ -902,10 +938,45 @@ public partial class ActorAttributesWindow : Window
             Body = bodyAnimNote?.Contains("body", StringComparison.Ordinal) == true ? original.Body : updated.Body,
             Anim = bodyAnimNote?.Contains("animation", StringComparison.Ordinal) == true ? original.Anim : updated.Anim,
         };
-        return bodyAnimNote is null ? "Saved to the game's files." : $"Saved to the game's files, except: {bodyAnimNote} (stays session-only).";
+        return bodyAnimNote is null ? $"{SavedTo()}." : $"{SavedTo()}, except: {bodyAnimNote} (stays session-only).";
     }
 
+    // Where Apply wrote the actor: an open map's scene (its working copy, which File > Save map writes into its file), or the game's files.
+    private static string SavedTo()
+        => Maps.MapWorkspace.For(GameDirectory) is { } map ? $"Saved into the map \"{map.Name}\" (File > Save map writes its file)" : "Saved to the game's files";
+
     private void EditScript_Click(object? sender, RoutedEventArgs e) => OpenScriptRequested?.Invoke(actorIndex);
+
+    private void Behaviour_Click(object? sender, RoutedEventArgs e)
+    {
+        if (newActorEntity is not null)
+        {
+            StatusLabel.Text = "This actor isn't in the scene file yet: Apply adds it (with its kind's usual behaviour when ticked), then another behaviour can be given.";
+            return;
+        }
+        BehaviourRequested?.Invoke(actorIndex);
+    }
+
+    // The scene a new actor goes into, read from its file (null when the actor's scene isn't known): what its kind's usual behaviour is
+    // worked out against.
+    private (Scenes.SceneStore Store, Scenes.SceneModel Scene)? NewActorScene()
+    {
+        if (nativeRenderer.RendererLibrary is not { } library || Lba2ActorPersistence.Locate(library, actorIndex) is not { } located) return null;
+        try
+        {
+            var store = new Scenes.SceneStore(Scenes.SceneGame.Lba2, GameDirectory);
+            return (store, store.Load(located.Scene));
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { DebugLog.Log($"ActorAttributesWindow: {e.Message}"); return null; }
+    }
+
+    // The new actor's kind's usual behaviour, shown under the tick box.
+    private Scenes.ActorBehaviour? UsualBehaviour(int entity)
+    {
+        if (NewActorScene() is not { } at) return null;
+        try { return Scenes.ActorBehaviours.DefaultFor(at.Store, at.Scene, entity); }
+        catch (Exception e) when (e is IOException or InvalidDataException or Scenes.SceneEditException) { DebugLog.Log($"ActorAttributesWindow: {e.Message}"); return null; }
+    }
 
     private void CreateNewBody_Click(object? sender, RoutedEventArgs e) => BodyStudioLauncher.Show(this);
 

@@ -11,16 +11,18 @@ namespace LBAAssembler.Terrain;
 // The bones are the retail racer's car's (BODY.HQR 227), so the racer's animations drive any car built here: 0 and 1 the root and the bounce,
 // 2 the hull, 3-5 and 6-8 the front struts, hubs and wheels, 9-10 and 11-12 the rear axles and wheels, 13 the driver, 14-17 the racer's
 // driver's arms (turned a long way by the animations to reach its wheel: a car here keeps its driver whole in 13 and leaves them a point each).
-internal sealed class CarMesh(string name)
+// (Another body than a car -- the Wannies' giant frog, RaceTrackFrog -- gives its own bones' parents, each bone's before it.)
+internal sealed class CarMesh(string name, int[]? parents = null)
 {
     public const int Bones = 18;
     // see-through (the engine's polygon type 2): what is behind it, moved into its colour's ramp
     public const int SeeThrough = 2;
-    private static readonly int[] Parents = { -1, 0, 1, 2, 3, 4, 2, 6, 7, 2, 9, 2, 11, 2, 13, 14, 13, 16 };
-    private readonly List<Vector3>[] points = Enumerable.Range(0, Bones).Select(_ => new List<Vector3>()).ToArray();
-    private readonly List<float>[] lights = Enumerable.Range(0, Bones).Select(_ => new List<float>()).ToArray();
+    private static readonly int[] CarParents = { -1, 0, 1, 2, 3, 4, 2, 6, 7, 2, 9, 2, 11, 2, 13, 14, 13, 16 };
+    private readonly int[] boneParents = parents ?? CarParents;
+    private readonly List<Vector3>[] points = Enumerable.Range(0, (parents ?? CarParents).Length).Select(_ => new List<Vector3>()).ToArray();
+    private readonly List<float>[] lights = Enumerable.Range(0, (parents ?? CarParents).Length).Select(_ => new List<float>()).ToArray();
     private readonly List<(int Bone, int Index)> handles = new();
-    private readonly int[] pivots = Enumerable.Repeat(-1, Bones).ToArray();
+    private readonly int[] pivots = Enumerable.Repeat(-1, (parents ?? CarParents).Length).ToArray();
     // Material: -1 lit (Gouraud), 0 unlit, SeeThrough
     private readonly List<(int[] Points, int Colour, int Material, FaceTexture? Texture)> faces = new();
     private readonly List<(int A, int B, int Colour)> lines = new();
@@ -135,18 +137,19 @@ internal sealed class CarMesh(string name)
     public Body ToBody(byte[] header)
     {
         // bones 4 and 7 have no points of their own but the hub; every bone needs at least its pivot's worth of order
-        var offsets = new int[Bones];
-        for (int b = 0, next = 0; b < Bones; b++) { offsets[b] = next; next += points[b].Count; }
+        var bones = boneParents.Length;
+        var offsets = new int[bones];
+        for (int b = 0, next = 0; b < bones; b++) { offsets[b] = next; next += points[b].Count; }
         int Global(int h) => offsets[handles[h].Bone] + handles[h].Index;
         var body = new Body { Game = 2, Lit = true, Header = (byte[])header.Clone() };
         var world = new List<Vector3>();
-        for (var b = 0; b < Bones; b++)
+        for (var b = 0; b < bones; b++)
         {
             if (points[b].Count == 0) throw new InvalidOperationException($"{name}: bone {b} has no points.");
             if (b > 0 && pivots[b] < 0) throw new InvalidOperationException($"{name}: bone {b} has no pivot.");
             var pivot = b == 0 ? 0 : Global(pivots[b]);
-            if (b > 0 && handles[pivots[b]].Bone != Parents[b]) throw new InvalidOperationException($"{name}: bone {b}'s pivot isn't a point of bone {Parents[b]}.");
-            body.Bones.Add(new Bone(offsets[b], points[b].Count, pivot, Parents[b], new byte[8]));
+            if (b > 0 && handles[pivots[b]].Bone != boneParents[b]) throw new InvalidOperationException($"{name}: bone {b}'s pivot isn't a point of bone {boneParents[b]}.");
+            body.Bones.Add(new Bone(offsets[b], points[b].Count, pivot, boneParents[b], new byte[8]));
             world.AddRange(points[b]);
         }
         body.Vertices.AddRange(world);
@@ -178,6 +181,8 @@ internal sealed class CarDriver
 
     public int BoneOf(int point) => body.Bones.FindIndex(b => point >= b.Start && point < b.Start + b.Count);
     public int Bones => body.Bones.Count;
+    // the points as posed so far (the body's own coordinates)
+    public Vector3[] Posed => posed;
     // the bones hanging from one, nearest first
     public int[] Below(int bone)
     {

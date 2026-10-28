@@ -1,5 +1,6 @@
 #include "C_EXTERN.H"
 #include "DIRECTORIES.H"
+#include "MAPPACK.H"
 
 #include <3D/PROJREC.H>
 #include <SVGA/SCREEN.H>
@@ -103,7 +104,10 @@ T_GRI_HEADER *GriHeader;
 #define OFFSET_BUFFER_FLAG 153800L
 
 /*--------------------------------------------------------------------------*/
-S32 LoadUsedBrick() {
+// The bricks a grid's used blocks name, read from `name` -- LBA_BKG.HQR, its brick offsets from `tableseek` on, `count` of them; or an
+// LBA Assembler map's own bricks (MAPPACK.CPP: an HQR, its table at 0) -- and renumbered in the block library as BufferBrick holds them.
+// `forbidden`: the brick never drawn, as `name` numbers it (-1 none).
+static S32 LoadUsedBrickFrom(const char *name, U32 tableseek, U32 count, S32 forbidden) {
     U32 i, j, b;
     U8 *pt;
     U8 *ptb;
@@ -122,7 +126,9 @@ S32 LoadUsedBrick() {
     U8 *ptdecomp;
     COMPRESSED_HEADER header;
     S32 nbbrick;
-    char tmpFilePath[ADELINE_MAX_PATH];
+
+    if (count > MAX_BRICK_GAME)
+        count = MAX_BRICK_GAME;
 
     tabflag = (U16 *)((U8 *)Screen + OFFSET_BUFFER_FLAG);
 
@@ -149,7 +155,7 @@ S32 LoadUsedBrick() {
         for (j = 0; j < maxbrk; j++, ptw += 2) {
             brick = *ptw;
 
-            if (brick) {
+            if (brick AND brick <= count) {
                 brick--;
 
                 if (brick < min)
@@ -167,14 +173,13 @@ S32 LoadUsedBrick() {
 
     //-------------------------------------- Deuxieme Passe, Load Brick
 
-    GetResPath(tmpFilePath, ADELINE_MAX_PATH, BKG_HQR_NAME);
-    handle = OpenRead(tmpFilePath);
+    handle = OpenRead(name);
     if (!handle)
         return (0L);
 
-    Seek(handle, BkgHeader.Brk_Start << 2, SEEK_FROM_START); // Begin offsets Brk
+    Seek(handle, tableseek, SEEK_FROM_START); // Begin offsets Brk
 
-    Read(handle, Screen, BkgHeader.Max_Brk << 2); // Read Offsets Brk
+    Read(handle, Screen, count << 2); // Read Offsets Brk
 
     ptflag = tabflag + min;
 
@@ -229,41 +234,71 @@ S32 LoadUsedBrick() {
 
         for (j = 0; j < maxbrk; j++, ptw += 2) {
             if (*ptw)
-                *ptw = tabflag[(*ptw) - 1];
+                *ptw = *ptw <= count ? tabflag[(*ptw) - 1] : 0;
         }
     }
 
     Close(handle);
 
-    ForbidenBrick = tabflag[BkgHeader.ForbidenBrick];
+    ForbidenBrick = forbidden >= 0 AND (U32)forbidden < count ? tabflag[forbidden] : 0;
 
     return (offset);
 }
+
+S32 LoadUsedBrick() {
+    char tmpFilePath[ADELINE_MAX_PATH];
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, BKG_HQR_NAME);
+    return LoadUsedBrickFrom(tmpFilePath, BkgHeader.Brk_Start << 2, BkgHeader.Max_Brk, BkgHeader.ForbidenBrick);
+}
+
+// What the grid buffers hold (InitBufferCube): an LBA Assembler map's grid bigger than that isn't loaded (MAPPACK.CPP).
+static T_MAP_GRID_NEEDS GridRoom = {0, 0, 0, 0};
 /*-------------------------------------------------------------------------*/
 void InitGrille(U32 numcube) {
     U32 id_gri;
     U32 id_bll;
     char tmpFilePath[ADELINE_MAX_PATH];
-
-    numcube = TabAllCube[numcube].Num; //	Indirection
-
-    id_gri = BkgHeader.Gri_Start + numcube;
+    char bricks[ADELINE_MAX_PATH];
+    U32 nbbricks;
+    S32 forbidden, ownlibrary;
+    S32 scene = (S32)numcube;
 
     GriHeader = (T_GRI_HEADER *)BufMap;
 
     GetResPath(tmpFilePath, ADELINE_MAX_PATH, BKG_HQR_NAME);
-    Load_HQR(tmpFilePath, BufMap, id_gri);
 
-    ManageSystem(); // for streaming
+    // a scene of an LBA Assembler map in the MAPS folder (MAPPACK.CPP): its grid from the map's GR2, and its block library, bricks and
+    // grid fragments from its own BL2, BRK and GRM when it has them
+    if (MapPack_LoadGrid(scene, BufMap, TabBlock, &GridRoom, &ownlibrary)) {
+        ManageSystem(); // for streaming
 
-    id_bll = BkgHeader.Bll_Start + GriHeader->My_Bll; //+numcube
+        if (!ownlibrary)
+            Load_HQR(tmpFilePath, TabBlock, BkgHeader.Bll_Start + GriHeader->My_Bll);
 
-    Load_HQR(tmpFilePath, TabBlock, id_bll);
+        if (MapPack_Bricks(scene, bricks, ADELINE_MAX_PATH, &nbbricks, &forbidden)) {
+            if (!LoadUsedBrickFrom(bricks, 0, nbbricks, forbidden))
+                return;
+        } else if (!LoadUsedBrick())
+            return;
+    } else {
+        numcube = numcube < MAX_GRID_SCENES ? TabAllCube[numcube].Num : 0; //	Indirection
 
-    //----------------------------------------------	NEW
-    if (!LoadUsedBrick())
-        return;
-    //----------------------------------------------
+        id_gri = BkgHeader.Gri_Start + numcube;
+
+        Load_HQR(tmpFilePath, BufMap, id_gri);
+
+        ManageSystem(); // for streaming
+
+        id_bll = BkgHeader.Bll_Start + GriHeader->My_Bll; //+numcube
+
+        Load_HQR(tmpFilePath, TabBlock, id_bll);
+
+        //----------------------------------------------	NEW
+        if (!LoadUsedBrick())
+            return;
+        //----------------------------------------------
+    }
 
     ManageSystem(); // for streaming
 
@@ -621,6 +656,13 @@ void InitBufferCube() {
     // 	pas de RECOVER_AREA car TabAllCube en stored et pas en LZSS
     Load_HQR(tmpFilePath, (void *)TabAllCube, BkgHeader.Brk_Start + BkgHeader.Max_Brk);
 
+    T_MAP_GRID_NEEDS maps;
+    MapPack_GridNeeds(BkgHeader.Bll_Start, BkgHeader.Brk_Start, BkgHeader.Max_Brk, &maps);
+    if (maps.Brick > BkgHeader.Max_Size_Brick_Cube)
+        BkgHeader.Max_Size_Brick_Cube = maps.Brick;
+    if (maps.Mask > BkgHeader.Max_Size_Mask_Brick_Cube)
+        BkgHeader.Max_Size_Mask_Brick_Cube = maps.Mask;
+
     // 	Calcul des tailles nécessaires
     intmem = (BkgHeader.Max_Size_Brick_Cube + RECOVER_AREA)    // BufferBrick
              + (SIZE_CUBE_X * SIZE_CUBE_Y * SIZE_CUBE_Z * 2L); // BufCube
@@ -639,6 +681,16 @@ void InitBufferCube() {
     realbll = MaxResSize(tmpFilePath, BkgHeader.Bll_Start, BkgHeader.Brk_Start);
     if (realbll < BkgHeader.Max_Size_Bll)
         realbll = BkgHeader.Max_Size_Bll;
+
+    // LBA Assembler's maps in the MAPS folder (MAPPACK.CPP): room for their grids, block libraries and bricks too
+    if (maps.Gri > realgri)
+        realgri = maps.Gri;
+    if (maps.Bll > realbll)
+        realbll = maps.Bll;
+    GridRoom.Gri = realgri;
+    GridRoom.Bll = realbll;
+    GridRoom.Brick = BkgHeader.Max_Size_Brick_Cube;
+    GridRoom.Mask = BkgHeader.Max_Size_Mask_Brick_Cube;
 
     /*	LoadUsedBrick() scratches its brick renumbering table into Screen at a
         fixed offset (OFFSET_BUFFER_FLAG), from a time when the framebuffer was
@@ -1183,9 +1235,12 @@ void IncrustGrm(T_ZONE *ptrz) {
 
     numgrm = ptrz->Info0;
 
-    GetResPath(tmpFilePath, ADELINE_MAX_PATH, BKG_HQR_NAME);
-    Load_HQR(tmpFilePath, Screen,
-             BkgHeader.Grm_Start + GriHeader->My_Grm + numgrm);
+    // (an LBA Assembler map's own grid fragments: MAPPACK.CPP)
+    if (!MapPack_LoadFragment(NumCube, numgrm, Screen)) {
+        GetResPath(tmpFilePath, ADELINE_MAX_PATH, BKG_HQR_NAME);
+        Load_HQR(tmpFilePath, Screen,
+                 BkgHeader.Grm_Start + GriHeader->My_Grm + numgrm);
+    }
 
     xo = ptrz->X0 / SIZE_BRICK_XZ;
     yo = ptrz->Y0 / SIZE_BRICK_Y;

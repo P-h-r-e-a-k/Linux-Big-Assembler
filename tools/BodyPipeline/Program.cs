@@ -17,9 +17,8 @@ namespace BodyPipeline;
 //                                            pure-black, legs-together silhouette (no lossy game-style-conversion step,
 //                                            which is what left the old asset a dark teal rather than black) run through
 //                                            New humanoid with HeadDetails/BandanaText, so the legs are guaranteed
-//                                            attached (HipAttach) and the bandana/teeth read clearly (NegativeZFront
-//                                            must be true -- see the comment at its Settings -- or the lettering and
-//                                            teeth silently render invisible while everything else still looks fine).
+//                                            attached (HipAttach) and the bandana/teeth read clearly, facing +Z like
+//                                            the games' own characters.
 //                                            Writes dummybody.lm2 (LBA2 payload, Body.Write()'s own bytes) plus 3D
 //                                            renders and a hip closeup to outDir for review before it is copied over
 //                                            the real asset.
@@ -54,6 +53,8 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        // (temporary files on E:, not the system drive's %TEMP% -- the user, 2026-10-22)
+        if (Directory.Exists(@"E:\dump\TEMP")) { Environment.SetEnvironmentVariable("TMP", @"E:\dump\TEMP"); Environment.SetEnvironmentVariable("TEMP", @"E:\dump\TEMP"); }
         if (args.Length == 0) { Console.WriteLine("usage: BodyPipeline stats|sheet|sheets|style|roundtrip ..."); return 2; }
         var game = args.Length > 1 && int.TryParse(args[1], out var parsedGame) ? parsedGame : 2;
         return args[0] switch
@@ -120,6 +121,7 @@ internal static class Program
             // hqrentry <file.hqr> <index> <out>: one entry, uncompressed, to a file
             "hqrentry" => HqrEntry(args[1], int.Parse(args[2]), args[3]),
             "lba1lit" => Lba1Lit(args.Length > 1 ? int.Parse(args[1]) : 0),
+            "extent" => Extent(int.Parse(args[1]), int.Parse(args[2])),
             "winding" => Winding(game, args.Length > 2 ? int.Parse(args[2]) : 0, args.Length > 3 ? int.Parse(args[3]) : 20),
             _ => 2,
         };
@@ -172,7 +174,8 @@ internal static class Program
             copy.Bones.AddRange(model.Bones); copy.Faces.AddRange(model.Faces); copy.Lines.AddRange(model.Lines); copy.Spheres.AddRange(model.Spheres);
             copy.Vertices.AddRange(turned);
             copy.SetWorld(turned.Select(p => p with { Y = p.Y - lowest }).ToArray());
-            sheet.Paste(Renderer.Render(copy, palette, W, H, 0, false, background: Backdrop, gridLine: Backdrop), v % 3 * W, v / 3 * H);
+            // seen from its -Z side, which the tilt above tips towards (the renderer shows +Z at yaw 0)
+            sheet.Paste(Renderer.Render(copy, palette, W, H, MathF.PI, false, background: Backdrop, gridLine: Backdrop), v % 3 * W, v / 3 * H);
         }
         FlatBitmap.Save(sheet, output);
         Console.WriteLine($"{output}: {hqr}[{index}] {model.Vertices.Count} points, {model.Faces.Count} polygons, {model.Lines.Count} lines, {model.Spheres.Count} spheres");
@@ -184,6 +187,17 @@ internal static class Program
         model.TexturePage = new Hqr(Path.Combine(folder, "RESS.HQR")).Read(6);
         FlatBitmap.Save(Renderer.Render(model, Generator.Palette(folder), 600, 600, yaw, false, background: Backdrop), output);
         Console.WriteLine($"{output}: {hqr}[{index}]");
+        return 0;
+    }
+
+    // extent <game> <body>: a body's size as it stands (its points' world box), bones, polygons -- for scaling one game's body to the other's
+    private static int Extent(int game, int body)
+    {
+        var model = Body.Read(new Hqr(Generator.BodyArchive(Folder(game))).Read(body), game, allowStatic: true);
+        var w = model.World();
+        Console.WriteLine($"game {game} body {body}: x {w.Min(v => v.X):0}..{w.Max(v => v.X):0}  y {w.Min(v => v.Y):0}..{w.Max(v => v.Y):0}  z {w.Min(v => v.Z):0}..{w.Max(v => v.Z):0}; " +
+                          $"{model.Bones.Count} bones, {model.Faces.Count} polygons, {model.Lines.Count} lines, {model.Spheres.Count} spheres; materials " +
+                          string.Join(",", model.Faces.GroupBy(f => f.Material).Select(g => $"{g.Key}x{g.Count()}")));
         return 0;
     }
 
@@ -916,14 +930,10 @@ internal static class Program
             ImagePath = path, Lba1Folder = Folders[0], Lba2Folder = Folders[1], Lba1Body = 0, Lba2Body = 0,
             Mask = "Dark subject", Threshold = 128, Layout = "Single front", Method = "New humanoid", AutoCrop = true, DetailBudget = 300,
             HeadDetails = true, BandanaText = "Phreak", Lit = false,
-            // HeadDecoration.Add mirrors X and Z when this is false (its own front-facing convention is the opposite of a
-            // plain "Single front" silhouette's). Left at the Settings default (false) here, the bandana/teeth geometry
-            // still builds -- same polygon and colour counts either way -- but its band-front polygons and the ordinary
-            // body polygons disagree about which way is front, so the "off" (white) cells of the letter grid and the
-            // ordinary head skin end up drawn over each other in screen space: the bandana cloth, knot and tails (which
-            // don't depend on this) still look right, but the lettering and teeth are invisible. True matches how the
-            // shipped asset was made.
-            NegativeZFront = true,
+            // The face, lettering and teeth on +Z, the way the games' characters face (the Settings default). The asset
+            // used to be made with NegativeZFront = true: the body preview then showed bodies from behind and mirrored, so
+            // only a back-to-front body with mirrored lettering looked right in it (2026-10-18, Renderer.Render).
+            NegativeZFront = false,
         };
         var generated = Generator.Generate(settings, 2);
         var written = generated.Body.Write();

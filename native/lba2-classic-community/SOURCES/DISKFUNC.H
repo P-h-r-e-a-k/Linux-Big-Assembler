@@ -11,6 +11,7 @@ extern void ChoicePalette(void);
 extern S32 LoadScene(S32 numscene);
 /*--------------------------------------------------------------------------*/
 extern S32 LoadSceneCubeXY(S32 numcube, S32 *cubex, S32 *cubey);
+extern S32 LoadSceneIsland(S32 numcube);
 /*--------------------------------------------------------------------------*/
 extern void CreateLbaDirectories(void);
 /*--------------------------------------------------------------------------*/

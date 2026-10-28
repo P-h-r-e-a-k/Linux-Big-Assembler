@@ -1938,6 +1938,15 @@ static void cmd_flags(int argc, const char *argv[]) {
    3=Discreet 4=Protopack ...). Routes through SetComportement so the weapon/body side-effects match a
    real in-game switch. Lets a headless test reach the melee (Aggressive), jump (Sportif) and hide
    (Discreet) input paths without a save fixture in that behaviour. */
+/* newgame: what the main menu's New Game does (GAMEMENU.CPP InitGame(1)) -- for a headless test of a game started again in one session
+   (a race-track mod's new game after a race: RACEMOD.CPP RaceMod_NewGameScene). */
+static void cmd_newgame(int argc, const char *argv[]) {
+    (void)argc; (void)argv;
+    extern void InitGame(S32 flagload);
+    InitGame(1);
+    Console_Print("newgame: a new game, scene %d", (int)NewCube);
+}
+
 static void cmd_behaviour(int argc, const char *argv[]) {
     if (argc >= 2) {
         S32 n = atoi(argv[1]);
@@ -2421,20 +2430,180 @@ static int parse_and_schedule_seq(const char *spec, int frameBased) {
      input seq 0:up:60/60:up+throw:30  walk 60 ticks, then walk+fire 30 ticks
      input fseq 3:action:4           press action on rendered frames 3-6 (a skip frame at high refresh)
      input trace 1                   log injected mask + hero anim/pos each sim tick */
-/* autodrive <0|1> [look cells] [side cells]: a race-track mod's test pilot drives the player's car along the first opponent's line
-   (RACEMOD.CPP), or that far to one side of it (to the left of the way it runs, x east and z south: a pilot against a rail). */
+/* autodrive <0|1> [look cells] [side cells] [pace %]: a race-track mod's test pilot drives the player's car along the first opponent's line
+   (RACEMOD.CPP), or that far to one side of it (to the left of the way it runs, x east and z south: a pilot against a rail) -- at that
+   percent of the line's speed (a slower driver: the race's levels' benchmark). */
 static void cmd_autodrive(int argc, const char *argv[]) {
     extern void RaceMod_AutoDrive(int on, double lookCells, double sideCells);
+    extern void RaceMod_AutoPace(double percent);
     if (argc < 2) {
-        Console_Print("Usage: autodrive <0|1> [look ahead, cells] [to the side, cells]");
+        Console_Print("Usage: autodrive <0|1> [look ahead, cells] [to the side, cells] [pace, percent of the line's speed]");
         return;
     }
     RaceMod_AutoDrive(atoi(argv[1]), argc >= 3 ? atof(argv[2]) : 0, argc >= 4 ? atof(argv[3]) : 0);
+    if (argc >= 5) RaceMod_AutoPace(atof(argv[4]));
     Console_Print("autodrive: %s", atoi(argv[1]) ? "on" : "off");
+}
+
+/* autoshort <0|1> [branches]: the test pilot (autodrive) drives a line with the track's shortcuts taken -- the raised road's branches
+   shorter than the way round, the teleporters that come out further round the lap (RACEMOD.CPP BuildShortLine). For the game's Hard
+   ghosts. `branches` (1 the first, comma-separated: "2", "1,2"): those branches and no others, over the line's start too -- to try one. */
+static void cmd_autoshort(int argc, const char *argv[]) {
+    extern void RaceMod_AutoShort(int on, unsigned force);
+    if (argc < 2) {
+        Console_Print("Usage: autoshort <0|1> [branches]");
+        return;
+    }
+    unsigned force = 0;
+    for (const char *p = argc > 2 ? argv[2] : ""; *p; p++)
+        if (*p >= '0' && *p <= '9') {
+            const int b = atoi(p);
+            if (b >= 1 && b <= 32) force |= 1u << (b - 1);
+            while (p[1] >= '0' && p[1] <= '9') p++;
+        }
+    RaceMod_AutoShort(atoi(argv[1]), force);
+    Console_Print("autoshort: %s", atoi(argv[1]) ? "on" : "off");
+}
+
+/* autoline <0|1> [margin]: the test pilot's line pulled tight across the raised road, its bends cut as wide as the road gives, `margin`
+   cells inside its edges (RACEMOD.CPP SmoothAutoLine). For the game's Extreme ghosts. */
+static void cmd_autoline(int argc, const char *argv[]) {
+    extern void RaceMod_AutoLine(int on, double marginCells);
+    if (argc < 2) {
+        Console_Print("Usage: autoline <0|1> [margin cells]");
+        return;
+    }
+    RaceMod_AutoLine(atoi(argv[1]), argc > 2 ? atof(argv[2]) : 0);
+    Console_Print("autoline: %s", atoi(argv[1]) ? "on" : "off");
+}
+
+/* autoslide <0|1> [on degrees] [plan]: the test pilot slides round the bends on the handbrake -- held while the way the car goes is more
+   than `on` degrees off the line's bearing, the bends planned at `plan` times the steering's speed (RACEMOD.CPP). */
+static void cmd_autoslide(int argc, const char *argv[]) {
+    extern void RaceMod_AutoSlide(int on, double onDeg, double plan);
+    if (argc < 2) {
+        Console_Print("Usage: autoslide <0|1> [on degrees] [plan]");
+        return;
+    }
+    RaceMod_AutoSlide(atoi(argv[1]), argc > 2 ? atof(argv[2]) : 0, argc > 3 ? atof(argv[3]) : 0);
+    Console_Print("autoslide: %s", atoi(argv[1]) ? "on" : "off");
+}
+
+/* raceview <0|1|2>: the race camera's view -- 0 inside the car, 1 just behind it, 2 further back -- as V changes it during a race
+   (RACEMOD.CPP camera=). For headless tests. */
+static void cmd_raceview(int argc, const char *argv[]) {
+    extern void RaceMod_SetCameraView(int view);
+    if (argc < 2) {
+        Console_Print("Usage: raceview <0 inside the car|1 just behind|2 further back>");
+        return;
+    }
+    RaceMod_SetCameraView(atoi(argv[1]));
+    Console_Print("raceview: %d", atoi(argv[1]));
+}
+
+/* racewalk [+] <x z>... [car] | racewalk off: with a race file's on_foot=, Twinsen out of his car walked on foot through the points (island
+   units), then -- with "car" -- to his car and into it (RACEMOD.CPP RaceMod_Walk); "+" first: more points after those given before (a
+   command line holds a few). For headless tests of the Temple of Bu's party. */
+static void cmd_racewalk(int argc, const char *argv[]) {
+    extern void RaceMod_Walk(int n, const double *xz, int car, int more);
+    double xz[64];
+    int n = 0, car = 0, more = 0;
+    for (int i = 1; i < argc; i++) {
+        if (i == 1 && !strcmp(argv[i], "+")) { more = 1; continue; }
+        if (!strcasecmp(argv[i], "car")) { car = 1; continue; }
+        if (!strcasecmp(argv[i], "off")) { n = 0; car = 0; more = 0; break; }
+        if (i + 1 < argc && n < 32) { xz[2 * n] = atof(argv[i]); xz[2 * n + 1] = atof(argv[i + 1]); n++; i++; }
+    }
+    RaceMod_Walk(n, xz, car, more);
+    Console_Print("racewalk: %d point(s)%s%s", n, more ? " more" : "", car ? ", then into the car" : "");
+}
+
+/* racestop <x> <z> <reach>: with a race file's on_foot=, the test pilot's car stopped once it comes within <reach> of the place (island
+   units) and Twinsen got out (RACEMOD.CPP RaceMod_StopAt) -- then any racewalk given walks him. */
+static void cmd_racestop(int argc, const char *argv[]) {
+    extern void RaceMod_StopAt(double x, double z, double reach);
+    if (argc < 4) { Console_Print("Usage: racestop <x> <z> <reach>"); return; }
+    RaceMod_StopAt(atof(argv[1]), atof(argv[2]), atof(argv[3]));
+    Console_Print("racestop: within %s of (%s, %s)", argv[3], argv[1], argv[2]);
+}
+
+/* raceplan <top%> <accel%> <brake%> <steer%> | raceplan file <setups> <out> [points]: a race-track mod's racing line planned again for a car
+   setup scaled by those percentages, and its perfect lap (RACEMOD.CPP RaceMod_PlanLap); with a file, one setup a line ("top accel brake
+   steer") and the laps written to <out> ("top accel brake steer lap flat% bends%"). For comparing setups on a track. With [points], each
+   setup's plan point by point too, one setup after another ("# setup top accel brake steer", then RACEMOD.CPP PlanPointsOut's lines: each
+   point's place, planned speed, bend radius and the raised road's width there) -- for tools/RaceTrackStress/drive.py, how the setup
+   handles along the lap. */
+static void cmd_raceplan(int argc, const char *argv[]) {
+    extern double RaceMod_PlanLap(double topPct, double accelPct, double brakePct, double steerPct, double *flatShare, double *bendShare);
+    extern void RaceMod_PlanPointsTo(FILE *f);
+    double flat = 0, bend = 0;
+    if ((argc == 4 || argc == 5) && !strcmp(argv[1], "file")) {
+        FILE *in = fopen(argv[2], "r");
+        FILE *out = in ? fopen(argv[3], "w") : NULL;
+        FILE *points = out && argc == 5 ? fopen(argv[4], "w") : NULL;
+        if (!in || !out || (argc == 5 && !points)) {
+            if (in) fclose(in);
+            if (out) fclose(out);
+            Console_Print("raceplan: can't read %s or write %s", argv[2], argv[3]);
+            return;
+        }
+        char line[256];
+        int n = 0;
+        while (fgets(line, sizeof(line), in)) {
+            double t, a, b, st;
+            if (sscanf(line, "%lf %lf %lf %lf", &t, &a, &b, &st) != 4) continue;
+            if (points) fprintf(points, "# setup %g %g %g %g\n", t, a, b, st);
+            RaceMod_PlanPointsTo(points);
+            const double lap = RaceMod_PlanLap(t, a, b, st, &flat, &bend);
+            RaceMod_PlanPointsTo(NULL);
+            fprintf(out, "%g %g %g %g %.3f %.1f %.1f\n", t, a, b, st, lap, flat * 100, bend * 100);
+            n++;
+        }
+        fclose(in);
+        fclose(out);
+        if (points) fclose(points);
+        Console_Print("raceplan: %d setups -> %s", n, argv[3]);
+        return;
+    }
+    if (argc < 5) { Console_Print("Usage: raceplan <top%> <accel%> <brake%> <steer%> | raceplan file <setups> <out> [points]"); return; }
+    const double lap = RaceMod_PlanLap(atof(argv[1]), atof(argv[2]), atof(argv[3]), atof(argv[4]), &flat, &bend);
+    if (lap < 0) Console_Print("raceplan: no racing line with its bends' radii");
+    else Console_Print("raceplan: a perfect lap %.2f s (flat out %.0f%%, round the bends %.0f%%, between %.0f%%)", lap, flat * 100, bend * 100, 100 - flat * 100 - bend * 100);
 }
 
 /* raceitem <n>: Twinsen uses a race-track mod's power-up now (0 fuel, 1 protection, 2 lightning, 3 penguin, 4 super jet-pack, 5 oil);
    raceblast [cells]: a nitro penguin goes off that far ahead of his car (RACEMOD.CPP, tests). */
+/* framedump start <video.mp4> [seconds] [fps] | framedump stop: a video of the game recorded from inside it (FRAMEDUMP.CPP). */
+static void cmd_framedump(int argc, const char *argv[]) {
+    extern int FrameDump_Start(const char *path, int seconds, int fps, int wallClock);
+    extern void FrameDump_Stop(void);
+    extern int FrameDump_Active(void);
+    if (argc >= 3 && !strcmp(argv[1], "start")) {
+        const int ok = FrameDump_Start(argv[2], argc >= 4 ? atoi(argv[3]) : 0, argc >= 5 ? atoi(argv[4]) : 60,
+                                       argc >= 6 && !strcmp(argv[5], "wall"));
+        Console_Print("framedump: %s", ok ? "started" : "failed");
+    } else if (argc >= 4 && !strcmp(argv[1], "at")) {
+        extern int FrameDump_At(double seconds, const char *cmd);
+        char cmd[200] = "";
+        for (int i = 3; i < argc; i++) {
+            if (i > 3) strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1);
+            strncat(cmd, argv[i], sizeof(cmd) - strlen(cmd) - 1);
+        }
+        Console_Print("framedump at %s: %s", argv[2], FrameDump_At(atof(argv[2]), cmd) ? cmd : "(full)");
+    } else if (argc >= 2 && !strcmp(argv[1], "stop")) {
+        FrameDump_Stop();
+        Console_Print("framedump: stopped");
+    } else {
+        Console_Print("framedump: %s", FrameDump_Active() ? "recording" : "idle");
+    }
+}
+/* autopass <0|1> [cells]: the test pilot takes a car close ahead in its lane on the side the other leaves (RACEMOD.CPP). */
+static void cmd_autopass(int argc, const char *argv[]) {
+    extern void RaceMod_AutoPass(double cells);
+    if (argc < 2) { Console_Print("Usage: autopass <0|1> [cells]"); return; }
+    RaceMod_AutoPass(atoi(argv[1]) ? (argc >= 3 ? atof(argv[2]) : 1.2) : 0);
+    Console_Print("autopass: %s", atoi(argv[1]) ? "on" : "off");
+}
 static void cmd_raceitem(int argc, const char *argv[]) {
     extern void RaceMod_TestItem(int pu);
     if (argc < 2) { Console_Print("Usage: raceitem <0..5>"); return; }
@@ -2447,6 +2616,58 @@ static void cmd_raceblast(int argc, const char *argv[]) {
     Console_Print("raceblast");
 }
 
+/* raceattack <n> [item]: opponent n (1 the first) uses a ball power-up now -- 6 yellow, 7 green, 8 red (the default), 9 the fire ball --
+   wherever its car is along its line (RACEMOD.CPP, tests). */
+static void cmd_raceattack(int argc, const char *argv[]) {
+    extern void RaceMod_TestAttack(int n, int pu);
+    if (argc < 2) { Console_Print("Usage: raceattack <n> [item]"); return; }
+    RaceMod_TestAttack(atoi(argv[1]) - 1, argc >= 3 ? atoi(argv[2]) : 8);
+    Console_Print("raceattack: %d", atoi(argv[1]));
+}
+
+/* racebox <n> [won]: power-up n into Twinsen's item box -- as a mushroom's (only into a free box, its roulette turning), or with `won` 1 as
+   a prize (a golden Gazogem, 11, waits in a second box while the box is full); raceprize <0|1|2>: the roulette wheel's pocket prize now,
+   as the car lands under the wheel (0 black, 1 red: the slot machine, 2 the green: the golden Gazogem) (RACEMOD.CPP, tests). */
+static void cmd_racebox(int argc, const char *argv[]) {
+    extern void RaceMod_TestBox(int pu, int won);
+    if (argc < 2) { Console_Print("Usage: racebox <n> [won]"); return; }
+    RaceMod_TestBox(atoi(argv[1]), argc >= 3 ? atoi(argv[2]) : 0);
+    Console_Print("racebox: %d", atoi(argv[1]));
+}
+static void cmd_raceprize(int argc, const char *argv[]) {
+    extern void RaceMod_TestPrize(int prize);
+    if (argc < 2) { Console_Print("Usage: raceprize <0|1|2>"); return; }
+    RaceMod_TestPrize(atoi(argv[1]));
+    Console_Print("raceprize: %d", atoi(argv[1]));
+}
+
+/* The Temple of Bu's Halloween (RACEMOD.CPP dive=, scare=, haunt=; tests): racedive [place]: a witch dives at Twinsen's car now (from that
+   dive place, 1 the first; none: the nearest ahead); racehaunt [n]: his screen haunted as by another car's ghost -- at once, or (n, 1 the
+   first opponent) by opponent n's, flying from its car to his; racescare [n]: a scare jumps up beside the road now (none: the nearest).
+   Twinsen's own ghost on the other cars: raceitem 12. */
+static void cmd_racedive(int argc, const char *argv[]) {
+    extern void RaceMod_TestDive(int place);
+    RaceMod_TestDive(argc >= 2 ? atoi(argv[1]) : 0);
+    Console_Print("racedive");
+}
+static void cmd_racehaunt(int argc, const char *argv[]) {
+    extern void RaceMod_TestHaunt(int from);
+    RaceMod_TestHaunt(argc >= 2 ? atoi(argv[1]) : 0);
+    Console_Print("racehaunt");
+}
+static void cmd_racescare(int argc, const char *argv[]) {
+    extern void RaceMod_TestScare(int n);
+    RaceMod_TestScare(argc >= 2 ? atoi(argv[1]) : 0);
+    Console_Print("racescare");
+}
+/* raceweb [0|1|2|3]: the giant web nearest Twinsen's car (RACEMOD.CPP web=) -- 1 (none) torn now as by his car, the web over his screen
+   too; 0 whole again; 2 its spider off up its web; 3 torn now as by another car. */
+static void cmd_raceweb(int argc, const char *argv[]) {
+    extern void RaceMod_TestWeb(int what);
+    RaceMod_TestWeb(argc >= 2 ? atoi(argv[1]) : 1);
+    Console_Print("raceweb");
+}
+
 /* racecars: where every car of a race-track mod's race is (RACEMOD.CPP RaceMod_Cars) -- the editor's minimap asks while it plays one. */
 static void cmd_racecars(int argc, const char *argv[]) {
     (void)argc; (void)argv;
@@ -2455,6 +2676,14 @@ static void cmd_racecars(int argc, const char *argv[]) {
     const int n = RaceMod_Cars(lines, 8);
     Console_Print("racecars %d", n);
     for (int i = 0; i < n; i++) Console_Print("%s", lines[i]);
+}
+
+/* cartrace: Twinsen's race car each frame -- its place, pitch, roll, speed, fall and the floor under it (RACEMOD.CPP RaceMod_CarTrace). */
+static void cmd_cartrace(int argc, const char *argv[]) {
+    extern void RaceMod_CarTrace(int on);
+    const int on = argc >= 2 ? atoi(argv[1]) : 1;
+    RaceMod_CarTrace(on);
+    Console_Print("cartrace: %s", on ? "ON" : "OFF");
 }
 
 static void cmd_input(int argc, const char *argv[]) {
@@ -2671,6 +2900,7 @@ void Console_RegisterAll(void) {
                               "teleport <x> <y> <z> [beta [alpha [gamma]]] | teleport actor <n>",
                               "Sets the hero's coords directly; next frame re-runs zones/collision. "
                               "'actor <n>' jumps onto actor n. Within-cube only.");
+    Console_RegisterCommandEx("newgame", cmd_newgame, "Start a new game, as the main menu's New Game", "newgame", "InitGame(1).");
     Console_RegisterCommandEx("behaviour", cmd_behaviour, "Read/set hero behaviour (comportement)",
                               "behaviour [0..13]", "0=Normal 1=Sportif 2=Aggressive 3=Discreet 4=Protopack. Routes through SetComportement.");
     Console_RegisterCommandEx("weapon", cmd_weapon, "Read/set hero active weapon",
@@ -2691,15 +2921,73 @@ void Console_RegisterAll(void) {
                               "lifetrace <objN> | lifetrace off",
                               "Logs the object's comportement/track/zone each frame and every LF_ "
                               "condition it evaluates.");
+    Console_RegisterCommandEx("framedump", cmd_framedump, "Record a video of the game from inside it (ffmpeg)",
+                              "framedump start <video.mp4> [seconds] [fps] [wall] | framedump at <seconds> <command> | framedump stop | framedump",
+                              "Every frame piped to ffmpeg (LBA2_FFMPEG) and the effects' mix to <video.mp4>.wav, placed by the "
+                              "engine's clock (run with --fixed-dt for the game's own time); LBA2_AUDIO_CAPTURE=1 silences the device.");
     Console_RegisterCommandEx("raceitem", cmd_raceitem, "Race-track test: Twinsen uses a power-up now", "raceitem <0..5>",
                               "0 fuel, 1 protection, 2 lightning, 3 penguin, 4 super jet-pack, 5 oil (RACEMOD.CPP).");
     Console_RegisterCommandEx("raceblast", cmd_raceblast, "Race-track test: a nitro penguin goes off ahead of the car", "raceblast [cells]",
                               "As if another car dropped it; the blast's own rules decide what it does to Twinsen (RACEMOD.CPP).");
+    Console_RegisterCommandEx("raceattack", cmd_raceattack, "Race-track test: an opponent throws a magic ball now", "raceattack <n> [item]",
+                              "Opponent n (1 the first) uses a ball power-up wherever its car is: 6 yellow, 7 green, 8 red (the default), "
+                              "9 the fire ball (RACEMOD.CPP).");
+    Console_RegisterCommandEx("racebox", cmd_racebox, "Race-track test: a power-up into Twinsen's item box", "racebox <n> [won]",
+                              "As a mushroom's (only into a free box, its roulette turning), or won 1 as a prize: a golden Gazogem (11) "
+                              "waits in a second box while the box is full (RACEMOD.CPP).");
+    Console_RegisterCommandEx("raceprize", cmd_raceprize, "Race-track test: the roulette wheel's prize now", "raceprize <0|1|2>",
+                              "As the car lands under the wheel: 0 black, 1 red (the slot machine), 2 the green (the golden Gazogem) "
+                              "(RACEMOD.CPP).");
+    Console_RegisterCommandEx("racedive", cmd_racedive, "Race-track test: a witch dives at the car now", "racedive [place]",
+                              "From that dive place (1 the first; none: the nearest ahead), as the Temple of Bu's witches do (RACEMOD.CPP dive=).");
+    Console_RegisterCommandEx("racehaunt", cmd_racehaunt, "Race-track test: a ghost over Twinsen's screen", "racehaunt [n]",
+                              "As another car's ghost power-up haunts it (RACEMOD.CPP haunt=): at once, or flying from opponent n's car "
+                              "(1 the first); raceitem 12 is Twinsen's on the others.");
+    Console_RegisterCommandEx("racescare", cmd_racescare, "Race-track test: a scare jumps up beside the road now", "racescare [n]",
+                              "Scare n (1 the first; none: the nearest), as the Temple of Bu's do (RACEMOD.CPP scare=).");
+    Console_RegisterCommandEx("raceweb", cmd_raceweb, "Race-track test: the giant web torn now", "raceweb [0|1|2|3]",
+                              "The nearest giant web: 1 (none) torn as by Twinsen's car, the web over his screen too; 0 whole again; "
+                              "2 its spider off up its web; 3 torn as by another car (RACEMOD.CPP web=).");
     Console_RegisterCommandEx("racecars", cmd_racecars, "Race-track: where every car is", "racecars",
                               "Twinsen's car and each opponent's, a line each: car <n> <x> <z> <beta> <name> (island units; n -1 "
                               "Twinsen). The editor's minimap asks for it while it plays a race (RACEMOD.CPP).");
+    Console_RegisterCommandEx("cartrace", cmd_cartrace, "Race-track test: log Twinsen's car each frame", "cartrace <0|1>",
+                              "[cartrace] lines: tick, island x y z, pitch and roll (BUGGY.CPP's), speed, falling, the raised road's floor "
+                              "under the car and the ground's (RACEMOD.CPP).");
+    Console_RegisterCommandEx("raceplan", cmd_raceplan, "Race-track test: the racing line planned for a car setup, its perfect lap",
+                              "raceplan <top%> <accel%> <brake%> <steer%> | raceplan file <setups> <out>",
+                              "Each percentage scales the race file's car (its gears' top speeds, pull, brakes, steering); the lap at a "
+                              "neutral character, and its time flat out, round the bends and between (RACEMOD.CPP RaceMod_PlanLap).");
+    Console_RegisterCommandEx("racestop", cmd_racestop, "Race-track test: stop the pilot's car near a place and get out",
+                              "racestop <x> <z> <reach>",
+                              "With a race file's on_foot=1, the test pilot stops the car once it comes within <reach> of the "
+                              "place (island units) and gets Twinsen out of it. For headless tests.");
+    Console_RegisterCommandEx("racewalk", cmd_racewalk, "Race-track test: walk Twinsen on foot through points, then to his car",
+                              "racewalk [+] <x z>... [car] | racewalk off",
+                              "With a race file's on_foot=1 and Twinsen out of his car, walks him through the points (island "
+                              "units) and, with car, back to his car and into it. For headless tests.");
+    Console_RegisterCommandEx("raceview", cmd_raceview, "Race-track camera view: inside the car, just behind, further back",
+                              "raceview <0|1|2>",
+                              "With a race-track mod running, changes the race camera's view as the V key does: 0 inside the "
+                              "car, 1 just behind it, 2 further back. For headless tests.");
+    Console_RegisterCommandEx("autoshort", cmd_autoshort, "Race-track test pilot: drive a line with the track's shortcuts taken",
+                              "autoshort <0|1> [branches]",
+                              "The autodrive's line with the raised road's branches that are shorter than the way round, and the "
+                              "teleporters that come out further round the lap, spliced in (RACEMOD.CPP BuildShortLine).");
+    Console_RegisterCommandEx("autopass", cmd_autopass, "Race-track test pilot: overtake a car close ahead instead of following it",
+                              "autopass <0|1> [cells]",
+                              "A car within six cells ahead in the pilot's lane takes it out to the side the other leaves, up to "
+                              "`cells` (1.2) from its line, and back once it is by (RACEMOD.CPP PassOffset).");
+    Console_RegisterCommandEx("autoline", cmd_autoline, "Race-track test pilot: drive a line pulled tight across the raised road",
+                              "autoline <0|1> [margin cells]",
+                              "The autodrive's line smoothed within the raised road's width, the bends cut as wide as the road "
+                              "gives, `margin` cells inside its edges (RACEMOD.CPP SmoothAutoLine).");
+    Console_RegisterCommandEx("autoslide", cmd_autoslide, "Race-track test pilot: slide round the bends on the handbrake",
+                              "autoslide <0|1> [on degrees] [plan]",
+                              "The handbrake held while the way the car goes is more than `on` degrees off the line's bearing; "
+                              "the bends planned at `plan` times the steering's speed (RACEMOD.CPP RaceMod_AutoInput).");
     Console_RegisterCommandEx("autodrive", cmd_autodrive, "Race-track test pilot: drive the player's car along the racing line",
-                              "autodrive <0|1> [look cells]",
+                              "autodrive <0|1> [look cells] [side cells] [pace %]",
                               "With a race-track mod running (LBA2_RACETRACK_FILE), steers and pedals the player's "
                               "car along the first opponent's line while he drives. For headless lap tests.");
     Console_RegisterCommandEx("objtrace", cmd_objtrace, "Trace an object's position each frame",

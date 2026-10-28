@@ -6,14 +6,33 @@
 #include <SYSTEM/HQFILE.H>
 
 #include <stdio.h>
+#include <string.h>
 
 /*──────────────────────────────────────────────────────────────────────────*/
 S32 HQF_File;
 static COMPRESSED_HEADER HQF_header;
 
+// An entry served from elsewhere (HQFILE.H HQF_Hook: LBA Assembler's maps in the MAPS folder -- SCENE.HQR's entries for their scenes,
+// SOURCES/MAPPACK.CPP), between HQF_Init and HQF_LoadClose.
+U8 *(*HQF_Hook)(const char *name, S32 index, U32 *size) = NULL;
+static U8 *HQF_HookData = NULL;
+
 /*──────────────────────────────────────────────────────────────────────────*/
 U32 HQF_Init(const char *name, S32 index) {
     S32 nbbloc;
+
+    HQF_HookData = NULL;
+    if (HQF_Hook) {
+        U32 size = 0;
+        U8 *data = HQF_Hook(name, index, &size);
+        if (data && size) {
+            HQF_HookData = data;
+            HQF_header.SizeFile = size;
+            HQF_header.CompressedSizeFile = size;
+            HQF_header.CompressMethod = 0;
+            return size;
+        }
+    }
 
     HQF_File = OpenRead(name);
     if (!HQF_File) {
@@ -45,6 +64,7 @@ U32 HQF_Init(const char *name, S32 index) {
 
 /*──────────────────────────────────────────────────────────────────────────*/
 void HQF_Close() {
+    HQF_HookData = NULL;
     if (HQF_File) {
         Close(HQF_File);
         HQF_File = 0;
@@ -53,6 +73,11 @@ void HQF_Close() {
 
 /*──────────────────────────────────────────────────────────────────────────*/
 U32 HQF_LoadClose(void *ptr) {
+    if (HQF_HookData) {
+        memcpy(ptr, HQF_HookData, HQF_header.SizeFile);
+        HQF_HookData = NULL;
+        return HQF_header.SizeFile;
+    }
     if (!HQF_File) {
         return 0;
     }

@@ -56,7 +56,47 @@ internal static class SceneOps
         return scene.Actors.Count - 1;
     }
 
-    // A blank 3D actor: a still figure with the given body and no scripts (an empty life script runs nothing).
+    // Inserts `actor` as actor `index` (after the hero), the actors from there on one number up: the scripts' references to them are
+    // renumbered as DeleteActor does.
+    public static void InsertActor(SceneModel scene, int index, SceneActorModel actor)
+    {
+        if (index <= 0 || index > scene.Actors.Count) throw new SceneEditException($"An actor goes after the hero and at most after the last actor ({scene.Actors.Count}).");
+        if (scene.Actors.Count >= SceneValidator.MaxObjects) throw new SceneEditException($"The scene already has {SceneValidator.MaxObjects} actors, the most the engine allows.");
+        var oldCount = scene.Actors.Count;
+        Rewrite(scene, (role, value, _) => role != ArgRole.Obj || value < index || value >= oldCount ? value : value + 1, null);
+        foreach (var a in scene.Actors.Skip(1))
+            if (a.Move == 2 && a.Info.Length > 3 && a.Info[3] >= index && a.Info[3] < oldCount) a.Info[3]++;
+        scene.Actors.Insert(index, actor);
+    }
+
+    // ---- LBA2's actor 1, the Meca-penguin's
+    // An LBA2 scene's actor 1 is the Meca-penguin's (COMMON.H NUM_PINGOUIN): at every scene start the engine makes whatever is there dead and
+    // bodiless (StartInitAllObjs -> RestartMecaPingouin), and Twinsen's penguin takes the slot when he uses one. Every retail scene has this
+    // placeholder there -- entity 14, the penguin's, at 0, 0, 0 -- and its own actors from 2 on. (A new map's interior had the hero alone, so
+    // the first actor put in it was actor 1, which the game never showed: a tester's Zoé, 2026-10-17.)
+    public static SceneActorModel MecaPenguinSlot() => new()
+    {
+        Flags = 0x8847, Entity = 14, Body = 0, Anim = 0, Sprite = 0, X = 0, Y = 0, Z = 0, HitForce = 0, OptionFlags = 96, Beta = 0, SRot = 30, Move = 7,
+        Info = new[] { -1, -1, -1, -1 }, NbBonus = 5, CoulObj = 0, Armor = 0, LifePoints = -1, Track = new byte[] { 0 }, Life = new byte[] { 0 },
+    };
+
+    public static bool IsMecaPenguinSlot(SceneActorModel actor) => actor.Entity == 14 && actor.X == 0 && actor.Y == 0 && actor.Z == 0;
+
+    // An LBA2 scene whose actor 1 is an actor of its own, which the game hides.
+    public static bool MecaPenguinSlotTaken(SceneModel scene) => scene.Game == SceneGame.Lba2 && scene.Actors.Count > 1 && !IsMecaPenguinSlot(scene.Actors[1]);
+
+    // Gives an LBA2 scene the penguin's slot as actor 1 when it hasn't it: after the hero of a scene with the hero alone, else in front of the
+    // actor there (the actors from 1 on one number up, InsertActor). Returns whether it did.
+    public static bool EnsureMecaPenguinSlot(SceneModel scene)
+    {
+        if (scene.Game != SceneGame.Lba2 || scene.Actors.Count == 0 || scene.Actors.Count > 1 && IsMecaPenguinSlot(scene.Actors[1])) return false;
+        InsertActor(scene, 1, MecaPenguinSlot());
+        return true;
+    }
+
+    // A blank 3D actor: a still figure of the given entity, its usual body, whose scripts do nothing. Each script is a lone END (LM_END /
+    // TM_END, 0 in both games), not empty: the loaders (DISKFUNC) point the script at the record where its bytes start, so an empty one
+    // runs whatever follows it -- the next actor's data, the zones -- as script (it took new actors' bodies away in the 3D view).
     public static SceneActorModel BlankActor(SceneGame game, int x, int y, int z, int entity = 0)
     {
         return new SceneActorModel
@@ -65,6 +105,7 @@ internal static class SceneOps
             Entity = entity, Body = 0, Anim = 0, Sprite = 0,
             X = x, Y = y, Z = z, Beta = 0, SRot = 40, Move = 0,
             CoulObj = 4, Armor = 1, LifePoints = 50,
+            Life = new byte[] { 0 }, Track = new byte[] { 0 },
         };
     }
 

@@ -210,6 +210,17 @@ char *StreamName() {
 
 // ████████████████████████████████████████████████████████████████████████████
 
+// (music that keeps going: the SDL backend's -- not done here)
+void SetStreamLoop(S32 on) { (void)on; }
+S32 PumpStreamLoop(void) { return 0; }
+// (no MIDI files played as music here: the SDL backend's)
+S32 StreamCanPlay(const char *name) {
+    const char *dot = name ? strrchr(name, '.') : NULL;
+    return !(dot && (!stricmp(dot, ".mid") || !stricmp(dot, ".midi") || !stricmp(dot, ".smf")));
+}
+
+// ████████████████████████████████████████████████████████████████████████████
+
 static int musicLogEnabled = 0;
 
 void MusicLogEnable(int enable) {

@@ -1,4 +1,5 @@
 #include "C_EXTERN.H"
+#include "MAPPACK.H"
 #include "DIRECTORIES.H"
 
 #include <SYSTEM/ADELINE.H>
@@ -163,8 +164,13 @@ S32 LoadScene(S32 numscene) {
         ptrobj->Flags = GET_U32;
 
         indexfile3d = GET_S16;
+        // (a map's own character: its number in the entity table, MAPPACK.CPP)
+        indexfile3d = MapPack_Entity(numscene, indexfile3d);
 
         if (!(ptrobj->Flags & SPRITE_3D)) {
+            // (an entity past the table in memory -- a number typed too high, or one added after it was read -- would read a garbage
+            // offset: entity 0 stands in, 2026-10-23)
+            if (BufferFile3D && (indexfile3d < 0 || (U32)indexfile3d + 1 >= *(U32 *)BufferFile3D / 4)) indexfile3d = 0;
             if (!FlagLoadGame) {
                 ptrobj->PtrFile3D = LoadFile3D(indexfile3d);
             }
@@ -351,6 +357,14 @@ S32 LoadSceneCubeXY(S32 numcube, S32 *cubex, S32 *cubey) {
         return TRUE;
     } else
         return FALSE;
+}
+
+// The island a scene is on, from its header (into ScreenAux, as LoadSceneCubeXY); -1 for no such scene
+S32 LoadSceneIsland(S32 numcube) {
+    char tmpFilePath[ADELINE_MAX_PATH];
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, SCENE_HQR_NAME);
+    if (numcube < 0 OR !Load_HQR(tmpFilePath, ScreenAux, numcube + 1)) return -1;
+    return (S32)(U8)ScreenAux[0];
 }
 
 /*──────────────────────────────────────────────────────────────────────────*/

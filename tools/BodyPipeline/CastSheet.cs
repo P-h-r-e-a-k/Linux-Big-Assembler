@@ -61,7 +61,8 @@ internal static class CastSheet
         copy.Bones.AddRange(model.Bones); copy.Faces.AddRange(model.Faces); copy.Lines.AddRange(model.Lines); copy.Spheres.AddRange(model.Spheres);
         copy.Vertices.AddRange(turned);
         copy.SetWorld(turned.Select(p => p with { Y = p.Y - lowest }).ToArray());
-        return Renderer.Render(copy, palette, w, h, 0, false, background: Backdrop, gridLine: Backdrop);
+        // seen from its -Z side, which the tilt above tips towards (the renderer shows +Z at yaw 0)
+        return Renderer.Render(copy, palette, w, h, MathF.PI, false, background: Backdrop, gridLine: Backdrop);
     }
 
     // Segoe UI is the Windows build's face; on Linux fontconfig substitutes whichever of these is installed.

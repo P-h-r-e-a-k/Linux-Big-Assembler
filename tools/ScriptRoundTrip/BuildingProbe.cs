@@ -140,6 +140,23 @@ internal static class BodyFaces
 // the pieces of a building share: cube, bodies, box in cells, heights, origin and turn.
 internal static class DecorList
 {
+    // altitude <ILE> <world x> <world z> [radius cells]: the island's ground height there (world units), and the highest and lowest in the
+    // radius round it, every half cell -- what a raised road's deck has under it
+    public static int Altitude(string[] args)
+    {
+        var island = IslandFile.Load(args[1]);
+        double x = double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture), z = double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture);
+        var r = args.Length > 4 ? double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture) : 0;
+        Console.WriteLine($"ground at ({x:0}, {z:0}): {IslandOps.Altitude(island, x, z)?.ToString("0") ?? "none"}");
+        for (var dz = -r; dz <= r + 1e-9 && r > 0; dz += 0.5)
+        {
+            var line = new System.Text.StringBuilder($"{dz,5:0.0}:");
+            for (var dx = -r; dx <= r + 1e-9; dx += 0.5) line.Append($" {IslandOps.Altitude(island, x + dx * 512, z + dz * 512) ?? -1,6:0}");
+            Console.WriteLine(line);
+        }
+        return 0;
+    }
+
     public static int Run(string[] args)
     {
         var island = IslandFile.Load(args[1]);

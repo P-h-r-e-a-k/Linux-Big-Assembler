@@ -17,13 +17,24 @@ namespace LBAAssembler.Terrain;
 // ramps: browns 16-31, greys 48-63, reds 64-79, golds 96-111, greens 112-143, blues 192-207.
 internal sealed record DeckTheme(string Name, int Asphalt, int Red, int White, int RailTop, int RailSide, int Side, int Under, int PierLight, int PierDark, int PierCap, int Arrow)
 {
+    // The start gantry's colours on such a road -- its posts and its beam's two squares -- or null: the race's own red posts and black and
+    // white squares.
+    public (int Post, int Light, int Dark)? Gantry { get; init; }
+
     public static readonly DeckTheme Standard = new("standard", RaceTrackRaisedBody.Asphalt, RaceTrackRaisedBody.Red, RaceTrackRaisedBody.White, RaceTrackRaisedBody.RailTop,
         RaceTrackRaisedBody.RailSide, RaceTrackRaisedBody.Side, RaceTrackRaisedBody.Under, RaceTrackRaisedBody.PierLight, RaceTrackRaisedBody.PierDark, RaceTrackRaisedBody.PierCap,
         RaceTrackRaisedBody.Arrow);
     public static readonly DeckTheme Dock = new("dock", 23, 201, 63, 28, 25, 21, 19, 24, 20, 27, 62);
     public static readonly DeckTheme Refinery = new("refinery", 52, 108, 49, 70, 67, 50, 49, 57, 54, 70, 245);
     public static readonly DeckTheme Village = new("village", 104, 134, 63, 121, 118, 98, 97, 100, 97, 120, 89);
-    public static readonly DeckTheme[] All = { Standard, Dock, Refinery, Village };
+    // the Emperor's palace (Otringal's palette): a red carpet edged in gold through its rooms and up to the round window; out of it and over
+    // the rooftops its pale stone, edged and railed in the turquoise of its domes' drums
+    public static readonly DeckTheme Carpet = new("carpet", 72, 105, 239, 105, 102, 83, 83, 236, 234, 105, 239);
+    public static readonly DeckTheme Palace = new("palace", 236, 188, 239, 188, 197, 234, 55, 236, 234, 188, 105);
+    // the Temple of Bú's Halloween race (its own palette: Otringal's with LBA1's colours written in, TemplePalette): a road near black, its
+    // curbs pumpkin orange and black, its rails' tops glowing orange over sides of dark plum, black slabs on dark stone piers
+    public static readonly DeckTheme Halloween = new("halloween", 209, 88, 224, 89, 211, 210, 208, 213, 210, 86, 89) { Gantry = (86, 242, 224) };
+    public static readonly DeckTheme[] All = { Standard, Dock, Refinery, Village, Carpet, Palace, Halloween };
     public static DeckTheme? ByName(string? name) => All.FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase));
 }
 
@@ -90,7 +101,8 @@ internal static class RaceTrackRaisedBody
     // over StripWidth, an even number and ArrowStrips at the least), so two pieces meet on the same points -- where they don't, the engine
     // leaves a seam of missing pixels. For the same reason an arrow is the strips' own quads coloured, halved along their diagonals at its
     // edges (a triangle four cells long, ArrowStrips wide at its base), not cut into them; drawn over them it flickered with them.
-    public const double StripeHalf = 50, StripWidth = 512, PieceOverlap = 24, ArrowHalfWidth = 896;
+    public const double StripeHalf = 50, StripWidth = 512, PieceOverlap = 24, ArrowHalfWidth = 1024, ArrowShaftHalf = 512;
+    public const int ArrowHeadCells = 3;
     public const int ArrowStrips = 8;
     public static int StripsFor(double widestAsphalt)
     {
@@ -103,8 +115,14 @@ internal static class RaceTrackRaisedBody
     // sections run (RACEMOD.CPP boostpanel=).
     public static byte[] Tile(IReadOnlyList<(Vector3 Mid, Vector3 Across)> sections, int firstBlock, double asphalt, double curb, double edge, bool arrow = false, int line = -1,
         IReadOnlyList<double>? wider = null, double stripe = double.NaN, IReadOnlyList<bool>? striped = null, int strips = 0, DeckTheme? theme = null,
-        IReadOnlyList<(double Lo, double Hi, int Q)?>? boost = null)
+        IReadOnlyList<(double Lo, double Hi, int Q)?>? boost = null, IReadOnlyList<(bool Minus, bool Plus)>? open = null,
+        IReadOnlyList<(bool Minus, bool Plus)>? flush = null)
     {
+        // (open: a section with no rail on that side -- down to the curb -- where another road's deck runs on from it: a branch of the
+        // raised road leaving the lap or coming back onto it, Wannies Island's shortcut)
+        // (flush: a section with no rail on that side, its curb flat out to the road's edge, where the road lies level with the floor beside
+        // it -- the cars drive off it there: the Temple of Bú's ground stretch, the user, 2026-10-19: "drop the track guard rails where it's
+        // level with the ground")
         var m = new Mesh();
         var (Asphalt, Red, White, RailTop, RailSide, Side, Under, Arrow) = theme is { } th
             ? (th.Asphalt, th.Red, th.White, th.RailTop, th.RailSide, th.Side, th.Under, th.Arrow)
@@ -124,7 +142,11 @@ internal static class RaceTrackRaisedBody
         int On(int j, double u, double y = 0) => m.P(sections[j].Mid + sections[j].Across * (float)u + new Vector3(0, (float)y, 0));
         for (var j = 0; j < sections.Count; j++)
             for (var k = 0; k < profile.Length; k++)
-                at[j, k] = On(j, profile[k].U + Math.Sign(profile[k].U) * Wider(j), profile[k].Y);
+            {
+                var flat = open is not null && j < open.Count && (k is 1 or 2 ? open[j].Minus : k is 7 or 8 && open[j].Plus)
+                           || flush is not null && j < flush.Count && (k is 1 or 2 ? flush[j].Minus : k is 7 or 8 && flush[j].Plus);
+                at[j, k] = On(j, profile[k].U + Math.Sign(profile[k].U) * Wider(j), flat ? 0 : profile[k].Y);
+            }
         // the asphalt's strips, their edges evenly across it at every section; and the underside's, two to each of them
         var edges = new int[sections.Count, strips + 1];
         var below = Math.Max(1, (strips + 1) / 2);
@@ -142,10 +164,18 @@ internal static class RaceTrackRaisedBody
             var across = Vector3.Normalize(sections[j].Across + sections[j + 1].Across);
             var block = j == line || (firstBlock + j) % 2 == 0 ? Red : White;
             void Strip(int k, int colour, Vector3 outward) => m.Quad(at[j, k], at[j, k + 1], at[j + 1, k + 1], at[j + 1, k], colour, outward);
-            Strip(0, Side, -across);          // the outer side, slab and rail
-            Strip(1, RailTop, up);
-            Strip(2, RailSide, across);       // the rail's inner face
-            Strip(3, block, up);              // the curb
+            // (a side open from section to section: asphalt to its edge, no curb and no flattened rail -- they lay as a red and white line
+            // across the one deck where a branch leaves the lap; the user, 2026-10-15: "where our track splits we've got red/white line in
+            // the middle that we can remove")
+            bool OpenCell(bool plus) => open is not null && j + 1 < open.Count && (plus ? open[j].Plus && open[j + 1].Plus : open[j].Minus && open[j + 1].Minus);
+            var openMinus = OpenCell(false); var openPlus = OpenCell(true);
+            // (a side flush from section to section: the slab's edge, the curb out to it where the rail was, no rail's face)
+            bool FlushCell(bool plus) => flush is not null && j + 1 < flush.Count && (plus ? flush[j].Plus && flush[j + 1].Plus : flush[j].Minus && flush[j + 1].Minus);
+            var flushMinus = !openMinus && FlushCell(false); var flushPlus = !openPlus && FlushCell(true);
+            Strip(0, openMinus ? Asphalt : Side, -across);          // the outer side, slab and rail
+            Strip(1, openMinus ? Asphalt : flushMinus ? block : RailTop, up);
+            if (!flushMinus) Strip(2, openMinus ? Asphalt : RailSide, across);       // the rail's inner face
+            Strip(3, openMinus ? Asphalt : block, up);              // the curb
             // (a boost panel's strips: those whose middles are within its reach across)
             int b0 = -1, b1 = -1;
             if (boost is not null && j < boost.Count && boost[j] is { } bp)
@@ -168,11 +198,20 @@ internal static class RaceTrackRaisedBody
                     else m.Quad(qa, qb, qc, qd, White, up);
                     continue;
                 }
-                // (an arrow over the strips from the section's middle, w0 - j either side of it at section j, to its point: w0 strips about
-                // ArrowHalfWidth, ArrowStrips / 2 at the most -- on a wide deck its strips are wide, and its arrow shorter)
+                // (an arrow as the ground's are -- a shaft and a head, the user, 2026-10-27: "raised road sections have tended to have small
+                // triangles, and Desert track featured arrows instead, let's be consistent across all tracks": its first cell the shaft,
+                // ArrowShaftHalf either side of the middle; then the head over the strips from w0 either side of the middle at its base,
+                // a strip less each cell, to its point -- w0 strips about ArrowHalfWidth, ArrowHeadCells at the most)
                 var c = strips / 2;
-                var w0 = Math.Clamp((int)Math.Round(ArrowHalfWidth / (2 * (asphalt + Wider(0)) / strips)), 1, ArrowStrips / 2);
-                var w = w0 - j;
+                var sw = 2 * (asphalt + Wider(0)) / strips;
+                var w0 = Math.Clamp((int)Math.Round(ArrowHalfWidth / sw), 1, ArrowHeadCells);
+                var shaft = Math.Clamp((int)Math.Round(ArrowShaftHalf / sw), 1, Math.Max(1, w0 - 1));
+                if (arrow && j == 0)
+                {
+                    m.Quad(qa, qb, qc, qd, i >= c - shaft && i < c + shaft ? Arrow : j == line ? White : Asphalt, up);
+                    continue;
+                }
+                var w = w0 - (j - 1);
                 if (arrow && w > 0 && i == c - w) { m.Tri(qa, qb, qc, Arrow, up); m.Tri(qa, qc, qd, Asphalt, up); continue; }
                 if (arrow && w > 0 && i == c + w - 1) { m.Tri(qa, qb, qd, Arrow, up); m.Tri(qb, qc, qd, Asphalt, up); continue; }
                 var white = j == line || !double.IsNaN(stripe) && striped is { } st && j < st.Count && st[j]
@@ -180,10 +219,10 @@ internal static class RaceTrackRaisedBody
                 var colour = white ? White : arrow && w > 0 && i > c - w && i < c + w - 1 ? Arrow : Asphalt;
                 m.Quad(qa, qb, qc, qd, colour, up);
             }
-            Strip(5, block, up);
-            Strip(6, RailSide, -across);
-            Strip(7, RailTop, up);
-            Strip(8, Side, across);
+            Strip(5, openPlus ? Asphalt : block, up);
+            if (!flushPlus) Strip(6, openPlus ? Asphalt : RailSide, -across);
+            Strip(7, openPlus ? Asphalt : flushPlus ? block : RailTop, up);
+            Strip(8, openPlus ? Asphalt : Side, across);
             for (var i = 0; i < below; i++) m.Quad(under[j, i], under[j, i + 1], under[j + 1, i + 1], under[j + 1, i], Under, -up);   // the underside
         }
         return m.Write();
@@ -193,8 +232,9 @@ internal static class RaceTrackRaisedBody
     // over the road and `beam` high -- lower than the retail gantry (3990 to its top), which does not fit under the next level of a road
     // that winds up over its own start. `across`: the unit vector across the road; the body's origin is the road's middle at the line.
     public const int Black = 48;
-    public static byte[] Gantry(Vector3 across, double half, double clear, double beam)
+    public static byte[] Gantry(Vector3 across, double half, double clear, double beam, DeckTheme? theme = null)
     {
+        var (postColour, light, dark) = theme?.Gantry ?? (Red, White, Black);
         var m = new Mesh();
         var along = new Vector3(-across.Z, 0, across.X);
         const float post = 130, thick = 110;
@@ -212,9 +252,11 @@ internal static class RaceTrackRaisedBody
         }
         var reach = (float)half + post;
         foreach (var side in new[] { -1f, 1f })
-            Box(across * (side * (float)half), across * post, along * post, -(float)Thickness, (float)clear, Red, 70);
+            Box(across * (side * (float)half), across * post, along * post, -(float)Thickness, (float)clear, postColour, 70);
         // the beam: its two faces in squares, black and white, two rows of them
-        var columns = Math.Max(2, (int)Math.Round(2 * reach / (beam / 2)));
+        // (16 points a column, the posts and the ends 48 more: at most 30 columns keeps the body within the engine's 550 -- a gantry built to
+        // a road with a pit lane beside it, 20 cells across, would have had 36, its squares longer instead)
+        var columns = Math.Clamp((int)Math.Round(2 * reach / (beam / 2)), 2, 30);
         float y0 = (float)clear, y1 = (float)(clear + beam), mid = (float)(clear + beam / 2);
         foreach (var face in new[] { -1f, 1f })
             for (var k = 0; k < columns; k++)
@@ -224,7 +266,7 @@ internal static class RaceTrackRaisedBody
                 for (var row = 0; row < 2; row++)
                 {
                     float a = row == 0 ? y0 : mid, b = row == 0 ? mid : y1;
-                    m.Quad(m.P(At(u0, a)), m.P(At(u1, a)), m.P(At(u1, b)), m.P(At(u0, b)), (k + row) % 2 == 0 ? Black : White, along * face);
+                    m.Quad(m.P(At(u0, a)), m.P(At(u1, a)), m.P(At(u1, b)), m.P(At(u0, b)), (k + row) % 2 == 0 ? dark : light, along * face);
                 }
             }
         // ... and its top, underside and ends
@@ -266,6 +308,25 @@ internal static class RaceTrackRaisedBody
         }
         Box(Vector3.Zero, level * a, along * a, 0, h - t, PierLight, PierDark, PierDark);
         Box(across * (float)((lo + hi) / 2), across * (float)((hi - lo) / 2), along * (float)beamHalf, h - t, h, PierCap, PierDark, PierCap);
+        return m.Write();
+    }
+
+    // A block: `halfX` by `halfZ` (units) round its middle, from 0 up to `height`, its sides in two colours and its top in a third -- the
+    // walls built up under a raised road where it passes over a building cut down for it, a lift's pad and post (RaceTrackBuilder DeckWalls,
+    // DeckLifts)
+    public static byte[] Block(double halfX, double halfZ, double height, int light = PierLight, int dark = PierDark, int top = PierCap)
+    {
+        var m = new Mesh();
+        float x = (float)halfX, z = (float)halfZ, h = (float)height;
+        var c = new[] { new Vector3(-x, 0, -z), new Vector3(x, 0, -z), new Vector3(x, 0, z), new Vector3(-x, 0, z) };
+        var lo = c.Select(p => m.P(p)).ToArray(); var hi = c.Select(p => m.P(p + new Vector3(0, h, 0))).ToArray();
+        for (var k = 0; k < 4; k++)
+        {
+            var n = (k + 1) % 4;
+            m.Quad(lo[k], lo[n], hi[n], hi[k], k % 2 == 0 ? light : dark, (c[k] + c[n]) / 2);
+        }
+        m.Quad(hi[0], hi[1], hi[2], hi[3], top, Vector3.UnitY);
+        m.Quad(lo[0], lo[1], lo[2], lo[3], dark, -Vector3.UnitY);
         return m.Write();
     }
 }

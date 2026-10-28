@@ -19,6 +19,7 @@
 #include "INVENT.H" /* BackupScreen / RestoreScreen / DrawCadre / ALL_ANGLES */
 #include "PERSO.H"  /* WriteConfigFile (persist on dialog Keep) */
 #include "PTRFUNC.H"
+#include "RACEGAME.H" /* RaceGame_On: the window fit is the race game's (Res_ApplyWindowFit) */
 
 #include <3D/CAMERA.H>
 #include <SVGA/CLIP.H>
@@ -797,4 +798,151 @@ ResRevertChoice Res_RunRevertDialogIfPending(void) {
     }
 
     return choice;
+}
+
+/*══════════════════════════════════════════════════════════════════════════*
+ *   The race game's window: the picture fitted to the window's shape         *
+ *══════════════════════════════════════════════════════════════════════════*/
+
+/* A window resized by its player used to show the game's fixed-size picture
+   scaled into it with black bars (SDL logical presentation, letterbox). In the
+   race game (RACEGAME.TXT) the render size follows the window instead: its
+   shape, at the player's resolution's size class -- the 640x480 canvas the UI
+   is laid out on scaled by k = min(baseW / 640, baseH / 480) and widened (a
+   wide window) or heightened (a tall one) to the window's aspect -- so the
+   picture fills the window and the menus, the HUD and the 3D view lay out at
+   the new size (UI_LAYOUT centring). Full screen renders at the player's own
+   resolution, as before. The resolution the player chose (the Display menu,
+   lba2.cfg ResolutionX/Y) is not changed by it; the window's size is kept for
+   the next run (WindowWidth / WindowHeight / WindowMaximized in lba2.cfg).
+
+   Never in LBA Assembler's Play, whose editor embeds this window in its own
+   and sizes it itself (it asks for LBA2_WINDOW_POS), nor without the race
+   game: the same gate as F11 / Alt+Enter (CONFIG_FILE.CPP HotkeyFullscreen). */
+#define RES_FIT_SETTLE_MS 300u
+
+static bool s_fitPending = false;
+static U32 s_fitWinW = 0, s_fitWinH = 0;
+static bool s_fitKeep = false; /* a windowed size of the player's to keep */
+static S32 s_fitKeepW = 0, s_fitKeepH = 0;
+static bool s_fitKeepMax = false;
+
+static bool Res_FitWanted(void) {
+    return RaceGame_On() && getenv("LBA2_WINDOW_POS") == NULL && Window_SupportsWindowedMode();
+}
+
+/* The render size for a window of winW x winH pixels (see above); the base
+   (the player's resolution) in full screen. */
+static void Res_FitTarget(U32 winW, U32 winH, bool fullscreen, U32 *outW, U32 *outH) {
+    U32 baseW = 0, baseH = 0;
+    Res_BaseDimensions(&baseW, &baseH);
+    *outW = baseW;
+    *outH = baseH;
+    if (fullscreen || winW == 0 || winH == 0)
+        return;
+    double k = (double)baseW / 640.0 < (double)baseH / 480.0 ? (double)baseW / 640.0 : (double)baseH / 480.0;
+    if (k < 1.0)
+        k = 1.0;
+    const double aspect = (double)winW / (double)winH;
+    double w, h;
+    if (aspect * 3.0 >= 4.0) { /* wider than 4:3: the size class's height, as wide as the window's shape */
+        h = 480.0 * k;
+        w = h * aspect;
+    } else { /* taller: its width, as tall */
+        w = 640.0 * k;
+        h = w / aspect;
+    }
+    /* the engine's limits, the shape kept as far as they allow */
+    if (w > RES_MAX_W) {
+        w = RES_MAX_W;
+        h = w / aspect;
+    }
+    if (h > RES_MAX_H) {
+        h = RES_MAX_H;
+        w = h * aspect;
+    }
+    U32 W = ((U32)(w + 4.0)) & ~7u; /* the nearest multiple of 8 */
+    U32 H = (U32)(h + 0.5);
+    if (W < RES_MIN_W)
+        W = RES_MIN_W;
+    if (W > RES_MAX_W)
+        W = RES_MAX_W;
+    if (H < RES_MIN_H)
+        H = RES_MIN_H;
+    if (H > RES_MAX_H)
+        H = RES_MAX_H;
+    *outW = W;
+    *outH = H;
+}
+
+bool Res_ApplyWindowFit(void) {
+    U32 winW = 0, winH = 0;
+    if (Window_TakeSettledResize(RES_FIT_SETTLE_MS, &winW, &winH) && Res_FitWanted()) {
+        s_fitPending = true;
+        s_fitWinW = winW;
+        s_fitWinH = winH;
+        /* the windowed size, kept for the next run (WriteConfigFile): a
+           maximised window keeps the size it had before */
+        S32 w = 0, h = 0;
+        bool maximized = false;
+        if (!Window_IsFullscreen() && Window_GetWindowedSize(&w, &h, &maximized)) {
+            if (!maximized) {
+                s_fitKeepW = w;
+                s_fitKeepH = h;
+            }
+            s_fitKeepMax = maximized;
+            s_fitKeep = s_fitKeepW > 0 && s_fitKeepH > 0;
+        }
+    }
+    if (!s_fitPending)
+        return false;
+    /* not mid-cinematic, nor mid-present (a switch recreates the texture
+       being presented): it waits for the next call */
+    if (FlagPlayAcf || Window_IsRendererTextureLocked())
+        return false;
+    s_fitPending = false;
+
+    /* the player's resolution stays the base (what full screen renders at,
+       what lba2.cfg keeps): fixed now if nothing has set it yet */
+    if (g_baseW == 0 || g_baseH == 0) {
+        g_baseW = ModeDesiredX;
+        g_baseH = ModeDesiredY;
+    }
+    U32 targetW = 0, targetH = 0;
+    const bool fullscreen = Window_IsFullscreen();
+    Res_FitTarget(s_fitWinW, s_fitWinH, fullscreen, &targetW, &targetH);
+    if (targetW == ModeDesiredX && targetH == ModeDesiredY)
+        return false;
+    const U32 oldW = ModeDesiredX, oldH = ModeDesiredY;
+    /* not a choice of the player's: the window keeps its size, nothing persists */
+    if (!Res_SwitchEx(targetW, targetH, false))
+        return false;
+    Log_Info("[display] the window %ux%u%s: the picture %ux%u -> %ux%u", (unsigned)s_fitWinW, (unsigned)s_fitWinH,
+             fullscreen ? " (full screen: the player's resolution)" : "", (unsigned)oldW, (unsigned)oldH, (unsigned)targetW,
+             (unsigned)targetH);
+    return true;
+}
+
+void Res_RestoreWindowSize(void) {
+    if (!Res_FitWanted() || Control_HasResolution() || GetWindowFullscreen())
+        return;
+    const S32 w = (S32)DefFileBufferReadValueDefault("WindowWidth", 0);
+    const S32 h = (S32)DefFileBufferReadValueDefault("WindowHeight", 0);
+    const bool maximized = DefFileBufferReadValueDefault("WindowMaximized", 0) != 0;
+    if (w < RES_MIN_W || h < RES_MIN_H || w > 16384 || h > 16384)
+        return;
+    s_fitKeep = true;
+    s_fitKeepW = w;
+    s_fitKeepH = h;
+    s_fitKeepMax = maximized;
+    Window_RestoreWindowedSize(w, h, maximized);
+    Log_Info("[display] the window as it was left: %dx%d%s", (int)w, (int)h, maximized ? ", maximised" : "");
+}
+
+void Res_WriteWindowSize(void) {
+    if (!s_fitKeep)
+        return;
+    DefFileBufferWriteValue("WindowWidth", s_fitKeepW);
+    DefFileBufferWriteValue("WindowHeight", s_fitKeepH);
+    DefFileBufferWriteValue("WindowMaximized", s_fitKeepMax ? 1 : 0);
 }

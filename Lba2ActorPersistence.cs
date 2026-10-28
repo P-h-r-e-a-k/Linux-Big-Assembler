@@ -52,7 +52,10 @@ internal static class Lba2ActorPersistence
     // requested body/animation change couldn't be written (see below) so the caller can still report it.
     // newActorEntity: the "kind of actor" chosen in the window's Entity picker, needed only for an actor added
     // this session (see below) -- ignored otherwise.
-    public static string? Save(string gameRoot, int scene, int indexInScene, Snapshot original, Snapshot updated, out string? bodyAnimNote, int? newActorEntity = null)
+    // shapeNewActor: for an actor added this session, what else it gets before it is saved (its kind's usual behaviour, ActorBehaviours), in
+    // the same save and undo step
+    public static string? Save(string gameRoot, int scene, int indexInScene, Snapshot original, Snapshot updated, out string? bodyAnimNote, int? newActorEntity = null,
+        Action<SceneStore, SceneModel, int>? shapeNewActor = null)
     {
         bodyAnimNote = null;
         var store = new SceneStore(SceneGame.Lba2, gameRoot);
@@ -102,8 +105,15 @@ internal static class Lba2ActorPersistence
             added.Body = newBody; added.Anim = newAnim; added.Beta = updated.Beta;
             added.LifePoints = Signed(updated.LifePoints); added.Armor = Signed(updated.Armor);
             added.HitForce = Signed(updated.HitForce); added.Move = Signed(updated.Move); added.Flags = updated.Flags;
-            SceneOps.AddActor(model, added);
-            try { store.Save(scene, model, description: $"Add actor {actorPos} to scene {scene}"); }
+            // (a scene without the Meca-penguin's slot as actor 1 -- a new map's from before 2026-10-17 -- gets it first, or the game would
+            // hide the actor: the actor then lands one number further on than this session has it, which the caller checks)
+            SceneOps.EnsureMecaPenguinSlot(model);
+            var addedAt = SceneOps.AddActor(model, added);
+            try
+            {
+                shapeNewActor?.Invoke(store, model, addedAt);
+                store.Save(scene, model, description: $"Add actor {addedAt} to scene {scene}");
+            }
             catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { return $"Not saved: {e.Message}"; }
             return null;
         }
@@ -124,22 +134,32 @@ internal static class Lba2ActorPersistence
         // small id relative to the actor's own kind of actor (FILE3D entity), not the raw archive index the
         // picker shows (see ActorAttributesWindow's own comment on this) -- so a raw index is only writeable
         // when it is one this actor's own entity already lists (switching between a character's own body/anim
-        // variants, e.g.); anything else is refused here (kept session-only) rather than guessed at, since a
-        // wrong generic id would point the file at the wrong body for every future load of this actor, not just
-        // a display glitch.
+        // variants, e.g.), or -- a body of another kind of actor -- by making the actor that kind (below);
+        // anything else is refused here (kept session-only) rather than guessed at, since a wrong generic id
+        // would point the file at the wrong body for every future load of this actor, not just a display glitch.
         var entityTable = Lba2EntityTable.Load(gameRoot);
         var entity = entityTable?.Entities.FirstOrDefault(e => e.Id == actor.Entity);
+        var kindChanged = false;
         if (updated.Body != original.Body)
         {
             var generic = entity?.Bodies.Where(b => b.Body == updated.Body).Select(b => (int?)b.Generic).FirstOrDefault();
             if (generic is { } g) { actor.Body = g; changed = true; }
+            // A body of another kind of actor: the actor becomes that kind, the one entity the game can draw that body for (kept
+            // session-only, the game went on drawing the old kind's body in its place -- the tester's 2026-10-17 report of a Zoe who never
+            // appeared in the game), standing until an animation of its own is given.
+            else if (entityTable?.KindForBody(updated.Body) is { } kind)
+            {
+                actor.Entity = kind.Entity; actor.Body = kind.Body; actor.Anim = kind.Anim;
+                entity = entityTable.Entities[kind.Entity];
+                changed = kindChanged = true;
+            }
             else bodyAnimNote = Append(bodyAnimNote, $"body {updated.Body} isn't one of this kind of actor's own bodies");
         }
-        if (updated.Anim != original.Anim)
+        if (updated.Anim != original.Anim || kindChanged)
         {
             var generic = entity?.Anims.Where(a => a.Anim == updated.Anim).Select(a => (int?)a.Generic).FirstOrDefault();
             if (generic is { } g) { actor.Anim = g; changed = true; }
-            else bodyAnimNote = Append(bodyAnimNote, $"animation {updated.Anim} isn't one of this kind of actor's own animations");
+            else if (!kindChanged) bodyAnimNote = Append(bodyAnimNote, $"animation {updated.Anim} isn't one of this kind of actor's own animations");
         }
 
         if (!changed) return null;

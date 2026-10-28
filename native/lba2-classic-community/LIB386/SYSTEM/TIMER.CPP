@@ -90,6 +90,10 @@ void RestoreTimer() {
     }
 }
 
+U32 Timer_SavedRefHR(void) {
+    return CmptMemoTimerRef ? MemoTimerRefHR : TimerRefHR;
+}
+
 void SetTimerHR(U32 time) {
     LockTimer();
     TimerRefHR = time;

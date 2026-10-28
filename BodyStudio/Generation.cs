@@ -323,7 +323,7 @@ public static class Generator
             FlatBitmap.Save(Renderer.Render(g.Body,g.Palette,900,1000,0.4f,false),Path.Combine(dir,"preview.png"));
             if(settings.HeadDetails)
             {
-                float frontYaw=settings.NegativeZFront?0:MathF.PI;
+                float frontYaw=settings.NegativeZFront?MathF.PI:0;   // (the renderer shows a body's +Z side at yaw 0)
                 FlatBitmap.Save(Renderer.Render(g.Body,g.Palette,900,700,frontYaw,false,headOnly:true),Path.Combine(dir,"head-front.png"));
                 FlatBitmap.Save(Renderer.Render(g.Body,g.Palette,900,700,frontYaw+MathF.PI,false,headOnly:true),Path.Combine(dir,"head-back.png"));
                 FlatBitmap.Save(Renderer.Render(g.Body,g.Palette,900,700,frontYaw+.55f,false,headOnly:true),Path.Combine(dir,"head-angle.png"));

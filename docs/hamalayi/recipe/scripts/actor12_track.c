@@ -1,0 +1,4 @@
+LABEL(0);
+WAIT_NB_SECOND(1);
+LABEL(10);
+STOP();

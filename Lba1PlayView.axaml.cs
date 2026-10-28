@@ -875,6 +875,7 @@ public partial class Lba1PlayView : UserControl
                    o.PoseFrom is null ? 0 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o.PoseFrom), blend, yawStep);
         if (posedCache.TryGetValue(key, out var cached)) return cached;
         if (posedCache.Count > 8000) posedCache.Clear();
+        // beta 128 faces the iso camera, which Renderer.Render shows at yaw 0 (a body's +Z side, its front, towards the viewer)
         var yaw = (float)((yawStep * 1024.0 / YawSteps - 128) * Math.PI * 2 / 1024);
         // the game's lighting: the actor's facing (as drawn, rounded to the same steps) and the scene's light
         var lit = ((int)(yawStep * 1024.0 / YawSteps), runtime.Scene?.AlphaLight ?? 0, runtime.Scene?.BetaLight ?? 0);
@@ -946,20 +947,5 @@ public partial class Lba1PlayView : UserControl
         foreach (var voice in voices) voice.Dispose();
         ScriptBreakpoints.ResumeRequested = null;
         ScriptBreakpoints.ClearPause();
-    }
-}
-
-// The LBA1 play view in a window of its own, for the scene editor's Play button (the main window shows it in its own view).
-internal sealed class Lba1PlayHostWindow : Window
-{
-    public Lba1PlayHostWindow(Lba1Game game, Lba1ActorImages images, string directory, int scene)
-    {
-        Title = "LBA1 - play scene";
-        Width = 1180; Height = 780; MinWidth = 760; MinHeight = 480;
-        this.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
-        var view = new Lba1PlayView(game, images, directory);
-        Content = view;
-        Loaded += (_, _) => view.Start(scene);
-        Closed += (_, _) => view.Stop();
     }
 }

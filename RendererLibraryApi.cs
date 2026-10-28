@@ -20,6 +20,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetCameraFn(int alpha, int beta, int gamma, int distance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSkyFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSeaFn(int enabled);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSeaPolysFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawActorsFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr FramebufferFn(out int width, out int height, out int pitch);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorCountFn();
@@ -33,6 +34,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int AddActorFn(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int IsActorPlaceholderFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RemoveActorFn(int index);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ForgetSceneEditsFn(int scene);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int LoadInteriorSceneFn(int numscene);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetInteriorCameraPositionFn(int x, int y, int z);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetInteriorCameraPositionFn(out int x, out int y, out int z);
@@ -55,7 +57,9 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectPointFn(int worldX, int worldY, int worldZ, out int screenX, out int screenY);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ReloadBodiesFn([MarshalAs(UnmanagedType.LPStr)] string path);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ReloadAnimsFn([MarshalAs(UnmanagedType.LPStr)] string path);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ReloadEntitiesFn([MarshalAs(UnmanagedType.LPStr)] string ressPath);
     private IntPtr handle;
+    private ReloadEntitiesFn? reloadEntities;
     private VersionFn? version;
     private InitializeFn? initialize;
     private SetDataRootFn? setDataRoot;
@@ -70,6 +74,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private SetCameraFn? setCamera;
     private SetDrawSkyFn? setDrawSky;
     private SetDrawSeaFn? setDrawSea;
+    private SetDrawSeaPolysFn? setDrawSeaPolys;
     private SetDrawActorsFn? setDrawActors;
     private FramebufferFn? framebuffer;
     private GetActorCountFn? getActorCount;
@@ -83,6 +88,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private AddActorFn? addActor;
     private IsActorPlaceholderFn? isActorPlaceholder;
     private RemoveActorFn? removeActor;
+    private ForgetSceneEditsFn? forgetSceneEdits;
     private LoadInteriorSceneFn? loadInteriorScene;
     private SetInteriorCameraPositionFn? setInteriorCameraPosition;
     private GetInteriorCameraPositionFn? getInteriorCameraPosition;
@@ -176,6 +182,7 @@ internal sealed class RendererLibraryApi : IDisposable
         setViewDistance = Get<SetViewDistanceFn>("lba2_renderer_set_view_distance");
         setDrawSky = Get<SetDrawSkyFn>("lba2_renderer_set_draw_sky");
         setDrawSea = Get<SetDrawSeaFn>("lba2_renderer_set_draw_sea");
+        setDrawSeaPolys = Get<SetDrawSeaPolysFn>("lba2_renderer_set_draw_sea_polys");
         setDrawActors = Get<SetDrawActorsFn>("lba2_renderer_set_draw_actors");
         getActorCount = Get<GetActorCountFn>("lba2_renderer_get_actor_count");
         getActor = Get<GetActorFn>("lba2_renderer_get_actor");
@@ -188,6 +195,8 @@ internal sealed class RendererLibraryApi : IDisposable
         addActor = Get<AddActorFn>("lba2_renderer_add_actor");
         isActorPlaceholder = Get<IsActorPlaceholderFn>("lba2_renderer_is_actor_placeholder");
         removeActor = Get<RemoveActorFn>("lba2_renderer_remove_actor");
+        // (2026-10-17: a renderer built before it hasn't got it -- the session edits then just stay, as they always did)
+        forgetSceneEdits = NativeLibrary.TryGetExport(handle, "lba2_renderer_forget_scene_edits", out var forget) ? Marshal.GetDelegateForFunctionPointer<ForgetSceneEditsFn>(forget) : null;
         loadInteriorScene = Get<LoadInteriorSceneFn>("lba2_renderer_load_interior_scene");
         setInteriorCameraPosition = Get<SetInteriorCameraPositionFn>("lba2_renderer_set_interior_camera_position");
         getInteriorCameraPosition = Get<GetInteriorCameraPositionFn>("lba2_renderer_get_interior_camera_position");
@@ -209,6 +218,7 @@ internal sealed class RendererLibraryApi : IDisposable
         setBodyPreviewAnimationPaused = Get<SetBodyPreviewAnimationPausedFn>("lba2_renderer_set_body_preview_animation_paused");
         reloadBodies = Get<ReloadBodiesFn>("lba2_renderer_reload_bodies");
         reloadAnims = Get<ReloadAnimsFn>("lba2_renderer_reload_anims");
+        reloadEntities = NativeLibrary.TryGetExport(handle, "lba2_renderer_reload_entities", out var entities) ? Marshal.GetDelegateForFunctionPointer<ReloadEntitiesFn>(entities) : null;
         projectPoint = Get<ProjectPointFn>("lba2_renderer_project_point");
     }
 
@@ -261,7 +271,7 @@ internal sealed class RendererLibraryApi : IDisposable
                 var candidates = new[]
                 {
                     Path.Combine(AppContext.BaseDirectory, "native"),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBAAssembler", "native"),
+                    Path.Combine(DataPaths.LocalAppData, "LBAAssembler", "native"),
                 };
                 foreach (var cacheDir in candidates)
                 {
@@ -324,9 +334,34 @@ internal sealed class RendererLibraryApi : IDisposable
     public int RenderFrameArea(int cubeX0, int cubeZ0, int cubeX1, int cubeZ1) => renderFrameArea?.Invoke(cubeX0, cubeZ0, cubeX1, cubeZ1) ?? RenderFrameWide(2);
     // Where the fog starts and the view ends (world units from the camera).
     public void SetViewDistance(int startFog, int clipFar) => setViewDistance?.Invoke(startFog, clipFar);
+
+    // The editor's 3D view's fog start and far clip for a camera `distance` back from (worldX, worldZ), drawing the cubes `cubeArea`:
+    // lba2_renderer_initialize's 200,000 / 250,000 at the default camera distance (30,000) and nearer -- the view as it always was --
+    // further out, as much further as the camera went back, and once it is far enough back, as far as the drawn cubes' farthest corner
+    // from the point looked at too. With the fixed 250,000 the island went out of reach at about 10 % zoom: every island zoomed fully out
+    // was the fog colour alone (the Temple of Bú's all palette index 0, which the editor then took for a failed render -- 2026-10-18).
+    public const int DefaultStartFog = 200000, DefaultClipFar = 250000, DefaultViewDistance = 30000;
+    public static (int StartFog, int ClipFar) EditorViewDistance(int distance, int worldX, int worldZ, (int X0, int Z0, int X1, int Z1)? cubeArea)
+    {
+        const long reach = DefaultClipFar - DefaultViewDistance;
+        long further = 0;
+        if (cubeArea is { } a)
+        {
+            // (the horizontal distance from the point looked at to the area's farthest corner, past the default reach)
+            long dx = Math.Max(Math.Abs((long)worldX - a.X0 * 32768L), Math.Abs((a.X1 + 1) * 32768L - worldX));
+            long dz = Math.Max(Math.Abs((long)worldZ - a.Z0 * 32768L), Math.Abs((a.Z1 + 1) * 32768L - worldZ));
+            further = Math.Max(0, (long)Math.Sqrt((double)(dx * dx + dz * dz)) - reach);
+        }
+        var back = Math.Max(0L, (long)distance - DefaultViewDistance);
+        var clipFar = Math.Min(Math.Max(DefaultClipFar, distance + reach + Math.Min(back, further)), int.MaxValue / 2);
+        return ((int)(clipFar - (DefaultClipFar - DefaultStartFog)), (int)clipFar);
+    }
     public void SetCamera(int alpha, int beta, int gamma, int distance) => setCamera?.Invoke(alpha, beta, gamma, distance);
     public void SetDrawSky(bool enabled) => setDrawSky?.Invoke(enabled ? 1 : 0);
     public void SetDrawSea(bool enabled) => setDrawSea?.Invoke(enabled ? 1 : 0);
+    // The ground's own animated sea and gas triangles (Island CX's gas round its plateau, the shallow water at the shores), apart from the
+    // sea plane: off with it for the viewport's temporary "Sea/gas" toggle, on for everything else (a DLL without it: always on).
+    public void SetDrawSeaPolys(bool enabled) => setDrawSeaPolys?.Invoke(enabled ? 1 : 0);
     public void SetDrawActors(bool enabled) => setDrawActors?.Invoke(enabled ? 1 : 0);
     public IntPtr GetFramebuffer(out int width, out int height, out int pitch)
     {
@@ -389,6 +424,9 @@ internal sealed class RendererLibraryApi : IDisposable
     // attributes window opened for a freshly-added actor closes without an
     // Apply, so an actor a user backed out of doesn't linger in the world.
     public bool RemoveActor(int index) => removeActor?.Invoke(index) == 1;
+    // Drops a scene's session edits (scene < 0: every scene's) -- see lba2_renderer_forget_scene_edits's own doc comment (RENDERER_API.H):
+    // after the scene's file was written behind them, so the next load of it shows the file. Returns how many scenes had edits.
+    public int ForgetSceneEdits(int scene) => forgetSceneEdits?.Invoke(scene) ?? 0;
     // LBA2's older, LBA1-derived isometric interior renderer (flat sprite
     // "brick" tiles, fixed camera) -- a completely different path from
     // every exterior island/cube call above. Returns false if numscene's
@@ -503,6 +541,9 @@ internal sealed class RendererLibraryApi : IDisposable
     // Same as ReloadBodies, for HQR_Anims (ANIM.HQR's own cache) -- see lba2_renderer_reload_anims's
     // own doc comment (RENDERER_API.H) for why this exists alongside the body one.
     public bool ReloadAnims(string path) => reloadAnims?.Invoke(path) == 1;
+    // The entity table (RESS.HQR 44) read again from that RESS.HQR -- after a map's Character maker added an entity
+    // (lba2_renderer_reload_entities).
+    public bool ReloadEntities(string ressPath) => reloadEntities?.Invoke(ressPath) == 1;
 
     public bool IsRendererReady => IsLoaded && initialize is not null && setDataRoot is not null && loadIsland is not null && loadCube is not null && setViewTarget is not null && renderFrame is not null && framebuffer is not null;
 

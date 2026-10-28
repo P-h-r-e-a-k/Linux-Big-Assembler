@@ -5,8 +5,8 @@ using LBAAssembler.Scenes;
 namespace LBAAssembler.Grids;
 
 // A blank LBA2 interior for an existing slot: an empty world with a flat floor to stand on and Twinsen standing on it. Scenes can't be added to the game, so "new" means
-// "replace this slot"; the slot keeps its header (light, music, ambience, the interior's block library and style, the hero's own scripts) and loses its actors, zones and
-// track points; its grid becomes 32 x 32 cells of the library's most used plain floor block.
+// "replace this slot"; the slot keeps its header (light, music, ambience, the interior's block library and style, the hero's own scripts) and loses its actors (but the
+// Meca-penguin's slot, actor 1), zones and track points; its grid becomes 32 x 32 cells of the library's most used plain floor block.
 internal static class Lba2BlankScene
 {
     public const int FloorFirst = 16, FloorLast = 47;
@@ -60,8 +60,12 @@ internal static class Lba2BlankScene
         var grid = Lba1GridEdit.SetCells(EmptyGrid(), cells);
 
         var scene = old.Clone();
-        // everything but the hero goes at once (deleting one by one would trip over the scripts that point at each other)
+        // everything but the hero and actor 1 goes at once (deleting one by one would trip over the scripts that point at each other); actor 1
+        // is the Meca-penguin's slot, and the game hides whatever is in it (SceneOps.MecaPenguinSlot): without it the first actor put in a
+        // blank scene took it, and never appeared in the game
+        var penguin = scene.Actors.Count > 1 && SceneOps.IsMecaPenguinSlot(scene.Actors[1]) ? scene.Actors[1] : SceneOps.MecaPenguinSlot();
         scene.Actors.RemoveRange(1, scene.Actors.Count - 1);
+        scene.Actors.Add(penguin);
         scene.Zones.Clear();
         scene.TrackPoints.Clear();
         var middle = (FloorFirst + FloorLast + 1) / 2 * 512;

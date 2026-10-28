@@ -19,6 +19,8 @@ S32 Filler_TextureFlatZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TextureFlatChromaKeyZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TextureFogZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TextureChromaKeyFogZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
+S32 Filler_TextureFogZBufPix(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
+S32 Filler_TextureChromaKeyFogZBufPix(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TextureNZW(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TextureChromaKeyNZW(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TextureFlatNZW(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);

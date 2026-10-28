@@ -1289,6 +1289,7 @@ long Control_StepArmedTick(void) {
     return s_step_armed_tick;
 }
 
+
 /* PERSO.CPP's ESC break, so the harness can tell this return from a benign one. Recorded
    rather than acted on here: MainLoop is still unwinding, and what it means depends on
    whether a replay was mid-stream, which Control_End is the right place to ask. */
@@ -1365,6 +1366,12 @@ int Control_UnfiredExecAt(void) {
 }
 
 void Control_TickHook(void) {
+    /* (the tick for the camera trace, FOLLOWCAM.CPP camtrace: --exec-at's count, so a
+       trace lines up with a run's screenshots and state dumps) */
+    {
+        extern long FollowCamTraceTick;
+        FollowCamTraceTick = s_hook_calls;
+    }
     /* The deferred close from the load path, taken at the first tick the step is armed.
        A run that never arms one keeps the bracket open, which is what it had before this
        existed: such a run has no replay to disagree with, so there is nothing for the

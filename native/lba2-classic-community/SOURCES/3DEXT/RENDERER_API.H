@@ -55,8 +55,14 @@ LBA2_RENDERER_API void lba2_renderer_set_draw_sky(int enabled);
    elevated terrain it should sit well behind, painting flat sea color over
    real terrain -- off for the minimap's top-down snapshots, on (the
    default) for the main 3D view's ordinary viewing angles which don't hit
-   this. Does not affect the full game. */
+   this, unless its "Sea/gas" checkbox is unticked. Also gates the sea of
+   the horizon's empty cubes (DrawHorizon2ZBuf). Does not affect the full
+   game. */
 LBA2_RENDERER_API void lba2_renderer_set_draw_sea(int enabled);
+/* Toggles the ground's own animated sea and gas triangles (TERRAIN.CPP HalfPolyShown: CodeJeu 12..15 -- Island CX's gas round its
+   plateau, the shallow water at the retail islands' shores). Off, with the sea plane, for the editor's temporary "Sea/gas" toggle, to see
+   what is under them; on (the default) otherwise, the minimap's snapshots too. Does not affect the full game. */
+LBA2_RENDERER_API void lba2_renderer_set_draw_sea_polys(int enabled);
 /* Toggles AffichageActorsZBuf() (EXTFUNC.CPP), the dedicated actor-draw pass -- off hides every actor's
    real body from the rendered frame (terrain and decor objects are drawn by separate code and are
    unaffected). Does not affect the full game. */
@@ -160,6 +166,15 @@ LBA2_RENDERER_API int lba2_renderer_is_actor_placeholder(int index);
    the next real cube reload stops placing it. Returns 1 on success or if
    this index was already removed. */
 LBA2_RENDERER_API int lba2_renderer_remove_actor(int index);
+
+/* Drops the session edits (attribute, position, script edits and actors
+   added with lba2_renderer_add_actor) of scene `scene`, or of every scene
+   for a negative one -- for after the editor wrote that scene's file behind
+   them (a scene editor's save, an undo): an interior's edits are otherwise
+   put back over the file at every load of the scene. The actors added go
+   (their indices read as removed); load the scene again to see the file.
+   Returns how many scenes had edits. */
+LBA2_RENDERER_API int lba2_renderer_forget_scene_edits(int scene);
 
 /* LBA2 indoor/interior scenes use a completely different renderer from
    every exterior island cube above: an older, LBA1-derived isometric
@@ -319,6 +334,11 @@ LBA2_RENDERER_API int lba2_renderer_reload_bodies(const char *path);
    idle/jump clip swapped into a throwaway ANIM.HQR copy). Same contract: full file path, returns 0
    if missing or HQR_Anims was never opened, 1 on success. */
 LBA2_RENDERER_API int lba2_renderer_reload_anims(const char *path);
+
+/* Reads the entity table (RESS.HQR entry 44) again, growing its buffer if the table has grown -- after a map's Character maker added an
+   entity, whose actors would otherwise index past the table read at initialize. ressPath is a full file path (empty: the data root's
+   RESS.HQR). Returns 1 on success. */
+LBA2_RENDERER_API int lba2_renderer_reload_entities(const char *ressPath);
 
 /* Projects a world point through the camera set up by the most recent
    lba2_renderer_render_frame() call (see RENDERER_API.CPP for exactly which

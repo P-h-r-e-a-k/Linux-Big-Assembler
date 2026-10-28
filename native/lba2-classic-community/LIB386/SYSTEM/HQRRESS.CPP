@@ -5,6 +5,7 @@
 #include <SYSTEM/LZ.H>
 #include <SYSTEM/FILES.H>
 #include <SYSTEM/HQFILE.H>
+#include <SYSTEM/HQR.H>
 #include <SYSTEM/HQRRESS.H>
 
 #include <string.h>
@@ -242,4 +243,70 @@ void *HQR_Get(T_HQR_HEADER *header, S32 index, S32 *outSize) {
 
         return ptr;
     }
+}
+
+//──────────────────────────────────────────────────────────────────────────
+// Every entry of the resource's file unpacked into its buffer at once, the file opened once, while the buffer and the bloc table have
+// room for them -- nothing already there dropped: it stops at the first that would not fit, `reserve` bytes of the buffer kept free (LBA
+// Assembler, 2026-10-18: an island's bodies unpacked as the island loads -- LOADISLE.CPP -- rather than the first time each comes into
+// view, which on a big island cost a 40-50 ms frame each time the camera came into a new part of it). It stops at an entry served from
+// elsewhere (HQF_Hook): HQR_Get has those. Returns how many entries it unpacked.
+S32 HQR_Preload(T_HQR_HEADER *header, S32 reserve) {
+    if (!header || !header->Name[0])
+        return 0;
+    S32 file = OpenRead(header->Name);
+    if (!file)
+        return 0;
+    S32 first = 0, done = 0;
+    if (Read(file, &first, 4) != 4 || first < 8 || first > 4 * 65536) {
+        Close(file);
+        return 0;
+    }
+    const S32 count = first / 4 - 1; // (the table's last offset is the file's end: HQF_NbRes)
+    U32 *offsets = (U32 *)Malloc((U32)first);
+    if (!offsets) {
+        Close(file);
+        return 0;
+    }
+    offsets[0] = (U32)first;
+    if (Read(file, offsets + 1, (U32)(first - 4)) != first - 4) {
+        Free(offsets);
+        Close(file);
+        return 0;
+    }
+    T_HQR_BLOC *blocs = (T_HQR_BLOC *)(header + 1);
+    for (S32 i = 0; i < count; i++) {
+        if (!offsets[i] || HQR_GiveBloc(i, header->NbIndex, blocs))
+            continue;
+        if (header->NbIndex >= header->MaxIndex)
+            break;
+        U32 hooked = 0;
+        if (HQF_Hook && HQF_Hook(header->Name, i, &hooked) && hooked)
+            break;
+        COMPRESSED_HEADER h;
+        Seek(file, (S32)offsets[i], SEEK_FROM_START);
+        if (Read(file, &h, sizeof(h)) != (S32)sizeof(h) || h.CompressMethod < 0 || h.CompressMethod > 2 || !h.SizeFile
+                || (S64)h.SizeFile + reserve > header->FreeSize || (h.CompressMethod && h.CompressedSizeFile > h.SizeFile + RECOVER_AREA))
+            break;
+        U8 *ptr = (U8 *)header->Buffer + header->MaxSize - header->FreeSize;
+        if (h.CompressMethod == 0) {
+            if (Read(file, ptr, h.SizeFile) != (S32)h.SizeFile)
+                break;
+        } else {
+            U8 *packed = ptr + h.SizeFile - h.CompressedSizeFile + RECOVER_AREA;
+            if (Read(file, packed, h.CompressedSizeFile) != (S32)h.CompressedSizeFile)
+                break;
+            ExpandLZ(ptr, packed, h.SizeFile, h.CompressMethod + 1);
+        }
+        blocs[header->NbIndex].Index = i;
+        blocs[header->NbIndex].Time = TimerSystemHR;
+        blocs[header->NbIndex].Ptr = ptr;
+        blocs[header->NbIndex].Size = (S32)h.SizeFile;
+        header->NbIndex++;
+        header->FreeSize -= (S32)h.SizeFile;
+        done++;
+    }
+    Free(offsets);
+    Close(file);
+    return done;
 }

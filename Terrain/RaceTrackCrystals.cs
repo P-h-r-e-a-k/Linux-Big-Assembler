@@ -46,7 +46,7 @@ internal static class RaceTrackCrystals
         foreach (var c in runs.Where(c => c.At is { Length: >= 2 }))
         {
             double wx = c.At[0] + originX, wz = c.At[1] + originZ;
-            if (IslandDecors.Locate(island, wx * 512, wz * 512) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCube) { left++; continue; }
+            if (IslandDecors.Locate(island, wx * 512, wz * 512) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCubeRaceTrack) { left++; continue; }
             var source = obl.Read(c.Body);
             var baseY = (IslandOps.Altitude(island, wx * 512, wz * 512) ?? 0) - c.Sink;
             int Beta(double turn) => ((int)Math.Round(turn * 4096 / 360) % 4096 + 4096) % 4096;
@@ -96,7 +96,7 @@ internal static class RaceTrackCrystals
                 double lx = r.X[k] + tz * half * side, lz = r.Z[k] - tx * half * side;
                 return deck - (IslandOps.Altitude(island, lx * 512, lz * 512) ?? deck - 400) + 300;
             }
-            if (IslandDecors.Locate(island, r.X[k] * 512, r.Z[k] * 512) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCube)
+            if (IslandDecors.Locate(island, r.X[k] * 512, r.Z[k] * 512) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCubeRaceTrack)
             { report.Notes.Add($"WARNING: the crystal arch at ({x:0.#}, {z:0.#}): no room"); continue; }
             var (body, reach) = Arch(half * 512, Leg(-1), Leg(1), k * 7919);
             var d = IslandDecors.Blank(o.NewBodyBase + report.NewBodies.Count, at.X, (int)Math.Round(deck), at.Z, beta);
@@ -182,6 +182,48 @@ internal static class RaceTrackCrystals
             }
         }
         return (m.Write(), reach);
+    }
+
+    // A red crystal shard for the race-track mode's crystal shards (RACEMOD.CPP crystalshards=, crystal_shard_model=; the user, 2026-10-11:
+    // "red crystal shards that shoot up into the air from the volcano, then fall back down onto the track ... an explosion that stuns any
+    // cars in the vicinity"): a long six-sided crystal pointed at both ends, Length long and Girth round, its faces the island palette's
+    // reds as the game draws them outside (ramp 5's 8-11 down its sides by the way each looks, ramp 6's 6-7 on its points) -- and a small
+    // one, Bit times as big, for the pieces it bursts into. Appended to OBJFIX.HQR; their entries, and a line for the log.
+    private const double ShardLength = 1700, ShardGirth = 260, Bit = 0.3;
+
+    public static (int Shard, int Bit, string Log) InstallCrystalShards(string gameDirectory)
+    {
+        var path = Path.Combine(gameDirectory, "OBJFIX.HQR");
+        var big = Shard(1); var small = Shard(Bit);
+        var index = HqrArchive.CountEntries(path);
+        var bytes = HqrWriter.AppendEntry(File.ReadAllBytes(path), HqrWriter.StoredEntry(big));
+        bytes = HqrWriter.AppendEntry(bytes, HqrWriter.StoredEntry(small));
+        File.WriteAllBytes(path, bytes);
+        return (index, index + 1, $"the crystal shards: OBJFIX.HQR entries {index} and {index + 1} (its pieces)");
+    }
+
+    private static byte[] Shard(double k)
+    {
+        var m = new RaceTrackRaisedBody.Mesh();
+        var light = Vector3.Normalize(new Vector3(0.35f, 0.85f, 0.4f));
+        int Lit(Vector3 n, int ramp, int lo, int span) => ramp * 16 + lo + (int)Math.Round(span * Math.Max(0, Vector3.Dot(Vector3.Normalize(n), light)));
+        float len = (float)(ShardLength * k), r = (float)(ShardGirth * k);
+        int bottom = m.P(new(0, -len * 0.5f, 0)), top = m.P(new(0, len * 0.5f, 0));
+        var lo = new int[6]; var hi = new int[6]; var mid = new Vector3[6];
+        for (var i = 0; i < 6; i++)
+        {
+            var a = i * MathF.PI / 3;
+            var off = new Vector3(MathF.Cos(a) * r, 0, MathF.Sin(a) * r * 0.8f);
+            lo[i] = m.P(off + new Vector3(0, -len * 0.15f, 0)); hi[i] = m.P(off + new Vector3(0, len * 0.22f, 0)); mid[i] = off;
+        }
+        for (var i = 0; i < 6; i++)
+        {
+            var j = (i + 1) % 6; var outward = mid[i] + mid[j];
+            m.Quad(lo[i], lo[j], hi[j], hi[i], Lit(outward, 5, 8, 3), outward);
+            m.Tri(hi[i], hi[j], top, Lit(outward + Vector3.UnitY * r, 6, 6, 1), outward + Vector3.UnitY * r);
+            m.Tri(lo[j], lo[i], bottom, Lit(outward - Vector3.UnitY * r, 5, 7, 2), outward - Vector3.UnitY * r);
+        }
+        return m.Write();
     }
 
     // Whether a body's points, turned and standing at (wx, wz) (cells) on baseY, keep off the road: none within its rails (and RailPad) under

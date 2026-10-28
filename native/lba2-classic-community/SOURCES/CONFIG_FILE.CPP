@@ -9,9 +9,11 @@
 #include "FOLLOWCAM.H"       /* the Auto camera's settings */
 #include "FOLLOWCAM_CFG.H"   /* and their defaults */
 #include "INPUT.H"           /* Read/WriteInputConfig, Read/WriteGamepadConfig */
+#include "RACEGAME.H"        /* RaceGame_On: F11 / Alt+Enter in the race game only */
 #include "RES_SWITCH.H"
 #include <POLYGON/POLYFILT.H> /* PolyTexFilter / EnvTexFilter */
 #include <SVGA/SCREEN.H>
+#include <SYSTEM/KEYBOARD.H>      /* Keyboard_ToggleFullscreen: F11 / Alt+Enter */
 #include <SYSTEM/KEYBOARD_KEYS.H> /* K_F12, the console toggle default */
 #include <SYSTEM/LOG.H>
 #include <SYSTEM/STRING.H>
@@ -99,6 +101,9 @@ static const T_SETTING BootSettings[] = {
     /* User-facing name: "Auto camera" (menu/docs); the legacy spelling is read
        so an existing cfg keeps working. The camera module owns its cvar. */
     {"FollowCamera", "AutoCameraCenter", NULL, &FollowCamera, SETTING_OR_DEFAULT, FALSE, 0, 1, NULL, NULL, NULL},
+    /* (Auto in a car the default since 2026-10-27, the user: "Let's have the camera for Story mode, and in LBAAssembler to default to
+       'Auto camera in a car'"; and once for a cfg written before -- ReadConfigFile) */
+    {"AutoCameraInCar", NULL, NULL, &FollowCameraInCar, SETTING_OR_DEFAULT, TRUE, 0, 1, NULL, NULL, NULL},
     {"DetailLevel", NULL, NULL, &DetailLevel, SETTING_CLAMP, MAX_DETAIL_LEVEL, 0, MAX_DETAIL_LEVEL, NULL, NULL, NULL},
     {"FullScreen", NULL, NULL, &VideoFullScreen, SETTING_OR_DEFAULT, TRUE, 0, 1, NULL, NULL, NULL},
     {"DisplayFullScreen", NULL, NULL, &DisplayFullScreen, SETTING_OR_DEFAULT, TRUE, 0, 1, NULL, NULL, NULL},
@@ -135,6 +140,20 @@ void ConfigFile_MarkFixedTimestepSetThisRun(void) {
     Settings_MarkSetThisRun(&SourceFixedTimestep);
 }
 
+/* F11 / Alt+Enter: only in the race game (its RACEGAME.TXT): the editor's Play has the engine's window inside its own, and its F11 is the
+   editor's full screen */
+static void HotkeyFullscreen(void) {
+    if (RaceGame_On()) ToggleDisplayFullscreen();
+}
+
+void ToggleDisplayFullscreen(void) {
+    if (!Window_SupportsWindowedMode()) return;
+    DisplayFullScreen ^= 1;
+    SetWindowFullscreen(DisplayFullScreen != FALSE);
+    WriteConfigValue("DisplayFullScreen", DisplayFullScreen);
+    Log_Info("[display] %s", DisplayFullScreen ? "full screen" : "a window");
+}
+
 void ReadConfigFile(void) {
     const char *ptr;
 
@@ -159,6 +178,10 @@ void ReadConfigFile(void) {
 
     /* The settings above are values; these are the side effects taking them. */
     SetWindowFullscreen(DisplayFullScreen != FALSE);
+    /* F11 / Alt+Enter switch between full screen and a window from anywhere, kept as the Display menu's toggle keeps it */
+    if (Window_SupportsWindowedMode()) Keyboard_ToggleFullscreen = HotkeyFullscreen;
+    /* The race game's window back at the size the player left it (its picture fitted to it: RES_SWITCH.CPP Res_ApplyWindowFit) */
+    Res_RestoreWindowSize();
 
     /* An explicit request for this run beats the stored preference, the same
        precedence the resolution and the language use. */
@@ -283,6 +306,15 @@ void ReadConfigFile(void) {
         ManualCameraSmoothing = 16;
 
     FollowCam_ReadConfig();
+
+    /* "Auto camera in a car" the default (2026-10-27): a cfg from before held AutoCameraInCar 0 only because the option was new and its
+       default was written out; turned on once -- CameraDefaults marks it done, so a camera chosen after is kept */
+    if (DefFileBufferReadValueDefault("CameraDefaults", 0) < 1) {
+        FollowCameraInCar = TRUE;
+        WriteConfigValue("AutoCameraInCar", 1);
+        WriteConfigValue("CameraDefaults", 1);
+        Log_Info("[camera] Auto camera in a car: the default, set once");
+    }
 }
 
 /*──────────────────────────────────────────────────────────────────────────*/
@@ -350,6 +382,8 @@ void WriteConfigFile(void) {
         DefFileBufferWriteValue("ResolutionX", (S32)baseW);
         DefFileBufferWriteValue("ResolutionY", (S32)baseH);
     }
+    /* the race game's window size, as the player left it (Res_RestoreWindowSize puts it back) */
+    Res_WriteWindowSize();
 
     if (FlagDisplayText)
         DefFileBufferWriteString("FlagDisplayText", "ON");

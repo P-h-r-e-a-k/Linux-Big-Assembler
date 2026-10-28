@@ -249,6 +249,8 @@ U32 Fill_Fog_Factor = 0;       ///< Fog Factor
 U32 Fill_ScaledFogNear = 0;    ///< Scaled Near Fog value
 U32 IsPolygonHidden = 0;       ///< normalizing factor for Z Buffer
 U8 Fill_Logical_Palette[256];  ///< Logical Palette
+S32 Fill_FogPerPixel = 0;      ///< Fog by each pixel's depth (POLY.H)
+U16 Fill_FogBandOf[1024];      ///< A Z-buffer value's fog band (POLY.H): made by SetFog
 U32 ScreenPitch = 0;           ///< Screen Pitch
 PTR_U32 PTR_TabOffLine = NULL; ///< Screen Pitch
 
@@ -313,6 +315,22 @@ void SetFog(S32 z_near, S32 z_far) {
         temp = 1;
 
     Fill_Fog_Factor = 256 * 65536 / temp;
+
+    // (each Z-buffer value's fog band for Fill_FogPerPixel: the depth it stands for -- an object's Z-buffer value is its depth scaled
+    // to the far end, z * 2^16 / z_far: AFF_OBJ.CPP ZBufferDepth -- and that depth's level as a body's origin has it, DECORS.CPP's
+    // BoundRegleTrois(0, 15, far - near, z - near))
+    for (S32 i = 0; i < 1024; i++) {
+        const S64 z = ((S64)((i << 6) + 32) * z_far) >> 16;
+        const S64 range = (S64)z_far - z_near;
+        S32 level;
+        if (z - z_near <= 0)
+            level = 0;
+        else if (z - z_near >= range)
+            level = 15;
+        else
+            level = (S32)(15 * (z - z_near) / range);
+        Fill_FogBandOf[i] = (U16)(level << 12);
+    }
 }
 
 void EnterClip(Struc_Point *pointB, Struc_Point *dst, Struc_Point *pointA, S32 diff) {

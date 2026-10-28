@@ -345,7 +345,7 @@ With it on:
 
 The file is `key=value` lines: `gears`, `gear1`..`gear8` (top speeds, world units a second), `accel`, `brake`, `coast` (speed gained or lost per millisecond; the original car's are 4, 12 and 7), `reverse`, `steer` (4096ths of a turn a second; the original 1024), `automatic`, `hud`, `startline=<cube x> <cube z> <x0> <z0> <x1> <z1> <dir x> <dir z>`, a `checkpoint=` line in the same form for each checkpoint in order, and for the opponent `opponent_path=<file>` (lines of `x z y speed radius`, island world units, 32768 a cube: with the bend radius the speeds are planned from the car, without it the file's are driven), `opponent_grid=<the line's point it starts at>`, `opponent_pace=<percent>` (its skill), `opponent_top=` and `opponent_grip=<percent>` (its character), `opponent_catchup=<percent>` `opponent_name=`, and an `opponent_actor=<scene> <actor>` line for each scene's copy; the second opponent's lines are `opponent2_path` and so on, up to `opponent4`. The grid is `grid=<cube x> <cube z> <x> <y> <z> <turn>` lines, pole first, `qualifying=1` (or 0), `qualifying_seed=<n>` (optional: the opponents' qualifying times' randomness, else the clock) and `hide_actor=<scene> <actor>` for the cars of opponents the player left out. Anything missing keeps the original car's value; with no `checkpoint=` lines every crossing of the line counts, and with no opponent lines there is no opponent. X is otherwise the dodge key, which does nothing while driving.
 
-**The race car setup** (`RaceCarWindow.cs`, `RaceCarSetup.cs`, kept in the settings): presets (the original buggy, a 5-gear race car, a fast 6-gear one), the number of gears and each one's top speed in km/h, the acceleration, braking, rolling to a stop and steering as percentages of the original car, the opponents (each on or off, with its skill, 50-120 %, and whether they push harder when they fall behind), and the race start. It appears when Play starts on a folder with a race track (it can be switched off there; it doesn't appear when the game is only restarted), and from the race track dialog's "Race car setup…" button. Play writes it for the engine as `racecar.txt` in its user folder, with the opponents' lines beside it as `racepath.txt` and `racepath2.txt` (`Terrain/RaceCarEngineFile.cs`).
+**The race car setup** (`RaceCarWindow.cs`, `RaceCarSetup.cs`, kept in the settings): presets (the original buggy, a 5-gear race car, a fast 6-gear one), the number of gears and each one's top speed in km/h, the acceleration, braking, rolling to a stop and steering as percentages of the original car, the opponents (each on or off, with its skill, 50-120 %, and whether they push harder when they fall behind), and the race start. It appears when Play starts on a folder with a race track (it can be switched off there; it doesn't appear when the game is only restarted), and from the race track dialog's "Race car setup…" button. Play writes it for the engine as `racecar.txt` in its user folder, with the opponents' lines beside it as `racepath.txt` and `racepath2.txt` (`Terrain/RaceCarEngineFile.cs`). Since 2026-10-17, "Use each track's best setup for its top speed, acceleration and steering" (Car tab, off unless ticked) drives each track with the setup the stress test found fastest there (`RaceCarSetup.TrackSetups`, from [the stress test](LBA2_RACE_TRACK_STRESS_TEST.md)) in place of those three sliders, which keep their values, greyed, for a track with none and for when it is off; the window says which setup applies.
 
 ![car setup](racetrack/build/car_setup.png)
 
@@ -923,7 +923,7 @@ The sheet showed what the first steps got wrong -- creatures cut away under the 
 
 **In the game's files.** Bodies of two new entities (345 and 346 in the sandbox), copies of the racer's animations, a hundred cars each -- an entity's body numbers are one byte and each car has its half-size copy beside it (+100). The build installs them once per build (`InstallCast`, after the cars made by hand and their small copies; +0.8 s; BODY.HQR 7.6 MB). **RACECARS.JSON** in the game folder lists every car by number: name, driver, island, entity, body number, BODY.HQR body and small copy. "Put the original files back" removes it.
 
-**Driving them.** Race car setup > Your car lists all 218 (by number, name and driver) from RACECARS.JSON; `drive_as=` takes the car's BODY.HQR bodies from it. They aren't raced by anyone yet: every one is a body of an entity, so a line-up can use it.
+**Driving them.** Race car setup > Your car lists all 218 (by number, name and driver) from RACECARS.JSON; `drive_as=` takes the car's BODY.HQR bodies from it. They aren't raced by anyone yet: every one is a body of an entity, so a line-up can use it. (Since 2026-10-17 one does: a `RaceDriver` with `Cast` -- its number -- is put in the scenes as its own entity and body, read from the folder's RACECARS.JSON, which the build installs before the scenes (`RaceTrackScenes.Apply`); the Temple of Bú races the skeleton's, the ghost's and the two-headed monster's: docs/LBA2_TEMPLE_OF_BU.md.)
 
 **Tools:** `ScriptRoundTrip castcars <built folder> <scratch> [numbers]` (the cast installed into a copy of BODY.HQR and RESS.HQR, each car's counts); `BodyPipeline castsheet <built folder> <out.png> [columns] [per page]` (the sheet and its pages, from RACECARS.JSON).
 
@@ -1650,7 +1650,7 @@ The user's asks:
 - *With no line anywhere* (an old car file), the jet-pack is only a boost and the keys stay the player's.
 
 **The item box** (`RaceMod_Draw`, `ItemBox`):
-- *Two slots, top left,* each the retail found-object display (OBJECT.CPP's INCRUST_OBJ): black in the game's own frame, the item's OBJFIX model turning about once a second. They are 1/8 of the screen's height across (60 pixels at least, the retail size). The selected slot is ringed in the palette's gold (244).
+- *Two slots, top left,* each the retail found-object display (OBJECT.CPP's INCRUST_OBJ): black in the game's own frame, the item's OBJFIX model turning about once a second. They are 1/8 of the screen's height across (60 pixels at least, the retail size). The selected slot is ringed in the palette's gold (244). (Since 2026-10-17 one box, and no selection: see *One item box* at the end.)
 - *The models* are the inventory's own:
 
   | Power-up | Shown as |
@@ -1666,7 +1666,7 @@ The user's asks:
 
 - *Lit as the inventory lights them:* the light is set with the camera level (`SetAngleCamera(0,0,0)`), not with the scene's camera as the found-object display does. The box is drawn without the outside's fog filler and depth buffer, with the colour table of things near (`SetCLUT(PalLevel)`; outside, the fog is the colour table of each object's distance, and the box would have the last object's). The protection spell's beads and the clover are dark in the retail inventory too.
 - *The roulette:* an item taken goes into the first free slot and the items go by in it, slowing down over 1.5 s to the one drawn, which can't be used until it stops.
-- *Keys:* Shift uses the selected item (the other slot's if that one is empty), and Q selects the other slot. Every item is held now, not only oil and penguins, so while Twinsen has one, Shift doesn't open the inventory. With both slots full the mushrooms still give way to the car, empty. The test pilot uses each item `autodrop_ms` after its roulette stops (default 1 s, 0 never).
+- *Keys:* Shift uses the selected item (the other slot's if that one is empty), and Q selects the other slot. Every item is held now, not only oil and penguins, so while Twinsen has one, Shift doesn't open the inventory. (Since 2026-10-16 Ctrl uses it instead, and Shift is the inventory's again: see *The race game* at the end. Since 2026-10-17 there is one box and no Q: see *One item box*.) With both slots full the mushrooms still give way to the car, empty. The test pilot uses each item `autodrop_ms` after its roulette stops (default 1 s, 0 never).
 
 **Who draws what** (`RandomPowerUp`, `BackShare`):
 - Each power-up has a strength:
@@ -1685,7 +1685,7 @@ The user's asks:
 - Outside a race (qualifying, alone, before GO) the plain weights.
 - A car takes one item from a row: the others it passes in the next 0.7 s give way, empty.
 
-**The rows** (`RaceTrackScenes.MushroomRow`): every 40 cells as before, now a row across the road.
+**The rows** (`RaceTrackScenes.MushroomRow`): every 40 cells as before, now a row across the road. (Since 2026-10-17 a row every 8 s of driving instead: "Item spacing" in LBA2_RACE_TRACK_STRESS_TEST.md.)
 - Three mushrooms where the road is 6 cells wide or more (the default asphalt, 7 wide, has three), two where it is 3.8 or more, else one; each row keeps a cell from the road's edges.
 - They are 2.4 cells apart, more than the 2 cells a car's middle takes one from, so a car down the middle of one takes only that one.
 - On a raised road the width is its own, rail to rail.
@@ -2151,7 +2151,7 @@ The user's ask: the red and white markings on some tracks, Desert Island's and C
 
 **Shrinking by place.** `ShrinkMs`: 20 s +/-25 %, longer the further ahead -- the leader 25 s, the last 15 s (four cars: 25, 21.7, 18.3, 15 s); 20 s with no race on (qualifying). Each opponent has its own `ShrunkUntil`.
 
-**Driving as any car.** Race car setup > Your car: Twinsen's buggy, or any of the racer entity's cars the folder has (the racer's, Baldino's, the character cars). The car file gets `drive_as=<BODY.HQR body> <ANIM.HQR animation> <shrunk body>` (`RaceCarEngineFile.DriveAsLine`, from the folder's entity table: the racer entity's generic body, its driving animation 1, its shrunk body). The race-track mode hides Twinsen's car (as under the super jet-pack) and draws that car in its place (`DrawDriveAs`: a T_OBJ_3D of its own with the opponents' driving animation, facing the car's way, pitched by the slope just driven); its shrunk body while shrunk. It handles as the setup makes the car. Test: `RT_DRIVE=<body> racecarfile ...`.
+**Driving as any car.** Race car setup > Your car: Twinsen's buggy, or any of the racer entity's cars the folder has (the racer's, Baldino's, the character cars). The car file gets `drive_as=<BODY.HQR body> <ANIM.HQR animation> <shrunk body>` (`RaceCarEngineFile.DriveAsLine`, from the folder's entity table: the racer entity's generic body, its driving animation 1, its shrunk body). The race-track mode hides Twinsen's car (as under the super jet-pack) and draws that car in its place (`DrawDriveAs`: a T_OBJ_3D of its own with the opponents' driving animation, facing the car's way, pitched by the slope just driven); its shrunk body while shrunk. It handles as the setup makes the car. Test: `RT_DRIVE=<body> racecarfile ...`. (Since 2026-10-17 the first choice is *Twinsen's own car*: his buggy, or the car a track has for him -- the Temple of Bú's pumpkin F1, race car 220, which every build adds last -- and "Twinsen's buggy, on every track" (-4, `RT_DRIVE=-4`) keeps the buggy there too: docs/LBA2_TEMPLE_OF_BU.md.)
 
 ![driving the Desert track as the Dean's car](racetrack/build/drive_as_dean.png)
 
@@ -2705,8 +2705,8 @@ The user: "We're getting random shadow images of our gas monsters at points in t
 The user: "Let's lose the numbers on the roulette wheel, half the segments, but double the width of the remaining ones. Red is win, black is lose, and green is super jackpot. For red we spin three wheels at the top middle of the screen like a fruit machine, and they spin stopping one at a time from left to right displaying a powerup, let's make it so roughly 75% of the time the user wins a power up prize, if they get the green super jackpot they get a golden gazogem bottle where they can use the power up for a speedboost as many times as they like for 8 seconds". Earlier the same day: "We don't need messages saying 'Hit by shuttle', 'bitten by gas monster', or 'Hit by gunner'" and "We also don't need a message for each pickup either" -- those are logged only now (the race-track mode's messages, `Message`, had never been drawn until the wheel's prizes needed them; results, start-line notices, loop hints, "Back on the road" and the wheel's prizes stay).
 - *The head* (`RaceTrackRoulette.Pockets`, 19): pocket 0 green, then red and black in turn (9 of each), each 18.9 degrees (the European wheel's were 9.7), no numbers, its colour in eight bands out to the wall. The race file says how many (`roulette_pockets=`); the race-track mode tells the pocket the car drops through over by its angle on the head (`PocketPrize`: 0 green, odd red, even black -- checked against a frame of the drop). A test key forces a prize: `roulette_prize=<0|1|2>`.
 - *Black:* "Black: no luck".
-- *Red: the slot machine* (`SlotSpin`, `SlotMachine`, `SlotShown`). Three reels at the top middle of the screen, item boxes a quarter bigger than the item box's, each turning over the power-ups (one every 70 ms) until it stops: the first 1.2 s after the landing, the next 0.7 s after each other. Three the same win: 75 % of the time (`RACE_SLOT_WIN`) all three are one power-up drawn as a mushroom's is (`RandomPowerUp`), ringed in gold when the last stops, "Winner!", and it goes into the item box at once (`GiveItem`: a free slot, or the one not selected); otherwise the first two are often the same and the last not, "No luck". The reels stay 1.8 s after.
-- *The green: the golden Gazogem* (`PU_GOLD`, never from a mushroom nor the item box's roulette, `PU_ROLLED`). "Super jackpot! A golden Gazogem!", into the item box. Its icon is the game's Gazogem can (OBJFIX.HQR entry 15) with every face on the palette's gold ramp (6), four steps up (`RaceTrackOil.InstallGoldIcon`, `gold_icon=`). From its first use it stays in its slot for 8 s (`RACE_GOLD_MS`), a gold bar under the slot running down; each use in that time gives Gazogem's boost for 1.2 s and kicks the car's speed up a quarter (to the boosted top speed at most). Then it is gone.
+- *Red: the slot machine* (`SlotSpin`, `SlotMachine`, `SlotShown`). Three reels at the top middle of the screen, item boxes a quarter bigger than the item box's, each turning over the power-ups (one every 70 ms) until it stops: the first 1.2 s after the landing, the next 0.7 s after each other. Three the same win: 75 % of the time (`RACE_SLOT_WIN`) all three are one power-up drawn as a mushroom's is (`RandomPowerUp`), ringed in gold when the last stops, "Winner!", and it goes into the item box at once (`GiveItem`: a free slot, or the one not selected; since 2026-10-17 the one box, kept free while the reels turn, and with it full no spin but red's boost -- see *One item box*); otherwise the first two are often the same and the last not, "No luck". The reels stay 1.8 s after.
+- *The green: the golden Gazogem* (`PU_GOLD`, never from a mushroom nor the item box's roulette, `PU_ROLLED`). "Super jackpot! A golden Gazogem!", into the item box. Its icon is the game's Gazogem can (OBJFIX.HQR entry 15) with every face on the palette's gold ramp (6), four steps up (`RaceTrackOil.InstallGoldIcon`, `gold_icon=`). From its first use it stays in its slot for 8 s (`RACE_GOLD_MS`), a gold bar under the slot running down; each use in that time gives Gazogem's boost for 1.2 s and kicks the car's speed up a quarter (to the boosted top speed at most). Then it is gone. (Since 2026-10-17, won while the item box holds something, it waits in a second box: see *One item box*.)
 - Without power-ups (`powerups=0`) red gives a 2.5 s boost and the green a 5 s one, as before.
 
 ### 18 pockets, a jet-pack that gets stuck on nothing, the golden Gazogem's kick (2026-10-10, later)
@@ -2762,6 +2762,51 @@ The user, over the editor's minimap with a dashed line along the main lava chann
 - *The boost panel lasts* (the user: "a lot longer"): after the car leaves it, its top speed is 120 km/h for 4.5 s (`RACE_PANEL_HOLD_MS`) and eases back to its own over 3.5 s (`RACE_PANEL_FADE_MS`; `RaceMod_SpeedFactor`, `PanelFactor`) -- the accelerator held keeps it there, a hit or the brakes take it off as ever. It had been lost as any speed over the gear's top in 1.6 s. Off the panel the pilot ran the canyon and the drop jump at 120-125 km/h, then 109, 97, 76, 62, 49 km/h down the east ridge. At that speed the bends after the pit lane want braking (the pilot, steering by a point ahead along its line, hit their rails).
 - In a 4-lap race (the pilot): qualifying 38.1 s, laps 47-56 s for everyone, the lava hitting each opponent about once a lap.
 
+### Version 3: the old lap in two layers, the lava fall on the bluff, the aqueduct, lava geysers (2026-10-11)
+
+The user: "The new Volcano island race track that you've came up with is worse than the one we had previously. Let's keep the lava waterfall but move it to the top of the bluff, to the left of where the crystal garden currently is. Let's add multiple layers of track to add some height to the track. Perhaps we can cross by the lava waterfall twice, once passing in front of it, and once under the lava flow. Perhaps we could have streams of lava randomly shooting up into the air sending lava balls showering down onto the track". The lap of 2026-10-08/10 again (the summit, the canyon road and the drop jump are gone), 458 cells, with the plateau in two layers; the pit lane's easier way in, the longer boost and the crystals kept.
+- *The upper layer.* The north straight (the start, the pit lane, the boost panel) ends with a right turn; the road climbs south down the plateau's east edge, west, and north past the lava fall, at 15,800-17,300 over the plateau's 12,750 (the plan lifts its floor from the climb's start at 15.5 % -- under the grade's limit, so the spreading keeps the straight level -- to `UP` 17,300), then east across its own climb 3,600 over it and north-east off the plateau onto the old bridge east, now 15,000 at its middle. The jump over the main lava channel takes the extra: lip 13,990, landing 8,286 -- the design's grade spreading lets the road drop `JUMP_DROP` (4,000) more across that gap only, so everything after it is at the old lap's heights (spread across the gap at the grade it held the whole east half 4,000 over its ground; not spread across it at all, the stretch between the channels sank into its rocks).
+- *The lava fall* (`RaceTrackLavaFall`) on the plateau's west part, west of the crystal garden: a crag 12 cells wide, 11.5 deep, its top 24,000, the lava pouring down its east face in three tiers into a pool at its foot -- the upper layer's way north passes it 1.25 cells off the face, the tiers above and below the road (the user's "passing in front of it").
+- *The aqueduct* (`RaceTrackLavaFall.Aqueduct`, plan `lavaFalls[].aqueduct`: to, surface, width): the crag's lava carried west on a trough of rock out of its back, over the west side (the lower layer) and off the bluff's edge into the sea -- "under the lava flow". Its own body: level over the road (its underside 2,469 over the deck, its lava at 16,300), going down into the ground beyond it (into the crag's rock, a pillar on the bluff), lava spilling down its outer walls over the road, drips of lava hanging under it, a sheet of lava falling off its end; the cliff below its end painted with the island's lava down to the sea, and the race-track mode's spit and sparks there. A lava source over the road (its third number, a height: 15,700) drips the game's lava balls onto the road under it every 2.4 s, and one in the fall's pool throws them onto the upper layer beside it.
+- *Its colours*: palette indices as the game draws its objects through the island's colour tables -- an in-game swatch of all 256 (a 16 x 16 panel in the arch's place, `RT_SWATCH=1`, photographed) showed each ramp's light end going cream or yellow (the lava first drawn with ramp 6's 12-14 came out pale) and ramp 3 light tan: ramp 6's index 5-7 (red-orange) for the lava, ramp 5's 9 for its channel's sides, ramp 4's 0-9 for the rock.
+- *Lava geysers* (plan `lavaGeysers`: as `lavaBalls` with `balls`; the race file's `lavageyser=<x> <y> <z> <from> <to> <every> <phase> <balls>`, RACEMOD.CPP `LavaGeysers`): six, where the old lap's single lava balls came from (the main channel under the bridge and the jump, the second channel, the lowland, the shore). Every 5-11 s or so, while Twinsen is within 45 cells, one goes off: for 1.8 s a stream of the game's lava balls shot up out of the lava, fast enough to go 2,500 past the height of the road it showers (the bridge is 11,000 over the channel), falling back with gravity, the game's lava burst at its foot every 0.3 s; and a shower of 4-5 lava balls, 0.22 s apart, each one's shadow on the road where it will land (`lavaball=`'s, armed together). `RACE_MAX_LAVA` 48. In a 4-lap race 77 eruptions, Twinsen hit 2 times, the ferryman once.
+- *Crystals*: the lowland's field (six), the arch on the east edge; of the garden one is left, inside the upper layer's loop (the crag and the loop fill the rest).
+- The test pilot's qualifying lap 37.7-38.6 s; race laps 44-47 s (Twinsen), 45-52 s (the opponents), no rescue.
+
+### Version 4: a two-turn climb, a double spiral down, no jumping down, crystal shards (2026-10-11, later)
+
+The user: "Let's change the upward loop so it's bigger and loops around an extra time, let's also remove the jump down and have a slope instead, jumps downwards feel unnatural to drive and we should try to avoid them if possible. Let's also have a double spiral back down again. Let's also add in some red crystal shards that shoot up into the air from the volcano, then fall back down onto the track, we should see their shadows on the track getting slowly bigger until they hit with an explosion that stuns any cars in the vicinity". The lap is 660 cells now (the test pilot's qualifying lap 52-62 s, race laps 63-74 s).
+- *The climb* is twice round a bigger loop (x 487.5-511, z 474-487, 66 cells round) over the plateau's east part, its second turn over its first: the floor lifted from the loop's start at `LIFT_GRADE` -- worked out from the loop's length so that a turn is `HELIX_PITCH` (4,800, the Elevator Platform helix's: the camera behind the car fits between the levels) higher than the one under it -- to 24,300 at its top, east off it over its start. Each turn goes north past the lava fall: in front of it twice, at two heights. (The design's marks along a spiral are found in order round the lap -- `nearest_after` -- its turns being over one another.)
+- *The double spiral down*: an ellipse 10 by 7 cells round (534, 461.5), north of the main lava channel (its north rail 1.8 cells from the island's edge, its south one off the channel), two and a half turns clockwise from its west side at the grade's limit, 23,250 down to 11,065 -- each turn 4,352 or more over the one under it -- off its east side south down a slope (a bridge) over the channel, the old jump's way, to 8,100 between the channels. Its corners every 30 degrees round, rounded 3 cells (the ellipse's ends are tight: a 3.8-cell bend at 11 by 6.5, where the pilot dropped to 15 km/h).
+- *No jumping down.* The jump over the channel is gone; the second jump and the shore jump, which landed 1,250 and 300 under their lips, land as high as they leave: the ground under the landing and the road after it lifted to the lip's height as the take-off ramp makes it -- curving up from its foot at the jump's angle, higher than the road's own height there (lifted to that, a landing dropped 600 in a cell and a half after touching down: a 144 % grade) -- the road going down after them at the grade.
+- *Crystal shards* (plan `crystalShards`: as `lavaGeysers`; `crystalshards=`, `crystal_shard_model=<shard> <piece>`; RACEMOD.CPP Kind 1 lava balls). The models: a red six-sided crystal pointed at both ends, 1,700 long, and a piece of it 0.3 as big, appended to OBJFIX.HQR (`RaceTrackCrystals.InstallCrystalShards`; flat colours, the island palette's ramp 5 reds and ramp 6 points). Five stretches -- the start straight, the climb's first south side and its second east side, the west side, the plateau's south edge -- each every 9-11 s or so while Twinsen is near: shards shot up out of the volcano (the crag's lake, 23,700) and falling back into it, and three aimed ones arcing 3,500 higher than a lava ball and 1.1 s slower onto the stretch, tumbling end over end. Each one's shadow lies on the road where it will land from the start, solid (a see-through one was lost on the dark asphalt), its size -- a sprite's scale divides it -- growing evenly from small (scale 110) to big (8). Landing: a nitro penguin's explosion, six pieces of the shard flying (only to see), and every car within 1,800 stunned for 1.8 s (Twinsen's unless the protection spell or the super jet-pack is on). In a 4-lap race the shards stunned Twinsen 3 times and the opponents 4.
+
+### The invisible wall at the climb's first bend: cube edges the road's width crosses (2026-10-11, later)
+
+The user: "I'm currently blocked from driving forward and I'm not sure why, please debug my current session ... I can reverse backwards and drive forwards to where Twinsen is now, it's like there's an invisible wall blocking us". Read from the live game with gdb (its symbols: `ListObjet`, `NumCube`, `CurrentCubeX`; the race state's `lto_priv` statics), the car was in scene 131, cube (8,7), half a cell east of the edge it shares with scene 130 (x 512, z 485.9, 14,661 up), facing west at 0 km/h.
+
+- *Why*: the climb loop's east legs run along x 511, a cell inside cube (7,7), with the road 4.75 cells either side of its middle. A car on the outside of the first bend crossed x 512: scene 130's own zone into 131 covers its whole east edge up to 15,000, so the car went into scene 131. Scene 131's zones back into 130 covered z 466-482 (above 21,968) and 489.7-505.7 only, and the engine holds the hero at a cube's edge where no cube-change zone covers him (`EXTFUNC.CPP` DoAnimExt: `Nxw` kept `DEMI_BRICK_XZ` inside, `FlagHeroOutX` set). The build gave the scenes a zone only where the lap's *middle* crosses an edge (`RaceTrackScenes.EdgeCrossings`), and the middle never crosses there.
+- *The build*: `EdgeCrossings` also follows the road's width -- the raised road by its own points and widths, to its rails and half a cell past them, the ground's lap to its curbs -- and wherever either side of the road reaches over an edge its middle doesn't cross, adds a crossing there each way, unless one at about that place and height already covers it. On Volcano Island that is 9 zones from scene 131 back into 130 along the climb's east legs at both levels, 3 more from 130 into 131 for the second level, and a few between 131 and 132 on the spiral down.
+- *The engine* (for tracks built before this, and wherever a car gets over an edge no zone covers): the hero held at the edge in the race car (`RaceMod_EdgeHeld`, noted from DoAnimExt -- the flags themselves are cleared by the next actor's move) is carried over into the next cube's scene (`cube_scene=`) at its near side, the height and the other coordinate kept, as a zone would (`RaceMod_EdgeCross`, called from PERSO.CPP after the hero's zones). It has to be asked for there, in the actors' loop: asked for as the scene was drawn, the drawing's autosave cleared `FlagChgCube` first and the car arrived at the scene's start, on the grid.
+- Tested at the user's own place (teleported east over the edge into 131, then driven back west): the old engine and the old build held the car at x 512.5; the new engine alone took it into 130 and on round the bend, and so did the new build's zones alone with the old engine. Five laps with the user's car file on the new engine and build: nothing held, and no crossing the engine had to make itself.
+
+### The race track window's progress bar, and Polar Island without an LBA1 folder (2026-10-11, later)
+
+The user: "add a visible process bar for building tracks in the track builder window", and "Display an error message is somebody tries to build polar island without having their LBA1 asset folder set as apparently this doesn't work and causes nothing to build".
+
+- `RaceTrackService.Build` takes an `IProgress<BuildProgress>` (the part done, what it is doing). Each part has a share of the bar by how long it takes (`BuildSeconds`, measured: the thirteen tracks built together in 62 s, the Desert island's 16 of them, Citadel Island's, the Island of the Francos' and Otringal's about 8 each, most others 1-2; Polar Island added to the folder 4), and each track's steps a share of its own (`BuildSession.Step`: reading the island, the road's textures, the road with its ground and scenery -- most of it --, saving, the other weather's island, the holomap and the cars, the scenes, the story). The window shows the bar under the status line with what is being built, how far and the time so far, scrolled into view, and "Built in 19 s." when it is done; it can't be closed while a build runs (the build would go on without it). `buildtogether` prints the same with `RT_PROGRESS=1`.
+- *Polar Island*: a build that has to add the island and has no LBA1 folder threw at its first step, changed nothing, and showed it only in the status line, the log left empty -- nothing seemed to happen. Now the window asks `RaceTrackService.PolarProblem` before anything else, and says what is wrong in an error box (no LBA1 folder set, or a folder without LBA1's SCENE.HQR, LBA_GRI.HQR, LBA_BLL.HQR, LBA_BRK.HQR and RESS.HQR -- choose it under File > Settings); and any build that fails says why in an error box and in the log.
+
+### Version 5: both loops circles, and bigger (2026-10-11, later)
+
+The user: "Let's make both loops in Volcano island bigger and circular".
+
+- *A circle in the plan*: `circle(cx, cz, r, a0, a1)` in volcano_design.py -- the polygon round the circle (its corners at r / cos(θ/2), θ about 30 degrees), each corner rounded with the circle's own radius, so the rounded corners are arcs of the circle itself, meeting at the polygon's sides' middles: the road is an exact circle. The way in and out are tangents: a straight along a side's line runs on into it with no kink.
+- *The climb*: a circle 13.5 cells round its middle (84.5 cells a turn; the rectangle was 23.5 by 13, 66 a turn), touching the north straight's line at its north point (501, 463.75) -- the straight runs on into it -- its west side at x 487.5, in front of the lava fall as before. Twice round, then on east along the same line at the top, 24,400. The lift is `HELIX_PITCH` x 1.10 a turn (12.2 %): the end of its first turn passes over the start straight's pit lane, which is level, and at x 1.04 that was 4,584 over it.
+- *The double spiral*: a circle 11.5 round (72 cells a turn; the ellipse was 10 by 7, its north rail 1.8 cells from the island's edge), touching the same line at its north point (537, 463.75) -- the top level along to it -- and centred over the main lava channel. Round clockwise until its tangent points at the slope's foot (542, 505): two and a quarter turns and 13 degrees, worked out in the plan (`SPIRAL_EXIT`). It comes down from the top to 11,000 at an even grade (16 %, 5,900 a turn) -- left to the grade's limit it went down to 7,400, and the slope after it took the road through the rocks and crystals by the second jump. A lava geyser now shoots up its open middle (the channel's lava at (537, 479)) and showers its top turn; the one beside the slope moved to (553, 488).
+- *Room for them*: the plateau's south road 5 cells further south (z 502, the climb's south rail at 495.5), held at the plateau's height (beside its edge, the ground under its middle is the flank's, and the deck cut 2,400 into the plateau); the pit lane, its fence, the waiting spots, the boost panel and the start line 2.5 cells west (the straight ends where the climb begins). Two more crystals in the garden inside the climb.
+- The lap is 710 cells (660 before). The circles reach over the edge between scenes 130 and 131 at several heights: the build adds the crossing zones (scene 131 has 21 zones, 255 the most). Tested with the user's fast car and three opponents: five laps of 28-36 s, the opponents round both circles with it, nothing held at an edge, no falls.
+
 ## Attacks: the magic ball's colours and the fake mushroom (2026-10-08)
 
 The user: "an attacking powerup for cars to hit other drivers with utilising Twinsen's magic ball and it's different colours with different behaviours" -- "yellow ball goes in a straight line short distance doesn't bounce - or just darts / Green straight line, sticks to the track for a few seconds bouncing around / Red homes in on the car in front / Fire ball splits into a ball for each opponent that hunts them down and hits them"; and "a fake powerup mushroom that cars can pick up that's identical to the real powerup mushrooms, the car can drop this powerup anywhere, and when another car drives into it the fake mushroom explodes".
@@ -2798,6 +2843,1518 @@ The user: "The mushroom pick up is far too small to see, let's make this bigger.
 
 The user: "Update our mini-map for race mode so it fully fits into its viewport and shows all the cars moving around in real time". While Play races a track whose island the editor has open (`MainWindow.RaceMinimap.cs`), the minimap panel shows the lap and 6 cells round it scaled to fit its box (no scrolling), the road drawn over the island -- a raised road its rails' width, a jump's gap left open; a road on the ground the racing line -- and every car as a dot: Twinsen's yellow and bigger, each opponent a colour of its own (its name as the dot's tooltip). The dots move with the cars, asked for every 150 ms over the play's control socket: the engine's console command `racecars` (`RaceMod_Cars`) answers `car <n> <x> <z> <beta> <name>` a line each, island units, n -1 for Twinsen -- an opponent's own car where the scene has it in sight, else where its line has it in the race. When the play stops the minimap goes back to the editor's own (zoomed in, scrolling, the camera's marker).
 
+## The Emerald Moon: a whole second loop, and the pit lane apart from the straight (2026-10-12)
+
+The user: "Emerald moon, the cut out loop needs removing and replacing with a normal loop, the pit lane is devided with a fence, and the
+pit lane is too narrow. Let's remove the fence and have an extra strip of road with clear space between the start/finish line and the
+pit straight with the pit lane being wider".
+
+![The pit lane on the right, apart from the straight with the start gantry, the opponents waiting in it](racetrack/emerald/pit_lane.png)
+
+- *The second loop* (the south side's) is whole, as the other two: its gap of 35 degrees, leapt upside down, is gone (the plan's loop
+  gap 0).
+- *The pit lane* is a strip of road of its own beside the straight (plan `raisedStrips`: for each point of the lap, from and to across
+  it, cells; RaceTrackPlan.RaisedStrips): from the first corner's end it grows out of the straight's west edge over 5 cells, moves 2.5
+  cells away from it over 5 more -- clear space between them, the base's roof under it -- runs beside it past the start line, and comes
+  back the same way before the hairpin. It is 8 cells wide, rail to rail (its asphalt 6; the fenced lane's was 4.5). The fence and the
+  white stripe are gone; the straight is the road's usual width again, on the roof's middle (it had been moved half the old pit lane's
+  width east), and the grid on its middle.
+- *The deck*: where the strip meets the straight's edge, the straight's deck reaches across to the strip's far edge, one deck; where it
+  is apart, a deck of its own, with its own curbs and rails (`RaceTrackBuilder` StripPieces: RaceTrackRaisedBody.Tile on sections moved
+  across). The start line and its gantry: the line reaches across the strip, so a car in the pit lane crosses it too (LapLine); the
+  gantry stands over the straight.
+- *The engine* (RACEMOD.CPP): the raised road's file has two more numbers on a point with a strip beside it, from and to across
+  (`StripLo`, `StripHi`). The floor is the road's or the strip's (RaisedAt, OnStrip); the rail keeps a car on whichever of the two it is
+  nearer, the clear space between them an edge like the road's outer one, and where they meet, one floor from the road's far edge to the
+  strip's (RaceMod_Rail).
+- *Cube edges again*: the straight's rail is a quarter cell short of the edge between scenes 229 and 231 (x 64). The crossing zones the
+  build now adds where a road's width reaches over an edge, and the engine's own carrying over (above), took a car riding the rail into
+  231 -- half a cell inside it, where a car arrives -- and its rail straight back, a scene change a frame. Now both carry a car over only
+  where it can be on the other side: the build where a car's middle reaches more than half a cell past the edge inside its rail
+  (`EdgeCrossings`, `Reach`), the engine where its rail lets it be where it arrives (`RailAllows`). Volcano Island's climb keeps its
+  zones; the user's own place there still crosses.
+- The design script's jump: the island's objects read again since 2026-10-02 put the reactor a little higher, and the ramp search picked
+  61 degrees; the ramp is kept at 60 (`THETA_DEG`), as built and raced, and the script says it clears by less than 900 by that reading.
+- Tested: a qualifying lap of 53.6 s and a race lap of 64.1 s with the opponents, no checkpoint missed, no car rescued; the pilot through
+  the whole pit lane and back onto the straight; a car steered at the clear space held on the straight's edge all the way along; along
+  the straight's other rail no change of scene.
+
+## Folders with non-English names, and why a race didn't start (2026-10-12)
+
+A user's video (in Russia): Play's "Race: Elevator Platform", the race car setup's Play, and no race -- Twinsen not where he should be, the
+editor's log saying only "LBA2 control socket didn't come up". On a fresh copy of the game with fresh settings the same steps raced (the
+prepared save's start and the fallback `cube 120` start alike); what differs on such a machine:
+
+- *Folder names outside ASCII.* SDL's main hands the game its command line in UTF-8, and the C library's narrow file calls (`stat`, `fopen`)
+  and `getenv` read paths in the process's code page. A play folder (`lba2-play` beside LBAAssembler.exe -- under `C:\Users\<Cyrillic
+  name>` for many) with any letter outside ASCII was "Invalid user directory", and a game folder such was "does not hold the game data":
+  the game ended before its window opened, saying so only on its console, and the editor showed "The game ended." over its own view of the
+  island. Race files read with a path in them that isn't ASCII were "could not be read" (the raised road) or, the race file itself, nothing
+  at all -- the race-track mode on with nothing in it. Fixed with the game's manifest (`packaging/lba2cc.manifest`, resource 1 of type 24
+  in `lba2cc.rc`, replacing the toolchain's default one): the UTF-8 code page (Windows 10 1903 and later), so those calls take the paths as
+  they are. Tested from Play with the editor and its play folder under `...\Иван\`, and the game folder at a Cyrillic path: raced, Twinsen
+  on the grid. (No comments in the manifest: an XML comment can't hold "--", and Windows then won't start the program at all.)
+- *The control socket.* The game opens 127.0.0.1:27015 for the editor's script breakpoints, the race minimap and live resizing -- nothing
+  the race needs. Where something else has the port (or Windows reserves it: Hyper-V, WSL and Docker reserve ranges of ports), the game says
+  `[ctlsrv] bind 127.0.0.1:27015: WSA error 10013` and races on. Another program listening there took the editor's connection and never
+  answered its greeting, and the editor waited for ever; it now gives up after 3 s.
+- *Saying what happened.* The game says which race file it reads (`[racemod] race file ...`) and when one can't be read (the race file
+  itself, a car's line); the editor reads the game's console: a game that ends on an error shows it ("The game ended: [ERROR] ...", and a
+  message when its window never appeared), and its warnings so far go into editor.log once the socket is up or given up on. editor.log also
+  says whether a play races and which track (`Lba2Play: scene 120, racing Elevator Platform, from the grid`) and the race file it wrote.
+- `ScriptRoundTrip` takes `RT_CULTURE=ru-RU` to run as a machine with that language does: the race file and a whole build come out the same
+  as with the invariant culture (the decimal comma is not a problem).
+- *The cause, as it turned out* (the same user's logs, later that day: their folders' names were plain): the editor sat in their game
+  folder, an LBA2 Classic Community install, whose own `lba2cc.exe` was there too -- that project's readme says to unzip it into the
+  game's folder -- and the editor took an `lba2cc.exe` beside itself before its own. The game's log said "Built Aug 23 2026" with no
+  commit after it (the editor's engine says "Built <date> from commit <hash>"): an engine from before the race-track mode, so no race,
+  the opponents standing where the build parks them, the raised roads solid only where their decor boxes are, no control socket and no
+  `[racemod]` lines. `Lba2Engine.Find` now always plays the editor's own engine (`LBA2_ENGINE=<path>` picks another, for development),
+  and editor.log says which: `Lba2Play: the engine ...\native\lba2cc.<key>.exe`. Tested with a stranger's `lba2cc.exe` beside the
+  editor: Play raced the Emperor's palace on the editor's own.
+
+## The Emperor's palace: through the rooms, out of the round window, over the rooftops (2026-10-12)
+
+The user's brief: "through the palace rooms, coming out the window and around the roof tops? Point-to-point i.e. no laps, finishing
+with massive jump to harbor teleport? - Twinsen, quick, Dark monk's in the palace, he's killing everybody. Leading into final showdown at
+Celebration"; its drivers: "Stan, The pighead w/broom, *Two headed monster". On the Palace island (`docs/LBA2_PALACE_ISLAND.md`), which
+the build makes afresh with its scenes (`Terrain/Palace/PalaceTrack.cs`, `RaceTrackIsland.Palace`: Created, OwnScenes, Sprint); the
+route `docs/racetrack/palace_track_plan.json` from `tools/RaceTrackPlan/palace_design.py` (it reads the built island's `PALACE.JSON`:
+where the rooms, the round window, the ways across the rocks and the harbour's pillar are).
+
+![Through the rooms on the red carpet: a fireplace, windows, the next door](racetrack/palace/rooms.png)
+
+![Over the rooftops among the domed halls, their teal-tiled feet beside the road](racetrack/palace/rooftops.png)
+
+![The runway to the cliff's edge, the Dark Monk's teleporter on its pillar in the bay](racetrack/palace/runway.png)
+
+![In mid-flight into the teleporter: the race won, the picture about to whiten](racetrack/palace/teleporter.png)
+
+![And Twinsen on Celebration Island, by the Dark Monk's statue's lava lake](racetrack/palace/celebration.png)
+
+- *The route*, one raised road from end to end (1,188 cells): the grid in the sixteen rooms' south-east room (154), south of its chest;
+  west along the bottom row of rooms door by door, north up the west column and into the long hall (80) -- a red carpet with gold
+  borders (deck theme `carpet`), the rooms' doors (two bricks, 8 cells) a little wider than it; north down the hall, a ramp up to the
+  round window's sill and out of it over the cliff's edge; over the cloud sea, round to the east and climbing (at most 9.5%) to the
+  hilltop -- the deck theme `palace`, cream and teal, on piers to the sea; south along the way across the rocks (x 470, flat, the domes
+  ahead); onto the roofs, a swing west into the courtyard under the big dome's hall, back east along the north-east hall's north wall,
+  south down its east side and east onto the runway; the jump off the cliff's edge.
+- *Point-to-point*: the race-track mode's sprint (`sprint=`, `race_laps=1`): the finish line at the jump's lip (19,976); the jump carried
+  (`arcjump=`: 43.5 cells, its top 2,600 over the lip) onto the teleporter's pillar, its top as high as the lip (no drop). Won, the
+  picture whitens in mid-flight as the car reaches the ring (`wake_flight=2400`) and Twinsen arrives on Celebration Island, scene 95, by
+  the Dark Monk's statue: "Celebration Island... his teleporter brought me to his statue. This is where it ends, Dark Monk!" (`wake=`).
+  Twinsen's cry as the grid forms ("The Dark Monk is in the palace, and he's killing everybody! ...") and a loss's line are added to
+  Otringal's texts, the arrival line to Celebration Island's, in the game's 6 languages (`PalaceTrack.Texts`).
+- *The scenes*: an outside scene is one cube, so each cube the road reaches -- its width and a cell more -- is a scene, from 265 on,
+  row by row (24 of them, 265-288; the start's is 288), each a copy of the header of Otringal's scene outside the palace (91: its light
+  and music) with Twinsen, the engine's Zoe placeholder, the buggy and a cube-change zone on each edge shared with another. The list is
+  worked out from the route built into the program (`PalaceTrack.SceneCubes`): the rooftops' road, moved in among the domes, ran into
+  cubes that had none, and the car stopped at the first one's edge.
+- *The drivers*: Stan, the road sweeper (the pig-headed sweeper) and the Emperor. The two-headed monster has a car only among the cast's
+  (a body of another entity), and an opponent's car has to be one of the racer's own hand-made ones (`RaceDriver.Palace`).
+- *The camera* rides the road behind the car (`railCamera`), low and level: the rooms' walls, fireplaces and portraits in the picture, and
+  the halls beside the rooftops' road. The race-track mode's rail camera took two more numbers for it (RACEMOD.CPP `railcam=<back> <up>
+  <lead> [sight] [aim]`): its sight line to the car ended at the car's wheels and had to clear the road by 500, which lifted the eye to
+  some 4,000 over a level road whatever it was asked, looking 33 degrees down -- nothing over the road ahead in the picture. Ending it
+  at the car's middle (500) keeps the eye where it is put (2,100 over the road, 9 cells behind: past the near plane round the tightest
+  bend), and looking at a point 1,000 over the road ahead makes the view level, the car in its lower third. Other tracks are as they were.
+- *The domes* are 26,000 over the roofs: near them the camera shows their halls' walls (teal-tiled feet, pale stone), their tops over
+  the picture; they show whole from further off, and in the editor's island view. The island's fog was moved out for them (40,000 to
+  70,000) -- inside, looking through several rooms' doors, the far ones fade to the haze. And the engine had never drawn them at all:
+  it left out an object any of whose foot's corners lay past the fog's end, and a dome's foot is 86,000 across (`3DEXT/DECORS.CPP`: an
+  object of this editor's that is drawn only is left out only when all four are).
+- *The race's road on a route open at both ends* (`RaceTrackBuilder` PlaceRaised): a sprint's road is raised from its first point; the
+  race file had had no raised road, jumps or cube scenes for it, and the car drove under its deck.
+- *With Otringal's track in the same folder* (the user, the same day: "dropping twinsen into the gas and he's dying"): Play races the
+  palace as the game's set of tracks (a sprint that ends somewhere else -- the race-track mode's `track=` lines, one car file a track), and
+  the race-track mode took the first of them on the island the scene is on. Otringal's is on island 4 too, raced in all its scenes
+  (`track=4 0 -1 -1`), and built before the palace: in scene 288 it loaded Otringal's track, drew OTRINGAL.ILE under the palace's grid,
+  and Twinsen fell into its clouds (here, the game crashed). Now a track raced in scenes of its own comes first (RACEMOD.CPP
+  RaceMod_Island); Otringal's own still races in its scenes.
+- Tested with the test pilot (autodrive): 117.6 s with the power-ups off, 131.1 s with them (penguins and fire balls stop a car), 1st of
+  4 and won both times, no car rescued; the white flash in mid-flight and Twinsen awake in scene 95. The build takes some 20 s (the
+  island and its scenes made afresh each time).
+
+### The palace, second round: wider, more rooms, a loop round the roofs, no white blocks (2026-10-12, later)
+
+The user: "The palace track is far too narrow. We're also getting random white images on screen, as pictured. There's also multiple
+places for Twinsen to clip out of the track and end up on the ground. Let's make the inside tracks wider if we can do, and perhaps loop
+in more rooms. Add a section where we're outside on the roof looping around the palace roof tops. Double check the end jump works and
+correctly teleports us because I had it failing".
+
+![Through the rooms on the wider carpet, a door four bricks wide ahead](racetrack/palace/v2_rooms.png)
+
+![The loop round the palace's roofs, its halls and domes beside the road](racetrack/palace/v2_rooftop_loop.png)
+
+- *Wider*: the rooms' doors are four bricks (16 cells) instead of two, and the line between two facing doors is cleared of furniture
+  -- the rooms' pieces, plain blocks and chests (`PalaceIsland`: "the doors made wider"). The road is 11 cells rail to rail indoors
+  (5.5 from its middle), 14 outdoors. The engine collides a car with a square box about 2.8 cells from its middle whichever way it
+  faces, so the design keeps 1.55 cells past each rail clear as well (`palace_design.py`, `CAR_BOX`).
+- *More rooms*: thirteen of the sixteen, the road winding through them row by row (154 west to 151, 155 east to 158, 162 west to 159,
+  163) into the long hall, its control points every 4 cells and its bends arcs, so the spline doesn't overshoot by the long straights.
+- *The loop round the roofs*: from the hilltop the road runs south along the palace's west side, round its south-west and south-east
+  corners on a corridor the island now leaves clear (`PalaceIsland.RingOut`, `PALACE.JSON`'s second corridor), up its east side and onto
+  the runway.
+- *Off the road and onto the ground*: the rail lets a car go where a raised road lies within 300 of the ground (a track's ends meeting
+  the ground road), and indoors the carpet does: a car on its edge went off it onto the floor. The palace's car file says `rail_held=1`
+  (`RaceTrackIsland.RailHeld`): the rail holds a car everywhere. And on the outside of a bend the rail clamped a car past one segment's
+  end onto the line across that end, frame after frame -- it stopped dead along the outside rail; it now goes round the point the two
+  segments share (`RaceMod_Rail`).
+- *The white blocks*: a polygon's depth for the depth buffer is its distance times a factor that grows as the far plane is pushed out
+  (`Fill_ZBuffer_Factor`, 2^32 / the far plane); for the palace's far domes the product passed 32 bits and wrapped round to a near depth,
+  and far polygons -- the domes' pale stone -- were drawn over everything (`LIB386/OBJECT/AFF_OBJ.CPP`). It is worked out in 64 bits and
+  clamped now.
+- *The jump*: a race won flies into the teleporter, whitens in mid-flight and wakes Twinsen in scene 95; a race lost doesn't -- it is run
+  again from the grid (scene 290). Checked both ways.
+- Tested with the test pilot down the road's middle (209.4 s) and along each edge (185.6 s, 189.0 s): won, no car rescued, no stop at an
+  edge.
+
+## The Emerald Moon: four loops turn and turn about, the road its own width into and out of each; a pit lane out of and into the corners (2026-10-12, later)
+
+The user, of the loops: "the left side of the vertical loops don't capture the car so you're able ot skip the loop and drive straight.
+Also the camera seems questionable in places, let's analyse the camera around entire track and make sure it's as smooth and as optimal
+as we can get it"; and then: "where we have the vertical loops the track is double width when it doesn't need to be, the loop its self
+is double the width, but it should be a single width going into loop, and an offset single width coming out of the loop, let's add an
+extra loop so we have two loops going from left to right, and two going from right to left to keep everything balanced. Let's alternate
+them so right goes into left, then left goes into right. Let's also smooth out the track coming into and out of hte pit lane so the
+entrance and exit are both wider and feed directly out of and into their respective corners" -- with a picture of the pit lane's ends
+coloured in.
+
+![The lap: four rings (blue boxes), the road stepping across under each; the pit lane beside the straight](racetrack/emerald/lap_v4.png)
+
+![Into the fourth ring: the road its own width, the ring's way down beside it on its leg](racetrack/emerald/ring_way_in.png)
+
+![The pit lane: out of the corner onto the straight and into the hairpin, each in one straight line](racetrack/emerald/pit_funnels.png)
+
+- *The road steps sideways under each ring.* It comes into the ring in one lane, its own width, and goes on out of it in the other: the
+  ring is twice the road's width, its band drifting across from the way in's lane to the way out's. The plan's loops take a sixth
+  number for it (`RaceTrackPlan.Loops`): the way out's first point, the first number then the way in's last -- a half cell past the ring's
+  foot, the way out starting a half cell short of it. The points between, the step, have no deck and no floor (`TrackRoad.Jog`, then
+  `Gap`); the road either side runs its own way (`Geometry` doesn't look across a step); the ring's foot is halfway between and the ring
+  along the way in; its legs, no deck beside the road for them now, reach down to the ground. The plan's `keepPoints` has the builder take
+  the plan's points as they are: spacing them again cut the step's corners, the way in's last point off its lane, and the ring turned
+  1.8 degrees with it.
+- *Four rings, in on the right and in on the left in turn*: the east rim's (in on the right), the south side's two (in on the left, then
+  on the right: the road between them on the inside lane), the west rim's (in on the left). After every two the road is back on its own
+  line, so the stretch from the fourth ring over the reactor to the first -- the jump, the straight, the pit lane -- is as it was. In on
+  the right is a negative shift (`loop=`), which the engine takes everywhere (the ring's lane, the line it takes a car in at, the funnel
+  closing the road's other half before it, the camera's side) and the ring's body drifts the other way.
+- *The lap* is 582 cells: the east rim's road after the first ring 9 cells further east, the south side's middle 9 cells north, and the
+  west side straight up onto the west rim at x 9 (4.5 cells from the island's edge) instead of the S. The design script checks each
+  ring's footprint for other parts of the lap and the island's objects (none), and that it stands in one cube.
+- *The loops' capture* (the first report): a car came into a ring anywhere from its lane's far edge to a little past the other lane, and
+  the double road's outer part on the side the car goes in on was past that -- it drove on past the foot. It now takes the car anywhere on
+  the way in (`RACE_LOOP_ENTRY` past either edge), and not the ring it has just come round: put down at its foot, a hair short of the line,
+  a car went round a second time (`RACE_LOOP_AGAIN`).
+- *The opponents*: their line steps from lane to lane at the ring's foot (`RaceTrackBuilder.PlanRacePath`: held on the lane's middle 8
+  cells either side, no bend counted at the step); round the ring, an opponent goes on from the way out's foot (RACEMOD.CPP
+  `OpponentLoops`, `LoopOut`) -- it had gone on from the way in's lane and slid across to the other, after every ring, at its speed. The
+  test pilot doesn't look across a ring's foot either (it steered for the other lane short of the ring).
+- *The pit lane*: its outer edge runs straight from the middle of the corner onto the straight to its own edge, along it, and straight
+  into the middle of the hairpin at the straight's end; the clear space between it and the straight is where it was. On the outside of a
+  bend the engine's floor of a strip beside the road had gaps -- each segment's floor stopped at its end, and the wedge on the outside
+  between one segment's end and the next one's start was neither's -- and a car on the pit lane's new mouths fell through. The strip's edge
+  runs round the point they share there now, as the road's own does (`OnStrip`).
+- Tested with the test pilot: a qualifying lap of 57.5 s, a race lap of 63.6 s, the opponents 69.8 s and 77.1 s, every ring taken by every
+  car, no checkpoint missed, no car rescued.
+
+### The camera round the lap
+
+Measured with the engine's camera trace (console `camtrace 1`: each frame the run's tick, the eye, what it looks at, the hero, the cube
+and which camera placed the eye -- `arm`, `loop`, `arc`, `leave` ...) and `tools/RaceTrackPlan/camtrace.py`, which turns a run's trace
+into how far the eye moves a frame, how sharply, how far the view turns, where the car is in the picture, and -- given a car file's rings
+(`RINGS=`) -- the frames with a ring between the eye and the car.
+
+![Out of a ring: the camera beside the car at the road's height, the ring going by](racetrack/emerald/ring_way_out.png)
+
+![Round a ring, watched down its axis from the side the car went in on](racetrack/emerald/ring_round.png)
+
+- *No cuts*: a race-track camera's eye (`FollowCamEyeHook`: the loop's, the carried jump's, the rail's ...) was taken in one frame, and
+  given back in one -- 16,000 to 22,000 units and 90 to 136 degrees at a time round the loops and the reactor's jump. The view now swings
+  round the car onto it over 40 frames and back onto the arm's over 45, its length eased and the car kept in the picture
+  (`FOLLOWCAM.CPP`, `FollowCamSwing`); the arm's own angle is held on its aim meanwhile. The worst frame over a lap now: 813 units and 4.4 degrees, easing back off a ring.
+- *Round a ring* the eye stands out on the side the car goes in on (from the other, its swing round from behind the car passed behind the
+  ring's way down, and the car was hidden), level with the ring's middle, looking down its axis, its aim drawn only 0.15 towards the car:
+  the ring is a band, open at its sides, and the car is seen all the way round inside it. Over the ring's last three eighths it comes down
+  to a quarter of the radius over the road.
+- *Out of a ring* the arm's eye, behind the car and over it, would look at it through the ring's way down for some 16 cells. So the camera
+  follows the car beside it at the road's height, its sight under the ring's front, until the arm's eye -- behind the car as it heads --
+  and the way back there are clear of the ring, and only then eases back (RACEMOD.CPP `LoopCamera`). Frames with a ring between the eye and
+  the car over a lap: 271 before, 49 now -- a few at each ring as the sight passes just over its edge rail.
+- *By the island's edge* (the fourth ring) the eye comes nearer, onto the island. *Across a cube's edge* (the first ring is by one) the
+  eye held from the last frame is moved into the new cube's coordinates (`FollowCamCubeJump`): the view had swung in from 32,000 away.
+
+## No power-ups on the qualifying lap (2026-10-12)
+
+The user: "Remove power ups while a car is driving a qualifying lap". While the qualifying lap is driven (the race-track mode's
+`PHASE_QUALIFYING`) the mushrooms are off the track and give nothing, the item box isn't drawn, and a track's Gazogem fuel all race
+(`fuel_always=`, the Island of the Francos') doesn't push the car; from the grid on, the race has them all (RACEMOD.CPP `Qualifying`). The
+opponents' qualifying times are their planned laps, none of the power-ups in them -- the player's lap is now timed the same way. (The test
+pilot's qualifying lap on the Emerald Moon took seven power-ups, a super jet-pack among them: 57.5 s; without them 63.6 s, as a race lap.)
+The game's log says so as the lap starts: `[racemod] the qualifying lap: no power-ups until the race`.
+
+## Playing full screen, and the race car's handling up to ten times (2026-10-12)
+
+- *F11* while a scene plays (LBA2) puts the game full screen on the editor's screen, and F11 again puts it back in the editor. The game's
+  window is moved into a window of its own over the whole screen and the game switched to the screen's size (`resolution WxH`, as for
+  any other change of the play area -- up to 1920 by 1024, the engine's limit), and back (`EmbeddedGameHost.ToggleFullScreen`). The game
+  has the keyboard, so the editor takes F11 before it does (a low-level keyboard hook while the play lasts, `PlayKeyHook`, on a thread
+  of its own, only while one of the editor's windows or the game's is in front): the engine's own F11, a debug build's benchmark, stops
+  the game until a key is pressed.
+- *Every change of the game's size went back.* After a `resolution` switch the engine asks whether to keep it, and the editor answered
+  with Enter -- but the dialog opens on Revert, so the game went back to the size it was launched at, scaled into the new area (in the
+  editor as well as full screen). It answers Y now, Keep whatever has the focus (`key 28`).
+- After such a switch SDL gives the game's window its own style again, a popup's: the game's window can then be the one in front, which
+  is why the hook takes F11 from it too. (Made a child's again, SDL put it back at once, again and again; it is left so.)
+- *The race car setup* (the user: "modify the car handling sliders so we can tweak them up to 1000% also expose top speed to be
+  configured. I want to test different combinations to optimise for different tracks"): acceleration, braking, rolling to a stop and
+  steering go up to 1000 % of the original buggy's (from 10 %); a top speed slider on the Car tab sets the top gear's, the other gears
+  scaled with it; each gear's own slider, and reverse, go up to 270 km/h (`RaceCarSetup.MaxKmh`, ten times the original buggy's 27).
+
+## The Emperor's palace, third round: the rooms open, arrows on the floor, a bigger roof top (2026-10-12, later)
+
+The user: "For our palace track let's scale up the roof top so it covers more of the outside of the palace area. For the inside of the
+palace let's remove the track but add some arrows to allow cars to take multiple directions, it has a single entry and exit area so all
+cars will ultimately end up back on the same track".
+
+![The sprint: the rooms (no road, the opponents' ways in light blue, the arrows white), the long hall, the round window, out over the cloud sea and round onto the bigger roof top, the jump to the pillar](racetrack/palace/v3_lap.png)
+
+![The grid in room 154: an arrow ahead (west) and one to the right (north, through the door to room 158)](racetrack/palace/v3_rooms_arrows.png)
+
+![North through the doors, the arrow on the floor](racetrack/palace/v3_hall_door.png)
+
+![Round the roof top, a hall of the domes beside the road](racetrack/palace/v3_roof_top.png)
+
+- *The rooms have no road.* The plan's `bare` runs from the route's start to the foot of the ramp up to the round window: no deck, no rail,
+  no floor of the race-track mode's (`RaceTrackPlan.Bare`, `TrackRoad.Bare`). The cars drive the rooms' own floor, and go where they like
+  through the doors -- all four walls of a room have one. The race-track mode holds them on the floor wherever the plan's `openAreas` are
+  (the sixteen rooms, the long hall: `open_area=` in the car file, RACEMOD.CPP `OpenAreaAt`): the floor's drawn top, 10,640, is under them
+  whatever the boxes say there -- the floor's collision is lower, and at a cube's edge a car had dropped to the hill's ground under the
+  rooms. Every cube of the areas has a scene (`PalaceTrack.CubesOf`), so a car can cross into any of them.
+- *Arrows on the floor* (`floorArrows`, `RaceTrackBuilder.PlaceFloorArrows`): a flat arrow five cells long in front of each room's west and
+  north doors -- the ways on towards room 163 -- and two up the long hall; a decor each, one body for each way they point, nothing touching
+  its box. Every way from the start (room 154, the south-east) to room 163 (the north-west) and its door into the hall goes west or north.
+- *The opponents each take their own way* (`openRoutes`, `RaceTrackBuilder.RouteThrough`): a driver's line from the grid to where it meets
+  the route in the long hall is replaced by the plan's way, a cell apart, with each point's bend for the engine's speed plan. The first
+  driver keeps the route (west along the bottom row, north up the west column -- the test pilot's way); the second goes north up the east
+  column and west along the top row; the third a staircase from room 153, west and north by turns. The design script checks each way, a
+  car's box either side, against the rooms' walls and furniture.
+- *The camera in the rooms* follows the car's own trail (RACEMOD.CPP `OpenCamera`, `TrailStep`): where there is no road the rail camera
+  has nothing to ride, so the eye walks back along the way the car came, as far back and as high as the rail camera's, and looks ahead of
+  the car as it heads. Out of the window it hands over to the rail camera (85 units, 0.6 degrees in a frame).
+- *A bigger roof top.* The hill's flat top was a terrace 10 cells round the rooms and rocks beyond -- the corner of the rooms' L between
+  the long hall and the sixteen rooms was all rocks, up to 3,800 over the roofs. It is flat now over that corner and 24 cells round the
+  rooms' outline (`PalaceCliff.Terrace`, measured from the outline's hull), the rocks only at the plateau's rim
+  (`docs/LBA2_PALACE_ISLAND.md`). The road over it: out of the window north over the cloud sea and round to the east (182 cells, climbing
+  9 % at the most), down onto the roof top east of the long hall, south-east along the north-east coast, back west in a hairpin along the
+  sixteen rooms' north side and over the long hall's roof between its towers and the domes, south down the west side, east along the
+  south side, north up the sixteen rooms' roof's east side between the domes and its edge, and east along the runway: 1,050 cells round
+  the roof top, where it was some 750.
+- *Floors and ceilings that went near the camera.* The engine leaves out a body's polygon with any corner behind the camera's near plane
+  (`LIB386/OBJECT/AFF_OBJ.CPP` `TestVisible`), and the palace's floors, ceilings and walls were rectangles merged a dozen cells long: one
+  passing under or beside the camera went from the picture whole -- the hill's grey paving under the rooms showed through the floor, the
+  sky through the long hall's roof (it was so in the second round too, under the carpet road's edges). The palace's faces are a cell
+  across at the most now (`PalaceIsland.NearRun`; a wall's still runs up it), and the roofs' undersides squares of a cell: what goes is
+  under the bottom of the picture with the near plane at 2,000 or less -- the game's 3,000 at 480 lines high, scaled down for more lines
+  (at the test pilot's 640 x 480 a sliver at the bottom edge can still go). 33,000 faces in 88 bodies instead of 19,000 in 67.
+- *Scene to scene and back at a cube's edge.* A change of cube puts the car a cell on: from half a brick inside the cube it leaves to half
+  a brick inside the next. With an opponent's car just ahead -- nose to tail up the long hall -- that put it against the other car, whose
+  box pushed it back over the edge, into the scene it had just left, a cell on again: every frame, four or five times, the car standing
+  still and the camera jolting 1,000 units. A car that has just come into a scene isn't taken straight back into the one it left for half
+  a second now (RACEMOD.CPP `RaceMod_CubeChangeAllowed`, in OBJECT.CPP `GereZoneChangeCube` and the race-track mode's own crossing): held
+  at the edge, it goes on as the car ahead does. (Every race track's cube changes go through it.)
+- Tested with the test pilot down the route's middle (183.2 s, no power-ups), with power-ups (179.4 s) and along the road's side (185.9 s):
+  won every time, the opponents on their three ways, no car rescued, no cube changed back and forth, the jump into the teleporter and
+  Twinsen awake in scene 95.
+
+## The Emperor's palace, fourth round: no way out through the walls, a bigger roof top, the race ends out of the round window (2026-10-13)
+
+The user: "The inside of our Palace track has bugs, in a few places I've clipped from the inside to the outside. The roof of our Palace
+needs a lot of work. Let's make the roof top bigger, and remove the track from the outside for now. The track on the outside needs to be
+raised in the air looping around the giant turrets that form the roof, which means the existing track section outside needs to go".
+
+![The rooms flooded at a car's size from the start (green): every wall stands, nothing reaches outside](racetrack/palace/v4_sealed_rooms.png)
+
+![Up the ramp to the round window: the finish line is in it](racetrack/palace/v4_window_ramp.png)
+
+![Out of the window over the cloud sea: won, the teleporter's white takes the car in mid-air](racetrack/palace/v4_leap.png)
+
+- *Out through the walls.* The rooms' collision is fine as the island builds it; the race track's build cut it. Where a decor stands in a
+  raised road's space and is kept (the palace's are: `keepAbove`), its box is cut down to end under the road -- and the route through
+  the rooms, a raised road with no road at all (`bare`), counted, at the floor's height: the rooms' east wall, one long box, was cut to
+  end under the floor along its whole length, and the car drove through it and up onto the hilltop (two places on the long hall's west
+  wall the same). Where there is no road nothing is cut now (`RoadHit.Bare`, `ClearDecors`); and a decor only drawn -- its box's top under
+  its bottom -- keeps that box (cut down, it became a box things hit, which the engine culls as a game decor's: walls went from the
+  picture). Checked by flooding the rooms' free floor at a car's size from the start: before, it ran out along the whole east side; now
+  it stays in. And as a net (RACEMOD.CPP `RaceMod_OpenWall`): from an open area's floor a car doesn't move onto ground well over the floor
+  -- the hill round the rooms -- nor out of every area but onto the raised road; held as by a wall.
+- *A bigger roof top*: flat 54 cells round the palace on a plateau reaching 66 (`PalaceCliff`; `docs/LBA2_PALACE_ISLAND.md`). The island
+  grew to 8 x 11 cubes and the palace moved in it; the design script reads where from `PALACE.JSON`, the start line and the grid placed
+  from room 154's own door lines (still in one cube).
+- *The road outside is gone* (until the road round the roof's turrets, high in the air). The race ends in the round window: the finish
+  line at the window's outer face, at the top of the ramp up from the long hall, and the leap out of it -- a carried jump, 108 cells north
+  over the cloud sea between the hill's two arms, 2,600 up at its top -- in which the Dark Monk's teleporter takes a winner: the picture
+  whitens 2.4 s on and Twinsen wakes on Celebration Island. Where the leap would come down there is no road: no car reaches it.
+- *A lost race out of a carried jump* (found here): the race again from the grid was asked for while the car was still being carried, and
+  the next frame the flight put it back on its way and on into the next cube -- the car flew on, came down on the road beyond, drove off
+  its end into the sea, was put back on the road four times. A loss now ends the flight first (`s_arcOn`).
+- Tested with the test pilot: 59.6 s and won (no power-ups), 48.5 s and won (power-ups), along the road's side 62.1 s and lost -- the race
+  run again from the grid; no car rescued, Twinsen awake in scene 95 after each win. The start scene is 290 now.
+
+### The island only just round the palace, the turrets over all of it (2026-10-13, later)
+
+The user: "let's also make the turrets taller and wider", then "Make the island small enough so that it only just fits the inside of the
+palace, then have the turret's on the roof cover the whole of our inside of the palace". The island is the palace's L and a few cells, its
+cliffs straight down to the cloud sea, and Otringal's four domed halls stand on the roof as six turrets 31,000 to 57,000 high over all of
+it (`docs/LBA2_PALACE_ISLAND.md`). The race is as it was -- the rooms, the long hall, the leap out of the round window -- the palace in
+another place in the smaller island (the plan from `PALACE.JSON` again). Checked: the rooms flooded from the start reach nowhere outside;
+the test pilot won in 61.1 s and along the road's side in 56.1 s, and with power-ups lost (64.6 s) and was run again from the grid, no car
+rescued.
+
+### Nothing missing near the camera (2026-10-13, later)
+
+The user: "There's terrain clipping through the palace floor and visible inside as pictured, we should fix this also" (and the roof:
+"a lot of points on our new roof that isn't full and can be seen through").
+
+![Before (left) and after: the ground under the floor in a band along the screen's foot, gone](racetrack/palace/v5_floor_cut.png)
+
+- *Polygons cut at the camera's near plane* (`LIB386/OBJECT/AFF_OBJ.CPP`). A body's polygon with a corner behind the near plane (3,000
+  in front of the camera at 480 lines; `ProjectList` marks the corner, `TestVisible` dropped the polygon) went from the picture whole, a
+  hole as big as the polygon. It now goes in the body's sorted list where it would have gone whole (`QueueClipped`, a 0xFF type byte), and
+  is drawn by its own type's handler -- its colour, light, texture and map points as for any other -- whose `Fill_Poly` call goes, while
+  it is drawn, to `ClipFill`: the corners in the camera's space, cut at the near plane (as the terrain's triangles are, `ClipperZ` at
+  NearClip + 1) and at the sides of a view 30,000 pixels either way of the middle (a screen point is 16 bits), their map points and light
+  in between, projected, faced as `TestVisible` faces a polygon, and filled. A corner right on the camera's plane is moved off it while the
+  handler runs (its W divides by the depth). A body partly behind the camera is drawn even when the points in front are all off the screen
+  (`SomeBehind`). In the isometric view nothing changes.
+- *Drawn close* (`MASK_OBJECT_CLOSE`, Info bit 11 -- no retail body has it; `CLOSE_NEAR` 400 in `AFF_OBJ.H`). Cut at the near plane the
+  palace's floor ended 3,000 in front of the camera, on the screen with the camera tilted down, and the ground under it showed in a band
+  along the screen's foot. A body with the flag has its polygons cut 400 in front instead -- what is nearer than the engine's near plane
+  is drawn too -- and `DECORS.CPP` keeps one of LBA Assembler's drawn-only decors while a corner of its foot is 400 in front (not the near
+  plane's 3,000). The palace's rooms, roof rock and turrets have it (`BrickBuilding.CloseFlag`).
+- *The rooms in every cube they are seen from* (`docs/LBA2_PALACE_ISLAND.md`): the game draws the decors of the 3 x 3 cubes round the
+  camera's, and a room further off, seen down a row of doors, wasn't drawn. (First put down here as what brought back the floor under the
+  camera; that was the cut quads. The copies made the palace slow -- the next section.)
+- *Race-track pieces up to 1,000 a cube* (`IslandDecors.MaxPerCubeRaceTrack`). The builder placed its pieces up to the retail engine's
+  200 decors a cube; with the rooms in every cube the palace's start gate and 23 of its 27 floor arrows were left out (the report even said
+  the gate was "off the island" -- now "its cube full"). A race track is played in this editor's engine only, which draws 1,000.
+- Found on the way: the first cut covered one-colour triangles only -- a quad's header carries its quad bit (0x8000) in `TypePoly`, and
+  the floor's quads never matched.
+- Checked: the test pilot through the rooms, a picture every 40 frames -- the floor to the screen's foot in every one; won in 60.7 s, and
+  with power-ups lost (54.5 s; opponents' skill is drawn anew each run); no car rescued. The Emerald Moon's lap, a picture every 30 frames:
+  the loops and rings as before, 63.5 s. The thirteen other tracks built by the last commit's code and this one: all 42 files the same.
+
+### The palace fast again (2026-10-13, later still)
+
+The user: "Our palace track is now very laggy, and it's very laggy to view in our editor window too, is there anything we can do to
+improve this". Measured with the engine's `perftrace` (headless, 1280 x 720, the test pilot through the rooms and the hall: `perf.sh`):
+the frame took 61 ms (16 a second) in the rooms where the island before the copies had taken 25 ms; the editor's 3D view took 330 to
+760 ms a frame.
+
+- *Every copy drawn.* A cube's decors are drawn with its ground (`TERRAIN.CPP` `AffichageTerrainZBuf`), and the game draws the 3 x 3
+  cubes round the camera's -- the editor's view every cube of the island (`EXTFUNC.CPP` `AffGrilleExtArea`). A body in every cube within
+  the far plane was drawn once for each of them: nine times a frame in the game, some thirty in the editor, each time all its points
+  turned and projected and its polygons filled at the same place. One of LBA Assembler's drawn-only decors -- its box's top under its
+  bottom -- is now drawn once a frame (`DECORS.CPP` `DrawnThisFrame`: the same body at the same place in the island, turned the same;
+  `LoadCube` notes which cube's list is loaded, `ClsTerrainZBuf` starts a frame). A race track's decks, copied into each cube they
+  reach, were drawn twice where they cross a cube's edge: once now. A retail decor is drawn as before.
+- *Out of the view, left out first.* Such a decor wholly behind the camera, off to a side or past the far plane is left out before its
+  points are turned, by its body's own box (its points', worked out once a body; `DecorOutOfView`, `BoxOutOfView`). A few per cent.
+- *The editor's view.* Its cube data was unpacked again every frame: the per-cube caches held 20 cubes' worth (the retail engine draws 9)
+  and, by memory, 10 of the palace's decor lists of 18 KB; the editor goes round the 54 of the palace's island. They hold a whole island
+  now, 16 x 16 cubes (`DEFINES.H` `MAX_*_MEM`, `LBA_EXT.H` `ISLE_CUBE_SLOTS`; some 35 MB): 22 ms of the frame to 0.2. And a cube wholly
+  out of the view is neither loaded nor drawn; the 3 x 3 round the camera, drawn by the loop over the island's cubes, isn't drawn again
+  before it (`DrawHorizon2ZBuf`).
+- *The cut polygons* (the near plane's, above) are cut at 8,000 pixels either way of the middle, not 30,000: the filler cuts a polygon to
+  the screen in 16.16 fixed point and two corners more than 32,767 apart overflowed it.
+- Tried and left: the rooms' faces merged back into rectangles of up to 12 cells (19,000 faces, not 33,000): 10 % faster, but the filler
+  takes a polygon's depth straight across the screen, and on a long rectangle running away from the camera it is too far in the middle --
+  the ground under the floor came through in big patches. The faces stay a cell across (`PalaceIsland.NearRun`).
+
+| | rooms (frame 400) | rooms (1200) | hall (2400) | editor's view |
+|---|---|---|---|---|
+| v2026-10-13c | 61 ms | 58 ms | 31 ms | 330-760 ms |
+| the island before the copies, the engine then | 25 ms | 22 ms | 20 ms | -- |
+| now | 19 ms | 18 ms | 13 ms | 29-54 ms |
+
+Checked: the test pilot through the palace, a picture every 40 frames, as before (won in 58.8 s; with power-ups 49.5 s); the Emerald
+Moon's lap a picture every 30 frames: 81 of 111 the same to the pixel, the rest by a few pixels but the last five, where the grid's
+opponents stood in other places (drawn at random); the editor's views of the palace as before.
+
+## The Emperor's palace, fifth round: one red carpet, the palace's people in the cars' way, pictures on the walls (2026-10-13, evening)
+
+The user: "Let's simplify the flooring inside the palace. Let's make the main road section that's mostly red at the moment pure red just
+with the white arrows. The surrounding area varies a lot, let's keep this consistent with a check pattern based on the green ... The
+retail game has enemies inside the palace, 3 pigs, Stan from Time commando, and lots of soldiers with swords, let's add some of these
+enemies inside as obstacles, perhaps the could chase and attack the cars, or throw random things at them"; then "let's see if we can make
+the colours on the walls more consistent too as they're currently very blocky. Let's also see if we can generate some pictures to hang on
+the walls based on some of the games characters".
+
+![The road one red under its arrow, the floor's checks, Twinsen's picture; a soldier at his post, the red pighead at his work](racetrack/palace/v6_rooms.png)
+
+![A soldier has struck the car in front: it is stopped, stars round it](racetrack/palace/v6_strike.png)
+
+![The long hall hung with the characters' pictures](racetrack/palace/v6_hall.png)
+
+- *The floor and the walls* (the island: `docs/LBA2_PALACE_ISLAND.md`). The carpets the doors lead to are one red under the arrows, and
+  the rest of the floor is checked in the tiles' two greens. The rooms' walls are in bands: skirting, trim, wallpaper, trim, cornice.
+- *The palace's people* (`Terrain/RaceTrackGuards.cs`; `RACEMOD.CPP` `Guards`). They come from the plan's `guards`, which
+  `palace_design.py` places, and reach the engine as `guard=` lines in the race car file: kind, post, floor, the way it faces, leash, its
+  animations, then a (scene, actor) pair for each scene it has an actor in. There are 21 of them.
+  - *19 of the Emperor's soldiers*, sword out (entity 184, body 2: BODY.HQR 261), in their fighting stance (animation 434). There is one
+    in every room but the start's, at a corner of its carpets' crossing, 7 cells off each way, on a leash of 6.5 cells. Four more stand
+    along the long hall's carpet, 8 cells from its middle, either side by turns, on a leash of 7.
+  - *A soldier's attack.* When a car comes his way within 9,000, he walks (animation 437, 1,800 a second) towards where it will pass, no
+    further than his leash from his post, turned to it. He strikes (one of his four strikes, 142, 277, 438 or 439, at random) when the
+    car will be in reach as the blow lands, 600 ms in. A car whose middle is within 1,350 of his is then stopped 1.1 s (stars round it:
+    `CarStruckFor`) and let be for 1.5 s after. Then he walks back to his post.
+  - *Running him down.* A car whose middle comes within 700 of his knocks him back (animation 6, 1.7 s) and keeps 0.6 of its speed.
+  - *Two pigheads*: the red one with the hammer (entity 313, at his work: animation 231) in room 152, and the brown one with the garden
+    tool (314, animation 585) in room 163, where every way meets before the long hall. Each stands 14 and 13 cells off the crossing, on a
+    leash of 1.
+  - *A pighead's throw.* At a car between 2,500 and 11,000 from him, he throws (animation 142) one of twelve of the game's things at
+    random: a vase, a key, a coin, a ring, fruit, mushrooms, tins, a stone, a bone, a sausage, meat or a rock (SPRIRAW.HQR 5, 6, 18, 19,
+    20, 28, 31, 55, 57, 59, 60, 124). He aims at where the car will be when it comes down, and throws as the game throws (`ThrowExtra`,
+    4,500 a second; never a flight of more than 2.4 s), every 2.4 to 3.6 s. A car within 950 of where it lands is stopped 0.9 s.
+  - *Not in the way:* Stan and the yellow pighead with the broom. They race, in the user's line-up: Stan in his time machine, and the
+    road sweeper.
+  - *Their actors.* Each has an actor in every scene within 40 cells of his post, because the game draws a scene's actors only while it
+    is the one about. The actors' scripts are gone: the race-track mode moves and poses the copy in the scene about, and hides it further
+    than 40 cells from Twinsen. In the other scenes they strike and throw all the same, at the opponents there. Before the start they
+    stand at their posts.
+  - *First placed*, the pigheads stood in rooms 157 and 160, which only the opponents' other ways cross. No car came within 11,000 of
+    them, and they threw nothing.
+- *Pictures of the game's characters.* 28 pictures of 8 characters hang on the rooms' walls (`Terrain/Palace/PalacePortraits.cs`). They
+  are painted from the game folder's own bodies when the island is built, onto two pages of the island's object textures, and each is
+  one textured polygon.
+- *Checked* with the test pilot:
+  - no power-ups: won in 61.66 s. Soldiers struck the cars (Twinsen's down to 12 km/h at one), and the pigheads' throws hit Twinsen, the
+    Emperor and the road sweeper.
+  - with power-ups: won in 62.90 s (before the pigheads moved). Another run wasn't over in 72 s: Stan's lightning shrank Twinsen's car
+    for 15 s.
+  - no car was rescued in any run.
+
+## The Emperor's palace, sixth round: round the turrets on the roof, a fireplace that's a teleporter, giants (2026-10-13, night)
+
+The user: "The start area needs changing so the start line lines up with the straight of the track", "The enemies are too easy to avoid,
+perhaps making them bigger would help with this?", the fireplace in room 151 "a teleporter so driving into it brings us out of a second
+fire place", "Add a raised track outside on the roof that loops around the roof turrets", "Enlarge the track width so it's the same width
+as a door way", and "Add an entrance door to the palace in the start room". The island's part: `docs/LBA2_PALACE_ISLAND.md`.
+
+![The route: the rooms (blue), out of the round window and climbing past the long hall's turrets, round the four turrets on the roof
+(white), the leap through the teleporter on the harbour's pillar; the fireplace teleporter (magenta), the guards (orange)](racetrack/palace/v7_route.png)
+
+![On the roof, between the turrets](racetrack/palace/v7_roof.png)
+
+![A soldier twice the game's size](racetrack/palace/v7_giant.png)
+
+- *The start on the straight.* The grid is in front of the palace's new doors in room 154's east wall, on the bottom row's carpet line,
+  and the start line is ahead of it on the same line (the room's chest, which put the grid off the line, is against the north wall now).
+  The grid's back is 12 cells from the doors, so the camera behind it is clear of their frame.
+- *The road round the turrets* (`palace_design.py`, fifth version). Out of the round window a raised road 1,500 over the roof's rock
+  (`RAISE`), 7 cells either side of its middle, 6 in the ways between the turrets:
+  1. north and east over the cloud sea, climbing (at most 9 %), and south past the long hall's turrets;
+  2. on south down the middle way between the four turrets on the sixteen rooms' roof;
+  3. west through the middle way across, south down the palace's west side, east along its south side and north up its east side:
+     round three sides of the south-west turret and two of the south-east one;
+  4. east off the roof's edge: the leap over the harbour (a carried jump, 80 cells) through the Dark Monk's teleporter on its pillar, the
+     finish line at its lip. A win's teleporter takes the car in mid-air, as the round window's leap did.
+  The turrets were made to leave room (`SlotFill` 0.80); a first way, out east over the sea and round by the turrets' north side, had
+  half a minute of road in the fog with nothing beside it. The race is about 2 minutes 40 at the top speed now, 105 seconds of it outside.
+- *The teleporter* (`RACEMOD.CPP` `Teleport`, `teleport=`; the plan's `teleports`, from the island's layout). The player's car driven
+  into room 151's fireplace comes out of room 159's at its speed, looking out of it. It is a short cut past room 155: about 5 seconds.
+  It goes into the other cube's scene as a carried jump does (`NewCube`, the car where it was until the scene is in). The open areas'
+  camera starts its trail again, and the lap forgets where the car was. The race's places find the car on the line again
+  (`PlayerProgress`' whole-line search).
+- *Giants* (`RaceTrackGuards.Install`, `guard_size=`). Each kind's body is twice the game's (`RaceTrackSmallCars.Scaled`), at the end of
+  BODY.HQR and given to its entity as body 20 (`BigBody`). The race-track mode scales their reach, their pace and how near a car runs into
+  them by the same, and how far they see a car coming by its square root. The carpets are four bricks across now, so the guards stand
+  further off them (`CARPET_HALF` 8) and step out further (a leash of 10 cells).
+- *Checked* with the test pilot:
+  - no power-ups: won in 178.44 s; the giants stopped the car more than once; no car rescued.
+  - the teleporter: the car driven straight into room 151's fireplace came out of room 159's facing east at 4,836 units a second, in
+    another cube's scene, from 4th to 1st, and drove on.
+  - with power-ups: won in 157.58 s, no car rescued.
+
+## The Emperor's palace, seventh round: the user's own way round the roof, a spiral up to the take-off ramp, a secret warp (2026-10-13, night)
+
+The user, with a drawing of the island from above: "I've added an image of a proposed new track route for outside the palace it's in lime
+green, starting at the point the current track exits the building, at the end of the route let's add a loop of track going up into the air,
+culminating with a large take off ramp, the spiral part isn't drawn"; and, with a picture of room 151: "Our exit fireplace is in the wrong
+place ... the exit fireplace should be between the two portraits", then "Make the teleport linked fireplaces visually identical to the
+other fireplaces, they're a secret warp point".
+
+![The route (getting redder as it climbs) round the turrets as the user drew it, and the spiral up to the leap through the pillar's teleporter](racetrack/palace/v8_route.png)
+
+![On the spiral: its turns over one another](racetrack/palace/v8_spiral.png)
+
+![Down the straight off the spiral's top to the take-off ramp, the teleporter's ring on its pillar ahead](racetrack/palace/v8_ring.png)
+
+- *The user's way* (`palace_design.py`; the drawing was the island turned a quarter round, north to its left). Out of the round window a
+  hook east over the sea and back west between the long hall's two turrets (they were made smaller for it: `HallFill` 0.70), south down
+  the west side of the second, east along the north-west turret's north side, south down the middle way, west through the middle way
+  across, round the south-west turret (south down the west side, east along the south side, north up the middle way), east through the
+  middle way's east half (5.5 cells either side there: the turrets 16 cells apart), north up the east side and west to the spiral. Each
+  line is where the turrets leave the most room, measured on the island's collision.
+- *Heights*: the road climbs out of the window (at most 10 %) to 380 over the long hall's roof, then to 1,500 over the roof
+  (`RAISE`), and on round the south-west turret 4,500 more (`BRIDGE`): the second time through the middle crossing it passes over the
+  first.
+- *The spiral* over the sea north of the turrets: one and a half turns (`SPIRAL_LOOPS`) climbing 5,000 (`SPIRAL_RISE`), 3,333 a turn, so
+  each turn passes 2,861 or more over the one under it. Off its top a straight east to a take-off ramp rising 1,000 over 12 cells
+  (`KICK`, `RUNUP`): the leap -- a carried jump, the finish line at its lip, 31,216 high -- through the Dark Monk's teleporter. The
+  teleporter's pillar was moved onto the leap's line and raised to it (`PalaceIsland.PillarNorth`, `PillarRise`). A win's teleporter
+  takes the car in mid-air as before; the leap's top is 32,616, under 32,767.
+- *The design script's new check*: where the road passes over itself (the middle crossing, the spiral's turns, the straight off its
+  top), the least height between the two (`the road over itself`), with a warning under 2,800.
+- *Into the wrong cube at a corner* (`RaceTrackScenes.EdgeCrossings`, found here). The crossing zones were made between the cube a step
+  of the road (or of its edge) started in and the cube it ended in. Where that step went through a corner, the zone on each edge led
+  into the cube across the corner and kept the coordinate along its edge: on the spiral, the car on its second turn went into a zone made
+  for its road's edge at the corner of four cubes, arrived a whole cube west, came down on the road below and lost the race. Each zone
+  now leads into the cube across its own edge, where the step meets it. The Desert island's track had it too: six of its scenes had zones
+  into the cube across a corner (scene 58's east and north edges into 62, 67's into 71, and back) -- now gone, its edges covered by the
+  scenes' own whole-edge zones and zones into the right cube (67 into 72). The other twelve tracks build the same.
+- *The secret warp*: room 151's fireplace now leads to a fireplace made between the two pictures on the same room's south wall, the car
+  coming out of it heading north into the room. Both look as every other fireplace (`docs/LBA2_PALACE_ISLAND.md`). Driven into from the
+  bottom row's carpet, the car came out of the other at 4,836 units a second.
+- *Checked* with the test pilot: no power-ups, won in 240.98 s, no car rescued, Twinsen awake in scene 95 after the leap.
+
+## The Emperor's palace, eighth round: only the track red inside, the road high over the roof in the regular colours (2026-10-13, late)
+
+The user, after a picture of the rooms from above: "We have lots of red that isn't the inside track. The red track area should be the
+width of the door way, there should be no other red on the floor. It looks like we've also attempted to round the corners slightly,
+let's keep the corners nice and square. The outside segment of track we have is still terrible. It needs to represent driving over the
+roof top, looping between the roof turrets, more height. We also need the outside track colour to be our regular track colour with a
+red/white border on the edge".
+
+![The road over the roof from above, by height: out of the window, high over the long hall and the roof, under itself at the middle crossing, up the spiral to the take-off ramp](racetrack/palace/v9_route.png)
+
+![High over the roof's rock between the turrets](racetrack/palace/v9_roof.png)
+
+![Between the domed turrets](racetrack/palace/v9_turrets.png)
+
+- *The red inside* is the race's track only, as wide as the doors with a square corner (`docs/LBA2_PALACE_ISLAND.md`, "Only the
+  track red"). The route runs along its middle as before: the bottom row's door line and the west column's.
+- *Higher* (`palace_design.py`; the user's way round the roof kept as it was). Before, the road came over the long hall's roof 380 over
+  it and ran round the turrets 1,500 over the roof: from the car it was a road on the ground between the turrets' walls. Now it climbs
+  out of the window over the sea (at most 10.7 %) to 2,300 over the long hall's roof where it comes in between its turrets
+  (`OVER_HALL`), and on (at most 5.5 %) to 9,000 over the roof by the first time through the middle crossing (`HIGH`: 28,216 -- the
+  turrets are 35,000 to 47,500 high). Round the south-west turret it comes down 3,000 (`DIP`), so the second time through the middle
+  crossing it passes under the first; then level to the spiral, up the spiral 5,000 to 30,216 and the take-off ramp to the lip at
+  31,216 as before. The road's two ways through the crossing are 3,000 apart, the spiral's turns 2,861 (the least: 2,800).
+- *The regular road*: out of the round window the deck theme `standard` (dark asphalt, red and white curbs, grey rails and piers)
+  instead of `palace` (the palace's pale stone, turquoise edges and rails), which was lost in the haze. The ramp up to the window keeps
+  the carpet's red.
+- *Checked* with the test pilot: no power-ups, won in 242.41 s; power-ups, won in 245.56 s; no car rescued, through the teleporter's
+  ring at 4,836 units a second, Twinsen awake in scene 95.
+
+## The Emperor's palace, ninth round: the user's new way over the roof -- two loops round the long hall's turrets, a weave, a jump (2026-10-13, late)
+
+The user, with a drawing over a picture of the roof from above: "I've re-drawn the roof portion of our palace track again. The previous
+version we had was too many straight lines and wasn't very interesting. This track exits the palace at the same place, loops around twice,
+one loop on top of the other, a short straight into another double loop going down, then looping around and weaving in and out of the
+buildings, as much as possible we should avoid straight track sections. The pink dots are a jump and the black dot is where the race ends
+in a large jump where we'll then zone transition to CELEBRA2.ILE"; then "our current outside track section had very wide edges at the side
+of the track, these should more closely resemble our other tracks".
+
+![The road over the roof from above, by height: the two loops round the long hall's turrets, the weave round the four turrets, the jump (dashed, from the pink dot) and the leap off the finish (the black dot)](racetrack/palace/v10_route.png)
+
+![Climbing round the long hall's first turret, the loop's second time round overhead](racetrack/palace/v10_loop1.png)
+
+![Coming down round the second turret](racetrack/palace/v10_loop2.png)
+
+![Weaving between the turrets, the road's other level beside it](racetrack/palace/v10_weave.png)
+
+![The jump along the strip north of the north-east turret](racetrack/palace/v10_jump.png)
+
+![Up the middle way to the finish line, the leap's lip](racetrack/palace/v10_home.png)
+
+- *Reading the drawing.* The user's picture was the editor's 3D view from above, in perspective: the higher a thing, the further from the
+  picture's middle it shows. A camera straight down was fitted to the old road in the picture (its heights known: `PALACE.JSON`, the
+  plan) -- 77 % of the road's points fell on its asphalt -- and the drawn line read through it onto the island, at 22,000 high.
+- *The way* (`palace_design.py`: the loops are ellipses, `HELIX1`, `HELIX2`; the rest smooth curves through points in the middle of the room
+  the turrets leave, measured on the island's collision). Out of the round window round the long hall's first turret one and a half
+  times, clockwise seen from above, climbing -- the second time round over the first; across to the second turret and round it the other
+  way, coming down -- its west side twice, one over the other; south down the sixteen rooms' west side, round the south-west turret
+  (east along the south side, north up the middle way, west through the middle way across), north by the north-west turret's west side
+  (over the way down: the road there twice), east along its north side to the jump; east along the north side, south down the east side,
+  west along the south side and north up the middle way -- over the way up it before -- to the finish. The long sides weave a little
+  from side to side; no bend is tighter than 11 cells.
+- *Heights.* The ramp up to the round window is 80 cells long now and the road goes through the window at 14,600 (it was 11,980: the
+  first loop has to be over the long hall's roof a third of a turn on). The first loop climbs to 30,500, the second comes down 3,400 each
+  time round to 26,339, the way round the sixteen rooms comes down to 23,400 by the north-west turret, the jump's lip is 24,400 (its top
+  25,900), home climbs to 29,000 and the finish line is at the leap's lip at 30,000 (its top 31,400). Where the road passes over itself the
+  two are 2,915 apart at the least.
+- *What the drawing couldn't have.* Its jump went over the north-east turret's west wing, 46,000 to 56,000 high -- past what a car can
+  reach (32,767): it flies along the strip north of that turret instead (44 cells, a carried jump: `arcJumps`). Its finish (the black dot)
+  was by that turret: the finish line is 25 cells west of it, in the middle way, and the leap goes north off the roof over the cloud sea.
+- *The finish.* A win sets game variable 79 (the car file's `win=79 1`: `PalaceTrack.StatueVar`, `RaceTrackService`'s DreamInfo
+  WinVar), so the dream ends on Celebration Island with its statue: the engine draws it from CELEBRA2.ILE by that variable. The
+  teleporter's pillar is back by the harbour's quay, off the race's way (`docs/LBA2_PALACE_ISLAND.md`).
+- *The road's edges like the other tracks'.* The palace's road had its curbs 3.5 cells out and its deck to 5.5 to 7, a flat rail top 2 to
+  3.5 cells wide either side. Now the deck is 4.5 cells either side (5.5 up the ramp and through the window), its asphalt to a cell in
+  from the edge and its curbs to a quarter of a cell in (`asphaltHalf`, `curbHalf`, `raisedHalf`): the Island of the Francos', the
+  Volcano's, the Emerald Moon's.
+- *Two lines on cubes' edges.* The finish line first stood at z 576, a cube's edge: the car flew over it uncounted, came down off the
+  leap and was rescued. The finish line and the jump's lip are a few cells off the edges now.
+- *The design's checks* (`palace_design.py`): a car's box round any place across the road it can be (the road's half-width less a curb's
+  width and a quarter, either side, across the way the road runs, and the car's box round that) -- a square round the road's middle as wide
+  as that was too much on a slant; the jumps' flights; where the road passes over itself; the tightest bends and the longest straight.
+- *Checked* with the test pilot: power-ups, won in 290.85 s; no power-ups, won in 314.60 s (stopped by three of the guards on the way);
+  no car rescued, both jumps carried, game variable 79 set, Twinsen awake in scene 95. The race is long: some 5 minutes.
+
+## A woman off the town circuit, a clean arrow, smooth kerbs, a crash, a fairer refinery (2026-10-14)
+
+- *Off the town circuit.* The user: "Our citabau.ile track has an NPC on the track behind the lighthouse that we need to remove". She was
+  the fiancée (scene 46, entity 113): her script puts her at a random one of track points 9 to 13 behind the lighthouse and walks her
+  between them, and she follows Twinsen when he comes within 1,300 -- onto the road. The track kept her as one of the lighthouse's story
+  people (`RaceTrackIsland` Citadel's `StoryEntities`), but no other script of the scene refers to her and the storm's end needs only
+  Raph by the door and Twinsen and Zoe on the top: she is removed with the scene's other actors now (12 removed, 6 left).
+- *The first arrow past the start line* (the town circuit): "looks corrupted". The road there runs 11 degrees off the nearest of the
+  eight directions an arrow is drawn exactly in, and an arrow at any other heading (`ArrowFree`) had its edges step by half cells. Now
+  the arrow may be turned up to 16 degrees (5, 8, 12, then 16: `ArrowSnapDegrees`) to land on one of the eight, and a straight no spot
+  of which fits within 16 degrees gets none. That arrow is a clean one pointing west at (519.3, 689.3) now. No other island's arrows
+  changed (each island built by the program before and after, from the same files).
+- *Smooth kerbs where the lap runs close to itself.* The user, with a picture of the Desert island: "Some of the red/white lines around
+  the track on desert.ile aren't smooth lines". A cell takes the smooth kerb (`KerbCells`: the kerb texture mapped by the road's own
+  coordinates) only where it is plainly one road's; two kinds of cells weren't and were painted whole, red or white -- a kerb in steps:
+  a jump's ramp (on the Desert island it runs on a slant: its kerbs stepped all the way up), and a cell another part of the lap came
+  near at all, even with only its verge or the gap under a jump's flight. Now a ramp is plain road, and another part of the lap only
+  counts where its kerb comes within reach of the cell (more than three quarters of a cell past its kerb, `KerbClear`, it doesn't).
+  What is still painted cell by cell is where two kerbs really overlap: the pit lane's joins (27 cells), a hairpin's inside (11) and
+  the jumps' lips (4: the lip's road is the hatched warning stripe, and the kerb texture would lay asphalt into it). The Desert island
+  has 264 more smooth kerb triangles, Mosquibees Island 188, the storm track 88, the town circuit 42; Polar Island changes too.
+
+![The Desert island's ramp before: its kerbs and the lower road's in whole cells](racetrack/desert_ramp_kerbs_before.png)
+
+![After: cut along the slant (the two red squares at the hatched stripe's ends are the jump's lip)](racetrack/desert_ramp_kerbs_after.png)
+
+- *A crash in a race.* The user: "I've just had race mode crash whilst testing". The engine's log (`adeline.log`'s CRASH block, the
+  addresses read against the build's symbols) put it in `GiveTerrainCol` (3DEXT/MAPTOOLS.CPP), from the hero's animation step
+  (`DoAnimExt`, `ReceptionObj`): on the Island of the Francos, scene 257, the car by the cube's north edge after lap 4. The ground's
+  collision is read cell by cell from the island's cache with no check that the cell is in the cube -- a place a little off its edge read
+  outside it, and past the cache's end, memory that isn't there. `GiveTerrainCol` and `GiveTriangle` take a place outside the cube's
+  64 by 64 cells as no ground now (as off the island). Three races of three laps since, through that scene each lap: no crash.
+- *The Island of the Francos' refinery: a safe way through.* The user: "Our Knartas.ile track is a little too chaotic, in places we have
+  both steam and oil attacking obstacles for the player at the same time, and in lots of places at the same time, let's tweak this so
+  we're always providing a safe path through so they can avoid getting hit if they drive well". Every one of the 16 gantries over the
+  road blew steam from one side (5.5 cells across, three quarters of a cell past the road's middle) and dripped oil 2.1 cells to one
+  side of the middle, the side changing gantry by gantry -- where the oil fell on the side the steam didn't reach, 0.4 of a cell of road
+  was left; and the pipeline from the factory dripped three times across the road where it passes over it (2.5 cells apart, a slick
+  taking a car 1.5 cells from its middle: under a cell left). Now (`PipeRun.OneSide`, `PipeLine.OneSide`, the plan's `oneSide`):
+  - a gantry either blows steam or drips oil, never both: every other one of a steam stretch blows (9 jets, 15 before), the ones between
+    drip (7 drips, 16 before);
+  - the steam blows to the road's middle and no further;
+  - a gantry's drip falls on the side the steam blows from that lap -- the driver's left on odd laps, his right on even ones (the
+    engine's `drip=` takes the road's middle under it as two more numbers and mirrors the drip through it on even laps);
+  - the pipeline drips once where it passes over the road (two places), on one half, its slick clear of the middle (`SlickClear`).
+
+  So on each lap the steam and the gantries' oil are all on one half of the road and the other half is clear; at the pipeline, the half
+  away from its drip. The test pilot, which keeps to its line, shows it: on the odd laps (steam from the left), where its line runs on
+  the right it was never hit, and its only hits were where its line runs exactly down the middle (0.0 cells over); on the even lap its
+  line runs on the steam's side through the second and third stretches and it was hit there, and every one of its skids on a drip was
+  on an even lap. The engine's log says now how far over the middle a car was when the steam hit it, and whether the oil it skidded on
+  was a pipe's drip.
+
+## The jumps' strips across the whole ramp, missed checkpoints called out, Otringal's pier smoothed, a shorter landing, the Volcano's pit lane (2026-10-14, later)
+
+- *A jump's strip across the whole ramp.* The user: "Let's extend the jump zone for Mosquibe.ile fully across to cover the left side. A
+  car has to be almost fully off the track to jump there, but it should still work for them". The strip of scene zone that starts a
+  jump's flight held the cells whose middles were within the kerbs; past the kerb the ramp has a cell of rock shoulder and its blocking
+  walls (`RampShoulder`, 2.5 cells), and a car there drove off the lip into the gap. On Mosquibees Island the strip ran from 5 cells left
+  of the road's middle to 4 right of it; now (`LayJump`) it holds the ramp's whole top, kerbs, shoulders and walls -- 7 cells either side
+  (cells 520 to 534, the road's middle at 527). Checked with the test pilot driving the ramp 5 cells to either side of the middle: both
+  flew and landed on the far ramp. Every island's ramp jumps get it (the Desert's, the storm track's, Mosquibees', the lava lake's
+  three); on each, the lap's line passes through the wider strip only at the ramp itself (no other part of the lap could set it off).
+- *Missed checkpoints, for testing.* The user: "add in some code that alerts me for when I miss a check point in a track complete with
+  the check point number, also add this to the log file". The moment the car is past the next checkpoint without having crossed it -- a
+  later one crossed first, or the car 16 cells further round the lap than it (`RACE_MISS_PAST`) -- "Missed checkpoint N" shows on the
+  display for 4 seconds, and the log (`adeline.log`) has a line: `MISSED checkpoint N of M on lap L: <how> -- the car in cube (x,z) at
+  (x, y, z), the checkpoint's line in cube (x,z) from (x0, z0) to (x1, z1)`. Once a checkpoint a lap; crossing the start line with one
+  still missed now says "Missed checkpoint N: no lap" on the display too (it was only in the log). How far round the lap the car is
+  counts the road's height (`CarAlongGuide`): round Mosquibees Island's mountain, on the ground, the lap passes over itself and the
+  race's own position tracker -- which counts height only on a raised road -- put the car on the loop above, and checkpoint 6 was
+  called missed before the car came to it. Checked: two laps of Mosquibees and of Otringal with none called, and a car moved past
+  checkpoint 2 called at once with the right number.
+
+![The display when a checkpoint is missed](racetrack/missed_checkpoint.png)
+
+- *Otringal's pier, smoothed.* The user, with a green line drawn over the map: "This section of track on Otringal, the corners are a
+  little tight, let's change the track so it matches the green line in this image instead to smooth them out". Out from under the
+  roulette wheel the road turned south at the pier's yard, west north of the little house and south again over the sea -- three
+  corners 4 cells round (the builder's 6). It is one straight now from the first corner to the last, both 12 cells round
+  (`otringal_design.py`: the corner at (420.3, 553) gone, the others widened); the lap is 4 cells shorter. Two laps with the test
+  pilot: 73.7 s from the standing start, then 65.5 s.
+
+![Before: the zig-zag west of the wheel](racetrack/otringal_pier_before.png)
+
+![After: one sweep](racetrack/otringal_pier_after.png)
+
+- *The spaceship's landing.* The user: "The space ship that lands on Otringal before taking off again, let's reduce the time it's
+  blocking the track slightly". It blocked the road while under 1,200 over its pad: the end of its touch-down, its 2.2 seconds on the
+  road and the first second of its climb -- some 3.6 seconds a landing. It stands on the road 1.3 seconds now (`RACE_SHUTTLE_LANDED`):
+  some 2.7 seconds.
+- *Volcano Island's pit lane, easier to get into.* The user, with a picture of the minimap: "The pit lane on volcano island
+  (souscelb.ile) is too tight to drive into, are we able to bring the section of track there out slightly further to the left so we can
+  widen the angle coming into the pitlane". The road up the plateau's west side turned onto the north straight square, 6 cells round,
+  and the deck only widened for the pit lane -- on that bend's inside -- after it: the bend's inner edge was all but a point. The bend
+  is further out now, north-west (its corner 4.5 cells north and 1.5 west of where it was, 9 cells round), the road leaving it
+  east-south-east, across towards the pit lane's side, and onto the straight 3.5 cells before the fence (`volcano_design.py`:
+  `PIT_BEND_X`, `PIT_BEND_OUT`, `PIT_JOIN_X`); the deck widens from the bend's middle, so its inside is a broad curve straight into the
+  pit lane. The start line, the grid, the fence and the waiting spots are where they were. (The widening's end had been found as the
+  lap's point nearest (501, SZ) -- which the climb's second turn passes over again, higher: with the lap a few points longer it was
+  taken there, and the pit lane's width ran on round the whole first turn of the climb. It is the first such point after the pit lane
+  now.) Checked with the test pilot steering for the pit lane from the approach: on the old bend it ran into the bend's inside and
+  stayed there; on the new one it drove into the pit lane and down it (three runs); a lap on the line, 66.95 s.
+
+![Volcano Island's bend onto the start straight, turned as the minimap shows it: before (left) and after](racetrack/volcano_pit_bend.png)
+
+## Checkpoints, round by round with the missed-checkpoint alert (2026-10-14, evening)
+
+The user drove the tracks with the new alert and asked, track by track: "CITABAU.ILE check point three needs extending to the left";
+"Let's move check point 3 for CITADEL.ILE so it's further round at the middle of the corner"; "CITADEL.ILE let's extend checkpoint 4
+slightly further to the left"; "Desert, extend check point 7 slightly both left and right, then check point 8 extend left"; "On
+Desert.ile we need to add a check point between 12 and 13, so the corner can't be skipped"; "Desert, extend check point 17 slightly
+left". ("Left" is the driver's, the way the lap runs.)
+
+- *Every line reaches further on its corner's inside* (`PlaceCheckpoints`: `CheckpointInsidePastEdge`, 6 cells past the road's edge
+  where nothing stops it short, 2 on the outside as before) -- the side a car cuts a corner on. The town circuit's checkpoint 3 (a
+  left-hand bend north of the shop, the square on its inside open) reaches 10.5 cells to the left of the road's middle now (6.5), and so
+  does the Desert's 17 (18 now: see below) -- both were the inside. Whether a line can be placed is decided as before: no island has a
+  checkpoint more or fewer for it.
+- *The plan's own adjustments* (`RaceTrackPlan.CheckpointTweaks`, `CheckpointTweak`): a checkpoint picked by its number (as the race
+  counts them, the builder's, before any added) or by a place near its line, moved to the lap's point nearest `at` -- reaching across
+  the road there at least, however near another part of the lap is -- its ends `left` and `right` cells further out; or (`add`) a line
+  of the plan's own at `at`. The storm track (`citadel_storm_design.py`): 3 at its hairpin's middle (lap point 65; the builder had
+  stepped it 4 cells back, the hairpin's way out 4.8 cells from where its inside end has to be), 4 1.5 cells further left. The Desert
+  island (`track_plan.json`): 7 2 cells further left (its right, the inside, 4 further already), 8 2 further left (its inside, held at
+  the kerb by the hairpin's own way out, which runs along the line), and a new line at the top of the hairpin between 12 and 13 (lap
+  point 1378), its inside end at the V where the hairpin's two legs' kerbs meet (9 cells) -- from one leg to the other a car crosses
+  it; the Desert's checkpoints after it are numbered one more.
+- `RT_CPDEBUG=1` for `buildtrack` lists each checkpoint: its lap point, how far it reaches either side of the road's middle and which
+  side is the inside.
+- Checked: the storm track (five laps), the town circuit and the Desert (a lap each) with every checkpoint counted in order; on the
+  Desert a car moved from the hairpin's way up to its way down, past the top, was called at once: "MISSED checkpoint 13 of 23 on lap 1:
+  23 cells further round the lap".
+
+### The Island of the Francos' huts: nothing in the way along the rails
+
+The user, with a picture of the road going in under a hut's dome: "The right side of the track on Knartas.ile in this position seems to
+have something us stopping when we're hugging the right side of the track". A hut the road is driven through
+(`RaceTrackDriveThrough`) is cut into walls either side and a roof, each with its own box -- and the engine stops a car at any decor's
+box. The walls' boxes were to be kept out of the passage, the deck's width and `Margin` from the road's middle, but the road through a
+hut was every point of the lap within 40 cells of it, and the Francos' lap passes 25 cells beside two of them: the passage was measured
+from that other road's middle, and the walls' boxes stayed where they were -- hut 88's right wall's 3.9 cells from the middle, hut 84's
+left wall's 3.7, with the deck 4.75 and 4.4 to 4.6 wide. Now the road through a hut is the stretch of the lap through it (`PassageReach`
+cells either way from its point nearest the hut, at the height nearest the hut's floor), and the passage is as wide as the deck there
+(its own half width, point by point, and `Margin`). No decor's box comes within 0.6 of a cell of a rail anywhere on the lap now. Checked
+with the test pilot driving 4 cells to the right through hut 88 and to the left through hut 84: through both at speed; the same on a
+build without the fix stopped dead at hut 88's wall. Otringal's tunnel (its drive-throughs) is cut as before.
+
+## The Emperor's palace, eleventh round: the roof road higher, the jump half as long (2026-10-14, night)
+
+The user: "The inside of the Palace track is good and should be left alone for the moment, however the outside of the palace track is
+too low to the ground, let's lift the track up, so we're hugging tighter to the buildings, so we get more of a sense of driving through
+the roof tops. Also the outside jump is far too long and needs to be shorter". The inside is as it was (`palace_design.py`: only the
+outside's heights and the jump changed; the way the road goes is the user's drawing's, v10's).
+
+- *How high it can go.* No higher than some 30,600 anywhere: positions are 16-bit (32,767) and the rail camera rides 2,100 over the
+  road. The first loop already tops out there (30,500), and the finish's leap needs its 1,400 over the lip. The turrets' walls rise from
+  the roof (19,216) to 34,000 to 38,000 (their domes further), so the road runs up their sides, not over them.
+- *What holds it down.* Where the road passes over itself the decks are 2,800 apart at the least: the second loop's west side twice
+  (the second time is its way out), and round the north-west turret the road passes under its own way down the west side and beside
+  the second loop's south side -- that stretch stays the lowest.
+- *The heights now* (v10's in brackets): the second loop in at 30,500 (30,300) and down 3,300 a turn (3,400) -- out at 26,656 (26,339);
+  round the sixteen rooms to 26,000 at the middle way's west end (25,000); under the way down the west side 23,800 (23,400); then, past
+  the second loop, up to the jump: its lip 26,000 (24,400); home 28,500 to 29,500 (28,000 to 29,000); the finish's lip 30,500 (30,000),
+  the leap's top 31,900. The least height between two of the road's ways is 2,829.
+- *The jump* along the strip north of the north-east turret is 22 cells (44): lips at x 463 and 485, its top 900 over them (1,500).
+- Checked with the test pilot: won in 286.82 s, no car rescued, both jumps carried (the short one set down on its landing at 26,000),
+  game variable 79 set, Twinsen awake in scene 95.
+
+### The rooftops: sixty of them, lower, round the road (2026-10-14, night)
+
+The user: "Let's lower the roof tops. Are we able to add in more roof tops? I know we've previously had performance issues on this
+level". The four halls over the sixteen rooms and the two on the long hall stood 22,500 to 47,500 over the roof (19,216) -- the road,
+at 23,800 to 30,500 and no higher, ran far down their sides. Now (`PalaceOutside`: the rooftops) Otringal's four palace halls stand
+over the roof sixty times, 13 to 34 cells across, as tall as their own shape (0.8 to 1.35 times their width up: 7,000 to 12,000 over
+the roof), their tops round the height of the road nearest them -- 1,500 over it and 2,000 under it in turn -- packed in an order of
+their own over the sixteen rooms' roof and the long hall's, two cells apart, none within the road's half width and 2.5 cells of it
+unless the road is 1,800 over its top (`RaceRoad`: the palace's track built into the program, its points out of the rooms). The
+route's checks (`palace_design.py`) are all clear against them and give the same plan.
+
+![The roof from above: the road and the sixty rooftops round it](racetrack/palace/v12_rooftops_top.png)
+
+![From the car: the domes round the road at its height](racetrack/palace/v12_rooftops_race.png)
+
+- *What it costs.* The test pilot over the roof, 6,000 frames: 10.3 ms a frame with the six turrets, 10.6 with sixty rooftops; the
+  busiest cube 551 objects of the 1,000 a cube holds (406 with thirty); 131 bodies of the outside (each size its own body), well inside
+  the island bodies' cache (1,024 bodies, 16 MB). The earlier slowness was each copy of a decor drawn once for every cube that listed
+  it, fixed then (the "lag fix" of 2026-10-13): a copy is drawn once a frame now.
+- Checked: won in 276.43 s, no car rescued, both jumps carried, Twinsen awake in scene 95.
+
+## Wannies Island: through a giant frog, down the elevator tower, a shortcut over a jump (2026-10-14)
+
+The user's drawing for `PLATFORM.ILE`: "Pink is jump, and purple is a boost pad. The massive blue circle is to be a giant frog that we
+drive through. The frog repeatedly opens and closes its mouth and extends its tongue as it does so, so we have to time the jump into the
+mouth. Exiting the frog we go up a slope to the top of the tower, then there's a loop coming down the tower looping around about three
+times, into the start finish line and the pit lane". Asked how the pieces fit: the boost pad and its jump a shortcut beside the road
+round the right ("Both: jump as a shortcut"); the road built up to the frog's jump, "which then lifts the frog higher into the air, this
+will then make the slope to the top of the tower less steep"; a car meeting a shut mouth bounced back.
+
+The plan is `tools/RaceTrackPlan/wannies_design.py` (the drawing read off and laid on the island, as the other tracks'), the island
+`RaceTrackIsland.Wannies` (outside scenes 96-99), the line-up the Wannie miner in his undergas bulldozer (the one to beat), a Wannie in a
+mine cart and the old Wannie on her firefly tart.
+
+- *The lap* (812 cells, all raised road): from the pier south of the Wannies' elevator round the east island -- north of its buildings,
+  out round the mine's machinery -- west along its south side, the west island's south loop, and north-west up to the frog, climbing all
+  the way (2,600 to 19,500, 10.7 %); the jump into the frog's mouth at 20,400; through the frog and out of its back, up over the lava to
+  the elevator tower's top (25,000, 13.8 %) and three times round it down a helix (11.5 %) onto the pier.
+- *Scene 98's own script.* The hero's life script there plays the elevator's cutscene while game variable 107 is 0 (and puts Twinsen at
+  its point 7, on foot): the island holds 107 at 1 (`HeldVars`, the race file's `vargame=`).
+- *A checkpoint just past the start line* -- here the corner after it -- was never taken: the car crosses it in the frame it crosses the
+  start line, and the lap begins after the checkpoints are counted. None is placed within 6 cells after the line now (no other track had
+  one there).
+
+![Down the tower's helix](racetrack/wannies/tower_helix.png)
+
+### The frog
+
+![The frog's tongue shooting out at the car coming up the ramp](racetrack/wannies/frog_tongue.png)
+
+- *The body* (`RaceTrackFrog`, one body of 417 points, 365 polygons and 9 spheres): a throat the road's width through it, mouth to back
+  (18 cells, straight along the drawing's line); its skin ring by ring round it -- a wide head, its back sloping down to the rump round
+  the way out; bulging gold eyes, nostrils, front legs to its hands and folded hind legs to webbed feet, on a lily pad on a stalk down to
+  the ground (14,000 under it). Bone 1 is the lower jaw, hinged at the back of the mouth: its top the mouth's floor -- the road -- while
+  the mouth is open, turned up it fills the mouth like a drawbridge (a pale throat sac and walls under it). Bones 2-4 are the tongue,
+  folded back along the floor; turned over the lip it shoots out of the mouth at the cars coming and curls down towards the ramp.
+- *Drawn by the race-track mode*, not as a scene's actor: posed by the mode's own clock every frame -- the jaw and the tongue turned
+  straight in the body's frame (`CurrentFrame`), no animation of the game's -- and drawn into the island's background after the ground
+  and the decor, its depth written (`RaceMod_DrawBackdrop`, from `AffGrilleExt`). So the cars, drawn after it and tested against the
+  depth, are hidden by it where they should be and seen in its throat; an actor would have been sorted against the car by its box, and
+  the car inside the frog's box drawn over it or under it whole. Its polygons are cut close to the camera (the body's close flag): the
+  camera is in its throat.
+- *The mouth's cycle*, 4.4 s: opening 0.32 s, open 2.5 s (the tongue out and back in its first 0.8 s), shutting 0.32 s, shut. A car is
+  let in until 0.6 s before it shuts -- the time to get past the jaw -- and the jaw twitches three times then: too late.
+- *A shut mouth* (`frog=`, `FrogBounce`): the carried jump into it (its landing is the mouth) is broken off at the jaw's lip, and the car
+  thrown back over the gap in an arc and put down on the road 8 cells before the ramp's foot, facing on, stopped -- 1.3 s.
+- *The opponents* coming up to it are slowed, from 40 cells out, to come to it as it opens (`FrogCap`), their arrival kept till they are in.
+- *The road through it* has no deck of its own (`TrackRoad.Hidden`: no pieces, no piers; the mode's floor as anywhere), narrower up the
+  ramp and through the frog (3.5 cells either side); the camera kept low in its throat (a tunnel with no pieces).
+
+![In its throat](racetrack/wannies/frog_throat.png)
+
+![The mouth shut: the car thrown back](racetrack/wannies/frog_shut.png)
+
+![The body, open with its tongue out (the frog view of `frogbody`)](racetrack/wannies/frog_body.png)
+
+### The shortcut
+
+Where the lap turns west at the east island's south-west corner, a branch of the raised road goes straight on north-west, over the boost
+pad, bends west up a ramp (9 cells, 800 up) and jumps west over the lap's dip round the channel (11.5 cells, 350 up: no jump lands lower
+than it took off), landing on the lap at its next corner and on along it. As long as the lap's stretch it skips (50 cells); what it gains
+is the boost pad's speed, carried over the jump.
+
+- *A branch of the raised road* (the plan's `branches`, `BranchRun`; the engine's `raised_lap=`, `raised_branch=`): its points after the
+  lap's in the engine's raised road, behind a point with no width, its first on the lap's road where it leaves, its last where it comes
+  back. The engine finds its floor and keeps the car on it as on the lap (the nearest road the car is on); its ends are not open ends
+  (the lap's road is there); the lap's loop is the lap's own points; the camera that rides the road behind the car goes on along the lap
+  past a branch's ends, and the distances between the road's points that the cameras and the floor's levels go by run through them.
+- *Its decks*: where it lies on the lap's road (its first cells, its landing) it has none of its own; 40 over the lap's deck where the
+  two overlap; neither road has a rail across the other's deck there (`OpenRails`: a deck piece's rail down to its curb), so the two
+  part at a V. Its piers stand clear of the lap's road.
+- No checkpoint on the stretch of the lap it goes round.
+- Checked with the test pilot taken off its line at the fork: on the boost pad (120 km/h), carried over the jump at 17,066 units/s,
+  down on the lap.
+
+![The fork: the shortcut straight on, its boost pad](racetrack/wannies/shortcut_fork.png)
+
+![Over the jump](racetrack/wannies/shortcut_jump.png)
+
+### Second round: two turns down the tower, a straight start with its own pit lane, a shortcut that is one (2026-10-15)
+
+The user: "Let's reduce the downward loops around the elevator by one so it's a slightly steeper spiral downwards. Let's also refine the
+start/finish line ... The main path now goes straight on, with a thinner pitlane to the side"; then: "change the jump section so it acts
+as a short cut. Let's add some boost pads around the other loop of track that the jump skips so if driven well it's the same as if not
+quicker than taking the jump"; and: "Our current boost pad isn't fast enough so we'll need to increase the speed boost it offers".
+
+- *Two turns down the tower* (three before): 257 cells from 25,000 to 7,000, 13.7 % (11.5 % before). The lap is 685 cells (812).
+- *The start straight* goes straight on south from the helix (x 558.5) over the lava east of the pier -- no more swing west onto the
+  pier and back -- the start line on it at z 497 under the gantry, the grid behind it. *The pit lane* is a branch of the raised road of
+  its own, half as wide (2.25 cells either side): off the straight's west side just out of the helix, down the pier's east side (x 551)
+  past the start line, the opponents' three waiting places along it, back onto the straight before it bends onto the east island. The
+  start line reaches across it too (a car in the pits crosses it), and no checkpoint is on the stretch it runs beside -- that stretch
+  runs round the lap's seam now, which the builder's checkpoint rule for a branch didn't allow for before.
+- *The shortcut*: off the lap where it did before, over its boost pad, then up a ramp north-north-west to a take-off at (510, 533) -- the
+  user's pink -- and a leap that hangs in the air 2.4 s, curving west over the S's turn, down onto the lap's road past the turn (the
+  other pink): the loop round the west island's south is left out (82 cells instead of 196). For the leap to be up onto the lap (no
+  jump lands lower), the lap climbs only gently round that loop (4.5 %) and 13.5 % elsewhere, the start straight at 6,500 and the
+  helix's foot at 7,000 (2,600 and 3,300 before): it takes off at 15,390 and comes down at 18,187. The leap's time in the air is its own
+  (the engine's arcjump='s sixth number: the car carried over the gap at the speed that takes), the camera beside it.
+- *Round the loop it leaves out*: three boost pads (just past the fork, on the way west past the corner, on the S's lower leg), stronger
+  than the shortcut's own: 2.1 times the car's top speed. With the user's car (110 km/h) the loop, boosted all round, takes about 3.1 s
+  from the fork to where the leap comes down, the shortcut about 3.4 s; with the setup's default car (34 km/h) the shortcut is still
+  about a second and a half the quicker.
+- *A boost pad's speed* is now at least 1.7 times the car's own top speed (RACEMOD.CPP `PanelSpeed`), 120 km/h at the least as before
+  (for a car of the default setup nothing changes); a pad with a lift of its own (boostpanel='s eighth number, hundredths) has its least
+  speed as much higher -- the loop's, 148 km/h for the default car.
+- Checked with the test pilot: a lap of 70.5 s (one bounce at the frog) over the loop's pads; taken off its line at the fork, on the
+  shortcut's pad, the leap carried (two scene changes in the air), down on the S. The other 13 tracks build the same, byte for byte.
+
+![The start: the gantry over the straight, the pit lane beside it](racetrack/wannies/start_pitlane.png)
+
+### Third round: a longer, wider pit lane, the frog's mouth open longer, the car the player's up to the lip (2026-10-15, later)
+
+The user: "The pit lane is short, narrow, and has a strut through it from the road above. Let's lengthen the pitlane, remove the strut and
+make it slightly wider. The frog isn't visible in the editor, is there a reason for this? Let's make the frogs mouth open for slightly
+longer with the tongue remaining out longer too. The game takes control of the car too early, if we need to script the car let's wait until
+the last second to guide it through the frog".
+
+- *The pit lane* is 61 cells (41): off the helix's last straight down the tower's east side, its straight down the pier from z 484 to
+  515, back onto the lap past its bend onto the east island; 2.75 cells either side of its middle (2.25). *The strut* was one of the
+  helix's piers: its lowest turn's south side passes high over the pit lane, and a pier stood clear of the lap but on the pit lane. A
+  raised road's piers now stand clear of every other road of it -- the lap's of its branches', a branch's of the lap's and the other
+  branches' -- where those have a deck.
+- *The frog's mouth* opens for 3.1 s (2.5) and its tongue is held out 0.9 s (0.16); the time it stays shut is as it was, its cycle 5 s.
+- *The car is the player's up the ramp*: the carried jumps -- into the frog and the shortcut's leap -- take the car only from half a cell
+  before their lip (from the ramp's foot before, 10 and 9 cells back). A car the frog throws back is put down 18 cells before the lip,
+  where it was.
+- *The frog in the editor*: it was drawn only by the race-track mode, in the game; the editor shows the island's decor. The build now puts
+  a still copy of it among the island's decor too (its mouth open), hidden by game variable 212 -- the game's own way of hiding a decor --
+  which the race-track mode holds set on Wannies Island while it races, so in the game only the moving frog is seen.
+
+![The frog in the editor, among the island's decor](racetrack/wannies/editor_frog.png)
+
+### Fourth round: the road close over the ground, wide pit-lane mouths, a blue frog (2026-10-15, later still)
+
+The user, with a picture of the start straight and its pit lane (the two ends of the pit lane filled in green): "Let's widen up the pitlane
+entry and exit as shown. Also where our track splits we've got red/white line in the middle that we can remove, and also let's remove the
+boost panel leading up to the jump on the right path. Let's make all the track closer to the ground which means our inclines will be
+steeper exiting the frog"; then "We also need to change the colour of our frog to blue instead of green".
+
+- *Close over the ground* (wannies_design.py, the heights): the lap climbed at 13.5 % from the start straight's 6,500 to the frog's 20,400,
+  4,000 to 14,000 over the islands. Now each point has a floor -- 550 over the highest ground across the road, 1,400 over the lava, and
+  450 over the top of any decor box the builder would count in the road's space (a cell of the box with its middle within the deck's half
+  + 0.75: the builder takes such a decor away unless the deck is 320 over it) -- and the road is the lowest one over its floors that climbs
+  and falls at 17 % at the most (as Volcano Island's and Otringal's), its crests and dips rounded over 6 cells. The floors are tested
+  against the decors' boxes as the builder tests them, not their shapes: the mine's machinery on the east island leans, its shape 6,534
+  high where its box is 8,380, and the first build took the whole machine away.
+- *The frog* comes down to 13,564 (20,400): its lily pad, 2,650 under its floor and 13 cells round, clears the Wannies' house on the hill
+  under it (bodies 12 and 13, 5,613 to 10,637) by 300. Lower, the house would stand through the pad; it stays. The road before the frog
+  comes up to its ramp at 17 %; from the frog to the helix's top (25,000, over the tower's) it climbs at 34 % on average, 37 % at the
+  steepest (14 % before), eased in and out. The helix comes down to 4,920 (7,000), 15 % (14 %).
+- *The start straight* is at 4,630 (6,500), level to the start line; then the road climbs at 17 % to clear the east island's houses (body
+  83, 5,802, beside the road).
+- *The shortcut* keeps its leap up onto the lap: its lip 8,122 over the east island's plateau, the lap 11,509 where it comes down. Its boost
+  pad is gone; the leap is carried in its own time (2.4 s) whatever the car's speed, so it still lands. Where it leaves the lap the lap is
+  raised to what the shortcut needs (the lap goes down off the plateau, the shortcut stays over it: before that, a step where they parted).
+- *The pit lane's mouths* (the user's green): the pit lane is laid out in the lap's own frame, its outer edge and inner edge set across
+  the lap at each of the lap's points. Its outer edge is a straight taper from the lap's own edge out to the pit lane's straight, over
+  12.5 cells at the entry (from the helix's last straight, z 473.5 to 486) and 14 at the exit (from z 511 round the lap); its inner edge
+  lies 1.5 cells inside the lap's deck until the two part, so the mouth is one wide deck with the lap's, 3.5 cells either side at its
+  widest. The entry's taper clears the corner of the elevator's landing platform (body 20, kept) by the builder's half-cell rounding. The
+  pier's east post (body 33) stood in the pit lane's way once it was low; the island's record drops it (`DropDecors`).
+- *No line where the road splits*: where a branch's deck lies on the lap's (or the lap's on a branch's), the side's rail was flattened but
+  its curb and rail top still drawn -- a red and white line across the one deck. An open side is asphalt now, its curb, rail and edge
+  (RaceTrackRaisedBody.Tile); where the two decks part, the two rails meet in a V.
+- *A blue frog*: its skin the palette's blue ramp (192), its spots, hands and feet the slate blue (176); the lily pad and its stalk stay
+  green (RaceTrackFrog's colours).
+
+The test pilot: a lap in 75.5 s (thrown back twice by the frog, untimed as ever); round the pit lane, the lap counted in 70.1 s.
+
+![The pit lane's entry: one wide deck off the helix's last straight](racetrack/wannies/pit_entry_wide.png)
+![The pit lane's exit](racetrack/wannies/pit_exit_wide.png)
+![The blue frog](racetrack/wannies/frog_blue.png)
+![The climb from the frog to the tower's top](racetrack/wannies/climb_to_tower.png)
+
+### Fifth round: a shorter leap, no car on its nose (2026-10-15, later)
+
+The user: "Our jump on platform.ile is far too long, we need to change it so the car lands as soon as it can"; then "After using the boost
+panels on platform.ile and driving into the side wall it tips the car up on its nose, we should fix this".
+
+- *The shortcut's leap* came down on the S west past its turn (the user's other pink): 38 cells and 2.4 s in the air, climbing 3,400. It
+  now lands on the lap's first point past the loop it skips that the leap can come down on (`wannies_design.py` `leap_landing`): from where
+  the lap comes back east under the take-off, the first whose way the leap turns onto by 40 degrees at the most, with room before it to
+  curve onto it. With the ramp aimed at the S's turn, that is just past the turn: 24 cells, curving 17 degrees, 1.5 s in the air (the arc
+  and the time scaled to its length). The lap itself is unchanged. The test pilot took it: carried from the lip, down on the S 1.5 s later.
+- *On its nose*: the car's pitch and roll are measured from the floor 400 in front of and behind its middle and 400 to either side
+  (BUGGY.CPP). Driven into the rail -- at a boost panel's speed, further over it -- a point past the rail is over the ground far below the
+  deck, and the car stood on its nose. In a race a point whose floor is more than 700 off the car's own now counts as level with it for
+  the pitch, 250 for the roll (`TiltFloorY`): no road climbs or falls 700 over 400 (the steepest, the Elevator Platform's drop, 500), and
+  none is banked 250 across (the steepest bank, 0.40: 160). The car driving as a character car is pitched by the way it climbs: that is
+  measured over the whole way it goes now, not only its share along its heading (pushed along a rail it goes nearly sideways), and
+  capped (`DrawDriveAs`).
+
+![The shortcut's leap, down on the S just past its turn](racetrack/wannies/leap_short.png)
+
+### Sixth round: the pit lane's mouths open both ways (2026-10-16)
+
+The user: "the right side of the jump doesn't work. Entrance of the pitlane can be driven into but not out of. Exit of pitlane partial
+barrier in places also".
+
+- *The pit lane's mouths*: the rail holds a car RAISED_INSET (640) inside a deck's edges -- the deck of the road nearest it (`RaisedAt`:
+  of a level, the nearest middle). Where the pit lane's deck leaves the lap's, tapering to 0.83 cells across, a car on the lap near the
+  mouth was put over into it (the mouth's middle the nearer) and once in held there: between the lap's 640-in edge and the mouth's lay a
+  strip neither deck let it into. The same strip at the exit was the barrier. The rail now lets a car be anywhere a circle of 640 round it
+  is on one deck or another of that level (`RaisedHolds`, `OnSomeDeck`): the decks taken together. On the release engine the pilot was
+  held 4.5 cells off the lap's middle at the exit for 100 ticks and couldn't get back onto the lap from the entrance; now both ways, at
+  once.
+- *The jump's right side*: not found. The shortcut's leap was taken from both rails at the pilot's speed and at 110 km/h, on the release
+  engine and this one, and so was the frog's (from 1.3 cells either side); every time the car flew and came down on the road. (The fork
+  into the shortcut is one of the places two decks overlap: the rail's change there applies.)
+
+### The shortcut's jump on its right side (2026-10-17)
+
+The user, with a picture of the car past the lip and stuck there: "Jump still failing on right hand side ... Seems to be intermittent".
+Their own game, read live: the car 890 units past the shortcut's lip, 1,500 to the right of its middle, at the deck's height, speed 0;
+no carried jump.
+
+- *Why*: the shortcut's last straight crosses from cube (8,8) into cube (7,8) at x 512 cells. The game keeps a car half a cell inside
+  its cube, and a cube change puts it half a cell inside the next: a cell's jump with no move between. On the road's right side the
+  take-off -- the ramp's foot and lip, 256 units apart -- lies a few hundred units from that edge, so the change could set the car down
+  between the foot and the lip, and its next move took it past the lip. `RaceArc` takes a car as it crosses the foot, or where a move
+  ends on the ramp: neither saw it. Driven off the lip, it was held at the deck's height (the raised road's floor) and stopped by the
+  rail over the gap -- in a race the stuck-car reset brought it back after 3 s of driving on; reversing, it stayed. On the left side the
+  change comes cells before the ramp.
+- *Repro*: Twinsen put on the shortcut's straight (`teleport` in scene 99) 9-15 cells before the lip, 950-1,152 to the right, heading
+  along it or up to 8 degrees right, flat out (15,644 units/s): the release engine missed the jump in 38 of 72 runs, at 16 and 20 ms
+  frames alike. At the pilot's slower 50-70 km/h it was always taken, the cube change dropping it between foot and lip.
+- *Fix*: `RaceArc` also takes a car past the lip, over the gap, still at the lip's height and within its width, going forwards, and carries
+  it on from where it is ("carried jump 2: on, past its lip already (289 along)"). Now 144 of 144, every one landing on the lap. No other
+  road crosses any track's jump gaps at its lip's height, and Otringal's wheel lane (a lip 0 wide) is left as it was.
+
+## The Emperor's palace, twelfth round: the outside dropped, an upstairs, the race through both floors (2026-10-15)
+
+The user: "The outside of the palace track just isn't working, and we've tried a few revisions, let's keep a copy of it so we can rebuild
+it in the future if we need to, but for now drop it totally. Let's add an upstairs to the inside of the palace. Let's keep the same basic
+colour theming, but maybe add a couple of bedrooms, a throne room, and any other rooms you can think of that would fit with a palace
+theme."
+
+- *The outside, kept*: the git tag `palace-outside-v12` (commit `60c8e61`, the last with it) and `docs/racetrack/palace_outside_archive`:
+  the design script and the plan as they were, and how to build them again. The island's outside code stays, off (`PalaceIsland.Build`'s
+  `outside`).
+- *The upstairs* is the island's (`docs/LBA2_PALACE_ISLAND.md`, "No outside, and an upstairs"): ten rooms over the sixteen, two stairwells
+  open to the roof, the long hall two storeys high, the hill's top over it all.
+- *The race* (`tools/RaceTrackPlan/palace_design.py`, thirteenth version), inside only, 1,230 cells:
+  1. From the grid in front of the palace's doors in room 154, west along the bottom row and north into room 155, a stairwell.
+  2. Up the ramp round its column: 1.5 turns, 9 cells round, at 21 % (23 % at the steepest). It is the race-track mode's raised road, the
+     rooms' red carpet edged in gold, the car held on its rails.
+  3. Upstairs, out south into the library, then east through the music room, the princess's bedroom and the Emperor's bedchamber.
+  4. North through his dressing room, then west into the throne room past the throne on its dais. North up the room and west into the
+     other stairwell, room 159's.
+  5. Down its ramp: 1.75 turns at 18 % (20 % at the steepest).
+  6. Out north through room 163 into the long hall and up its ramp to the round window. The finish line is in the window, and the leap
+     out of it is carried; a win's teleporter takes the car in mid-air, as in the fourth round.
+  - The floors are open areas, the cars driving where they like: the ground floor's and the long hall's at 10,640, the upstairs' at
+    19,600. Upstairs they leave out the stairwells' open middles, where a car on a ramp under the floor would be taken for one on it.
+  - Each ramp's turns pass at least 4,508 (up) and 3,732 (down) over the one under them.
+- *The opponents' other ways* (`openRoutes`):
+  - One goes north through room 158 and west through 157 back to the bottom row. Upstairs it goes from the dressing room north through
+    the treasury into the throne room.
+  - The other goes on from the treasury through the armoury, west into the banquet hall, and south through its door into the throne room.
+- *Arrows on the floor*: the ground floor's other rooms point south, to the bottom row (159, 163 and the long hall are reached only down
+  the stairs). Upstairs they run along the race's way and the others'.
+- *Guards*:
+  - Ground floor: soldiers in the rooms on the way and beside it, and up the long hall; the pigheads in 152 and 163.
+  - Upstairs: soldiers in the music room, the dressing room and the throne room.
+- The checks: every way clear of the furniture's and walls' boxes; the leap's flight clear.
+- *The race's lines*: the intro is now "through the rooms, up the stairs, past the throne and back down, out of the round window and into
+  his teleporter", in all six languages.
+- The test pilot (start scene 290): won in 111.11 s, first of four, no rescues. It was up on the upstairs' floor from 32 s to 79 s, down
+  the second ramp by 92 s, and woke on Celebration Island (scene 95).
+
+![The up-stairwell: the ramp round its column](racetrack/palace/upstairs_up_stairwell.png)
+![The library](racetrack/palace/upstairs_library.png)
+![The princess's bedroom](racetrack/palace/upstairs_bedroom.png)
+![The throne room](racetrack/palace/upstairs_throne_room.png)
+![The down-stairwell](racetrack/palace/upstairs_down_stairwell.png)
+![The long hall, two storeys high](racetrack/palace/upstairs_long_hall_two_storeys.png)
+![The upstairs from above](racetrack/palace/upstairs_top.png)
+
+### The down-stairwell's ramp down to the floor (2026-10-15, later)
+
+The user: "Inside the palace the spiral down from upstairs to downstairs doesn't connect to the ground it just stops forcing cars to just
+drop off, we should fix this, so it's a smooth drive down".
+
+- The plan's bare stretch (no road: the ground floor's rooms) begins at the ramp's foot, and the builder finds a plan point's place on the
+  road as the nearest road point (`PlanPoint`) -- but the ramp's turn above its foot passes within a fifth of a cell of it, and the bare
+  stretch began up there: no road under the ramp's last 1.25 turns, and the car fell 5,500 to the floor halfway down. A road point is now
+  given the plan's height at its place along the plan, and where the nearest point is another level's (1,500 off), the nearest at the plan
+  point's own height is taken. Roads that don't pass over themselves are unchanged.
+- Out of the stairwell the line ran north along the cube edge (x 384, the ramp's foot 1.5 cells past it) and the car changed cubes back
+  and forth every half second; it now goes straight over to the round window's line (3 cells inside the cube west of the edge) just past
+  the foot.
+- The test pilot: down the ramp from 19,600 to the floor without a drop, three cube changes on to the long hall; won in 123.99 s, no
+  rescues.
+
+## The Emperor's palace, thirteenth round: Sup armour, Zeelich portraits, a cleaner floor and minimap, a dungeon (2026-10-16)
+
+The user: "Improve suits of armour, perhaps we should base these on the Sup actor. Clean up mini-map so it nolonger shows outside. Replace
+portraits with characters from Zeelich. Clean up any arrows on the floor that aren't on the track, such as the one pointing at a fire place.
+Make sure all remaining arrows are in the centre of the track"; then: "Add a basement level ... This is a secret easter egg area that should
+only be accessible via a fire place, let's use the one by the down spiral". (Its brief also asked for things of an adult nature; the
+dungeon is a plain one -- a jail's -- and nothing more.)
+
+- *Suits of armour* (the armoury upstairs): each is one of the Emperor's Sup soldiers -- the game's own body (BODY.HQR 261, the palace's
+  guards') as it stands, turned to look out, 1,260 tall, its polygons and spheres in steel shaded by their colours' place in their ramps
+  -- on a wooden plinth, a spear beside it (`PalaceFurniture.Armour`; without the body, the boxes it was).
+- *Pictures*: the people of Zeelich -- a Sup guard of the palace, an old Sup lady, a Sup priest, the old Franco, a Franco policeman, a
+  Wannie, a Mosquibee, and the Queen of the Mosquibees by the warp's fireplaces as before (`PalacePortraits.Sitters`).
+- *Arrows on the floor*: only those on the race's own way, each moved onto its middle and turned the way it runs there
+  (`palace_design.py`): 20 of the 38. Gone: the other rooms' arrows south and the detours' (the opponents' ways), and room 151's that
+  pointed west past the turn north, at its fireplace.
+- *The minimap*: the palace's sprint goes on out of the round window in a leap over the sea, and the minimap held all of it, the palace a
+  speck. Indoors (a track with open areas) the minimap now shows the racing line only as far as a sprint's finish line, on a dark panel
+  over the island's picture (its roof), the rooms' floors on it (`MainWindow.RaceMinimap.cs`).
+- *The dungeon*: under the stairwell 159 and room 163 north of it (cells x 361..397, z 533..621), its floor at 6,800 -- 3,840 under the
+  ground floor's -- in dark stone: flagstones, courses of stone, a sooty ceiling (the ground floor's floor's underside). The ground under it
+  is brought down under its floor (the rooms' ground is just under the ground floor's floor, and a car on the dungeon's would have been
+  stood on top of it).
+  - *The way in*: room 159's fireplace, beside the down-spiral, is hollowed and a teleporter as room 151's (`PalaceIsland` `Hollow`):
+    driven into, the car comes out at the dungeon's south end, looking north. *The way out*: a fireplace in its north wall; a car that
+    drives up to it comes out on the race's way at the down-spiral's foot, 12 cells on north, looking north.
+  - *In it*: five iron cages along its walls (their sides boxes, open tops of bars), two prisoners' cots, two racks of whips, two pairs of
+    shackles, eight torches, barrels and a chest (`PalaceFurniture.Up` Cage, WhipRack, Shackles, Torch, Cot, Barrel). Its people are the
+    race's guards: two jailers -- Sup soldiers, sword out, stepping out up to 6 cells at a car -- and two pighead prisoners, leashed in
+    their cages, throwing things through the bars. Its floor is an open area of its own (an area is the one whose floor the car is near).
+  - It is off the race's way: the sprint's line, its time and its winner are unchanged (won in 123.99 s).
+
+![A suit of armour in the shape of a Sup soldier](racetrack/palace/armoury_sup_armour.png)
+![The people of Zeelich on the walls](racetrack/palace/portraits_zeelich.png)
+![The dungeon from above, its ceiling off](racetrack/palace/dungeon_from_above.png)
+![Its cages](racetrack/palace/dungeon_cages.png)
+![A jailer coming at the car](racetrack/palace/dungeon_jailer.png)
+![The way out](racetrack/palace/dungeon_way_out.png)
+
+### The dungeon, reached (2026-10-16, later)
+
+The user: "we can't currently access the underground dungeon area as the game detects us as off the track and resets us". The race's
+fall rescue (RACEMOD.CPP `FallenBelow`) puts back on the road a car that has stood 1.5 s well under the line with no line at its height
+near it -- and in the dungeon the upstairs lap runs 9,355 over the car, 1,633 aside: `fallen off the road to (194048,6801,308858), 9355
+below the lap 1633 away`, a second after the fireplace's teleporter. A car on the floor of an area of the race's own off the lap -- one the
+line never runs through at its floor's height (`SideArea`), as the dungeon -- is now where it was let go, not fallen. The rooms the lap runs
+through keep the rescue (a car fallen from upstairs into a room the closed doors cut off). Checked mid-race: down through 159's
+fireplace, past the jailers, out of the north fireplace back into 163, no reset.
+
+### The dungeon's captives (2026-10-17)
+
+The user: "The palace dungeon is a bit tame, let's add some female rabbibunny rope bunnies suspended from the ceiling". Four female
+rabbibunnies hang in ropes from the dungeon's ceiling, in the gaps between the cages (`PalaceFurniture.Captive`, `Up.Hanging` and
+`Up.Suspended`):
+
+- *Who*: the game's own bodies, in their own clothes and colours -- BODY.HQR 62 (Mrs. Brune, the Inter-Islands' rabbibunny: green top,
+  grey skirt) and 68 (the rabbibunny in blue and white), each hung both ways (`PalaceFurniture.Rabbibunnies`). Their polygons' colours are
+  the island palette's at their index, a lit one's seven steps up its ramp, a textured one's (68's striped top) its picture's at its middle.
+- *Posed*: each bone turned about its own pivot -- the arms found from the bones and each hand put by a two-bone reach (the race cars'
+  drivers' `CarDriver`), the legs (the bone turning highest in her lower half on each side) turned at the hip till the feet are
+  together, the feet pointed, the head turned. 1.5 times the game's size, as big across as up in the world (a model's units are 4 times
+  the world's across but only 2.5 times up).
+- *Hanging* (two): by her wrists, her arms up and apart, a rope from each wrist up to a wooden bar hung under the ceiling; tied under the
+  knees and at the ankles; her toes some 500 over the floor, her head bowed. Looking south, at a car coming up the dungeon.
+- *Suspended* (two): lying face down across her gap, her head towards the way, her arms bound to her sides, held up by ropes round her
+  chest, her waist, her shins and her ankles from a beam along over her; her head hangs (raised, the gap under the jaw showed from the
+  side: the game's bodies have no throat). Her underside some 2,000 over the floor.
+- *The ropes*: each a band hugging where a plane across her cuts those bones (the eight-sided outline whose sides touch the cut), the
+  ropes up to the bar and the beam and their hangers boxes, an iron plate at the ceiling.
+- *Where*: in the gaps between the cages, reaching no further out from the walls than the cages' fronts (2.35 of the palace's cells: the
+  way down the middle), drawn only -- no boxes: the race, its line, its jailers' and the cars' collision are as they were (the palace's
+  992 solid boxes identical, every other race-track file byte-identical; the pilot, power-ups off, on the build before and this one
+  started together: 124.63 s, won, no rescues, both).
+
+![Two of them from the car](racetrack/palace/dungeon_captives.png)
+![All four, close](racetrack/palace/dungeon_captives_close.png)
+
+### The dungeon made medieval, its torturers (2026-10-17, later)
+
+The user: "Let's make our palace basement more like a medieval dungeon. Let's add some grobo torturers with bull whips etc." Its layout is
+as it was -- the way up its middle, the fireplaces in and out, the cages, the captives, the jailers and the prisoners -- and round them:
+
+- *Its stone* (`PalaceDungeon`): its walls, floor and ceiling textured, a page of the island's object textures painted at the build in the
+  island's palette -- the walls courses of rough grey ashlar in dark mortar (each block's top edge lit, its foot shaded, chipped; damp and
+  green at the foot, sooty under the ceiling; as light as the rooms' walls are shaded, east and west lighter than north and south), the floor
+  big uneven flagstones in four rows, worn and cracked here and there (two of them, a cell each, turned about cell by cell), the ceiling dark
+  timber planks. One perspective-correct textured polygon a face (TEXTUREZ, the pictures' kind), the stone running on from cell to cell: as
+  many polygons as the flat faces they replace.
+- *Its vault*: five stone arches across it on pillars against both walls, where both walls are free between the cages (`DungeonArches`),
+  springing at 2,300 and rising to just under the ceiling -- over a car's camera all the way across; a sconce on each pillar and either side
+  of the ways in and out (an iron cup, a torch, its flame; they were torches on the walls); chains with hooks from the arches by the walls.
+- *Its furniture* (`PalaceFurniture.Up`), in the gaps by the walls, clear of the cages, the captives and the way down the middle: the rack
+  by the west wall (a wooden table, a roller at each end with spokes, ropes along it -- nobody on it), an iron maiden in the north-east
+  corner (shut, an iron face on it), a pillory on the east side by the south end, a whipping post in the north-west corner, a cartwheel on
+  the north wall beside the way out, three braziers of glowing coals with branding irons in them, straw in the cages. The solid ones are
+  in the collision, as the cots are.
+- *Its torturers* (`PalaceTorturers`, `RaceTrackGuards.Torturer`): four Grobos -- the game's grey Grobo near its end (BODY.HQR 459, entity
+  336: black clothes, a red sash) in an executioner's black hood (a cowl, its brim lined in red, the ears out at its sides), a bull whip in
+  his hand where his spiked club was, 1.8 times the game's size; one by the whipping post and the wheel, one by the iron maiden, one by the
+  rack, one by the pillory, each looking out at the way.
+  - *The whip* is part of his body: the club's polygons gone and its points the handle's, the lash seven bones of its own after the hand,
+    each a length of a tapering leather tube, so an animation swings it. The body's own polygons, normals and lights are kept byte for
+    byte, the new ones after them (a flat-lit polygon's light is found past all the points: theirs move on by the points added).
+  - *His animations* (the entity's 640 and 641): standing -- the game's own standing, the whip hand by his side, the lash from it to the
+    floor and along it in front of him, stirring -- and the crack: the arm up and back, the lash thrown out behind him; over the top, the
+    lash following in a loop; down and forward, the lash straight out in front and its end flicking down; the lash on the floor; standing
+    again (1.37 s). Each pose is where the arm's and the lash's bones point, each bone's turn from its parent's frame worked out as the
+    engine turns bones (M(Alpha) M(Gamma) M(Beta)).
+  - *In the race* (RACEMOD.CPP `guard=` kind 3): he stays at his post and cracks his whip every 1.6 to 4.8 s, every 0.5 to 1.5 s with a car
+    within 14,000 on his floor, turned to it (no further round than 56 degrees from the way his post looks: the whip out at the way). He
+    strikes nothing and nothing runs into him: no car is stopped, slowed or put back. His own random numbers: the race -- the jailers',
+    the prisoners' and the opponents' doings -- draws the same ones as before. The log says `torturer N cracks his whip at X's car`.
+  - His body and animations are made at the end of a build (`RaceTrackService.Build`), after every track's: a build of several tracks
+    leaves every other track's bodies and animations where they were.
+- It is off the race's way: the sprint is as it was (the pilot, power-ups off: 122.52 s, won, no rescues -- the build before this one the
+  same to the hundredth). Down in the dungeon a car drives up it and out of its north fireplace as before (four drives, no rescues).
+
+![The dungeon from the car: flagstones, ashlar, the arches, a torturer by the pillory](racetrack/palace/dungeon_medieval.png)
+![The rack's torturer, his whip across the floor; a brazier, the way to the north end](racetrack/palace/dungeon_medieval_rack.png)
+![A torturer's crack, 120 ms apart](racetrack/palace/dungeon_torturer_crack.png)
+![The dungeon from above, its ceiling off](racetrack/palace/dungeon_medieval_above.png)
+
+## Island CX: round the island under its cannons, down through a door, twice round the halls under the gas (2026-10-15)
+
+The user: "Create a track for our CXTower island. The basic concept for this track is a loop around the tower, the track enters the
+underground section through a slope down through one of the doors, which means we'll need to remove the metal grate that's currently
+there, loops around the underground section a few times then back out a door on the other side. Don't forget to add a pit lane. Let's
+have the cannons that normally fire at Twinsen outside randomly firing at any outside car." Then: "In the underground section there's
+some gas monsters that attack the player let's build on this theme for the underground section."
+
+The island is `CXTOWER.ILE`: Island CX as it is, with the control tower's lower level under its gas (`docs/LBA2_CONTROL_TOWER_ISLAND.md`).
+The track is `RaceTrackIsland.CxTower`. It is raced as island 9 drawn from that file (`island_file=9 cxtower`), in scene 300, a copy of
+Island CX's outside scene 110. The build makes the island afresh (`ControlTower/CxTowerTrack.Install`, `ControlTowerIsland.RaceRoom`):
+
+- *One ring of a hall round the control room.* The walls between the two halls and the empty corners under the island are taken down. The
+  corners are floored and walled like the halls. What stood on the halls' floors is gone (the doors' landings, the consoles, the grates'
+  rims), and the grates are shut. The low outer walls are built up to the tall ones' height, 19 layers.
+- *One roof just under the gas*, at -512. It is open only where the road's tunnels come down through it (`CxTowerTrack.RoofHoles`, the plan's
+  tunnels with pieces). Its underside is a face a cell, in 16 x 16-cell bodies drawn from the floor's height (see the camera, below).
+- No secret passage under it.
+
+The route (`tools/RaceTrackPlan/cxtower_design.py`), 457 cells:
+
+1. The start straight runs west along the island's south side. Its pit lane goes straight on along z 59.5 where the lap's S-bend turns up
+   onto the straight, and comes back onto the road at the turn into the trench. It is a branch of the raised road, with three spots.
+2. North down the south-west trench, which the build cuts wider, and through door A. The door's grate (body 9) is gone. The first 3 cells
+   past the door are a tunnel sunk in the plateau, its roof flush with it.
+3. A tunnel under the island at 26 %, and a U-turn under the north-west tower down into the ring.
+4. Once round the ring on its inner lanes (west, south, east, north), then on round the outer ones (west and south). Most of it is on the
+   floor at -5,166.
+5. North up a tunnel to door C (26 % for its last 22 cells; 16 % up the outer lane before it). On the way it passes 3,144 over the ring's
+   south inner lane.
+6. Out through the north-east trench and north past the north-east tower. East round it over the gas, down the east side, round the
+   south-east tower, and through the S-bend onto the start straight.
+
+The road's rails are 3 cells from the road's middle underground and 3.5 outside (wider where there is room since the fifth round, below).
+The plan's `edgeMargin` is 4: the builder no longer pushes the lap off the cube's edges, where the ring's outer lanes and the road round the
+towers run.
+
+The race-track mode's part (`RACEMOD.CPP`):
+
+- *Under the ground* (the plan's `under`; the raised road file's eighth number on each point; an open area's sixth number):
+  - The road's floor is the deck, whatever ground is over it, and there is no collision with the ground there.
+  - The camera's sight line isn't lifted over the ground there, and the oil, the penguins and the open-area walls ignore the ground over the road.
+  - A car there is in no gas (`TerrainUnderHook`, `GiveTerrainCodeJeu`), so it isn't rescued from the gas overhead.
+  - The builder cuts no ground for these stretches, stands no piers under them and clears no decor in their way.
+- *The cannons* on the four corner towers are scene 110's actors 3-6, entity 264, kept in the scene with their scripts emptied
+  (`RaceTrackIsland.HuntingGuns`). Each is a gunner, `gunner=` with `gunner_hunt=<reach>` (40 cells). For each burst it picks a car at
+  random among those within its reach that are outside: over the gas, not under the island. It fires 8 shots at where that car will be
+  when each one comes down, the car's speed measured between shots, a little either side. A car that turns, brakes or speeds up is
+  missed; one in a burst is stunned. The test pilot's race had them fire at Twinsen and the opponents alike.
+- *Gas monsters*: the game's own stand on the ring's floor beside its lanes (`GasMonsterRun.Floor`; the monster's foot is its floor, its
+  poses fitted to the road over it). Each strikes at its own place on the road. (6 at first, 2 since the second round below.)
+- *The camera in the ring*: three tunnels of the camera's alone (no pieces) cover the ring, their roofs the room's roof over the road. The
+  camera that follows the car normally stood 6,000 over it, out over the roof and the gas, where the island's ground near the eye isn't
+  drawn (the near plane), so the car was seen through the island. In a tunnel the race-track mode's tunnel camera rides behind the car
+  under the roof.
+- *The roof itself* was first one body the whole cube wide, then 16 merged rectangles a tile. Neither was drawn:
+  - The engine draws a decor whose box's bottom corners are in sight; a roof's are over the camera. So the roof pieces' boxes now start at
+    the floor (`AddBodies`' `drawnFrom`).
+  - The filler runs a face's depth straight across the screen, and the ground over the roof showed through big faces running away from
+    the camera. So the roof's underside is a face a cell, with the close flag, as the palace's floors are.
+
+The opponents are Island CX's own people's cars: the Emperor's soldier in his rocket launcher (the one to beat), a Franco trooper's tank
+and the survivor's raft.
+
+The test pilot raced 3 laps: 48.8, 53.2 and 51.9 s, first of four, no rescues and no missed checkpoints. It was hit by vents and bites
+along the way, and the opponents finished all three laps.
+
+![The lap from above](racetrack/cxtower/lap_from_above.png)
+![The ring under the island, its roof off: the inner lanes once round, the outer ones on, the ramps down and up](racetrack/cxtower/ring_roof_off.png)
+![The start straight](racetrack/cxtower/start.png)
+![Into door A](racetrack/cxtower/door_a.png)
+![The gas monsters in the ring](racetrack/cxtower/ring_gas_monsters.png)
+![Up the tunnel to door C](racetrack/cxtower/exit_tunnel.png)
+![Round the north-east tower, the car stunned by its cannon](racetrack/cxtower/cannon_tower.png)
+
+### The second round (2026-10-15, later)
+
+The user: "Our CXTower track, you've added steam that fires underground, this needs removing. Naturally the inside has two types of gas
+monster, one that flies around and shoots red fire balls, and the other one that you've already implemented. Let's reduce the number of gas
+monsters you've already added, and add some of the flying ones that fire fireballs. Currently driving inside there's no visible door way, it
+looks like we're driving into a cliff, we should fix this". Then: "The large missile launchers on CX aren't firing in a way to hit the cars
+as they're firing over the track, however we seem to have new machine gun fire coming from the turrets instead. The actual missile launchers
+should target the cars, and let's remove the smaller machine gun fire".
+
+- *No gas vents*: the plan's `steamJets` are gone (`cxtower_design.py`).
+- *Gas monsters*: one a run on three of the ring's sides (`most: 1`); the build places 2.
+- *Flying gas monsters* (`RaceTrackFlyers`, plan `flyers`, `RACEMOD.CPP` `flyer=`): the game's other gas monster, entity 329. In Island
+  CX's room under the emperor's (scene 181) it rises out of the gas and spits red fire balls (raw sprite 20, its animation 173's
+  `F_THROW_3D`) at Twinsen. Four fly to and fro along the south inner lane, the east and north sides and the west outer lane, 2,600 over
+  the floor beside the lane (away from the walls), bobbing. Every 3.6 to 5.4 s each stops, turns to the nearest car below it in the hall
+  between 1,800 and 11,000 away and spits a fire ball (its animation's own left out, `RaceMod_SilentThrow`) at where that car will be, a
+  little either side. A car the ball comes down by is stopped 0.9 s.
+- *The cannons fire their missiles*: the "machine gun fire" was the hunting gunners' bullets (`gunner_hunt=` borrowed the Franco gunner's
+  burst), and the missiles flying over the track were the cannon's own firing animation's (`F_THROW_OBJ_3D`, OBJFIX.HQR 92, thrown level
+  along its facing). A hunting gun now fires one missile a burst and no bullets: its animation's missile is left out (`RaceMod_SilentThrow`,
+  now in `F_THROW_OBJ_3D` too) and the race-track mode flies the same missile straight from the gun's mouth (2,662 along its facing) at
+  where its car will be when it gets there (7,500 units a second). Where it comes down, a nitro penguin's explosion, and a car within 1,400
+  is stunned. The gunners' bullets, the missiles and the fire balls are one list, `Projectiles`.
+- *Door A's doorway*: the road went down into the trench's end and into flat ground before the cliff, so it looked like driving into rock.
+  - The sunk tunnel (door A's portal) rounded its cutting's far end 4 cells deep into the plateau over the road going on under the island.
+    `CutSunk` no longer cuts past an end where the road goes on `under`; the raised road's cutting (`CutUnderRaised`) leaves a cell nearer
+    an `under` point of about its height (2,000) than the stretch it cuts. Only Island CX has `under`.
+  - A heightmap can't hang over the road: the ground's face over the mouth (one cell, from the road up to the plateau) stood across it.
+    `OpenTunnelMouths` (after the tunnels are placed) leaves those cells' triangles undrawn (texture and polygon flags 0).
+  - The sunk tunnel's end gets a wall from the next tunnel's roof up to the ground behind it (the plateau stands 320 over the portal's roof,
+    and its edge showed, floating). Seen from the trench: the portal, a wall over the opening and the tunnel going down into the island.
+  Door C, coming out, is the same.
+
+The test pilot raced 3 laps: 48.2, 49.4 and 48.8 s, first of four, no rescues. Fire balls hit Twinsen 11 times and the opponents 17 (the
+pilot never dodges); the missiles, 45 of them, mostly came down by the cars outside.
+
+![Door A from the trench: the portal, the wall over the opening, the tunnel going down](racetrack/cxtower/door_a_doorway.png)
+![Flying gas monsters over the ring](racetrack/cxtower/ring_flyers.png)
+
+### The third round: no gas in the doorways, a camera that sees the car (2026-10-16)
+
+The user: "Entering to go downstairs on Island CX the door way is filled with gas. Also the camera needs fixing on the entry and exit it's
+too hard to see".
+
+- *The gas*: a flat plane at the sea's height (-50) over the whole cube, the ramp under it seen through it from the trench -- the car half
+  under the gas. Island CX's cube marks only its outer ring of sixteen squares for the sea (0xf99f), but the engine drew it under the whole
+  cube: `DrawHorizon2ZBuf` loads the cubes round the camera's, and each that doesn't load sets `CubeBitField` to all sixteen (`LoadCube`)
+  -- with no neighbour loaded (a one-cube island) the camera's own cube is never loaded again, so its own mask was lost. It now keeps the
+  own cube's (`TERRAIN.CPP`). And the race-track builder's `SeaEverywhere` (every square marked: no black holes under a terrace) leaves a
+  square without where the road runs `under` the island or below the sea's height (Island CX's door squares: 0xf9df).
+- *The camera on the ramps*: a tunnel's roof was 1,200 over the deck, which kept the eye 300 over the road behind the car (4,200 back): on
+  the 26 % climb out to door C that is under the car's deck, and the car was seen from under the road. Down to door A the eye came round the
+  U-turn at the ramp's foot on the road behind -- off to the car's side, the tunnel's inner wall's end between them.
+  - The ramps' tunnels are now 2,200 tall where they run under the plateau (`TunnelRun.UnderGround`: the roof's top 40 under the ground
+    over it), each in two -- the first two cells from the door, under the plateau's face, lower -- and they end where the ramp is out of
+    the plateau: door A's at the U-turn's start, door C's at the exit arc's end. A wall closes each tunnel's free end over the ring's roof
+    (`CloseAbove`): the rock between that roof and the ground isn't drawn. The ring's roof is open only over the tunnels, to their ends
+    (`CxTowerTrack.RoofHoles`), and has no box over the road where it runs under it with less than 1,700 over the deck
+    (`CxTowerTrack.RoofLow`): a car's box is taller than the car, and the first try stopped dead there.
+  - From the tunnels into the ring (round the U-turn down to the floor, and from the outer lanes' corner up to door C's tunnel) a tunnel of
+    the camera's alone with a ceiling: `tunnel=`'s fourth number, a height the eye is kept 250 under (the ring's roof). There the eye is
+    behind the car along the road's way at the car itself, 1,500 over the car's road (`RACEMOD.CPP` `HallEye`), eased in and out over the
+    stretch's first and last 8 points; nearer (to 3,200) while that place is in a tunnel's wall or a wall of the island's objects.
+  - On a climb the tunnel camera comes nearer (3,400) and rises to 500 over the car where the roof lets it; the eye is kept under the roof
+    of the tunnel it is in itself (`InTunnel`, a tunnel's own stretch before the one before's tail).
+  - Tunnel bodies are drawn close to the camera (`BrickBuilding.CloseFlag`): the near plane cut away the wall beside the eye and the
+    ground outside showed through. (Every track's tunnel bodies have the flag now.)
+- The test pilot: down door A's ramp behind and over the car, round the U-turn from behind, up to door C over it; 3 laps 51.1 and 56.7 s
+  (fire ball and missile hits stop it, as before), no rescues, nothing on the ramps that stops a car.
+
+![Down door A's ramp](racetrack/cxtower/door_a_down_the_ramp.png)
+![The U-turn at the ramp's foot](racetrack/cxtower/door_a_u_turn.png)
+![Up to door C](racetrack/cxtower/door_c_climb.png)
+
+### The fourth round: no lip into door A, smooth walls, the flying monsters clear of the ramps (2026-10-16)
+
+The user: "there's a slight lip which upsets the car very slightly when driving onto the slope to the underground section. The walls also
+need some refining, as they're a little glitchy and hard on the eye, let's smooth them out so they're all one colour with a single straight
+line down the middle instead of the current jagged gold line" -- and then "One of the flying walrus monsters currently clips through the
+track".
+
+- **The lip** (RACEMOD.CPP `RaisedAltitude`, `NearUnder`): the road's deck was smooth all the way down (a new console command, `cartrace 1`,
+  logs the car each frame: its place, pitch, roll, speed, the floor under it and what its pitch was taken from). The trouble was the
+  ground: door A's portal is sunk in the plateau, and over the road's last half cell before the `under` stretch the ground slopes from
+  the cutting up to the plateau's edge, 1,900 over the deck. A floor there was the higher of deck and ground, so a car was lifted for a
+  frame onto ground 700 over the deck, and its pitch probes (BUGGY.CPP `TiltFloorY`, 400 ahead and behind) found the slope and dipped
+  the car's nose (166 -> -17 -> 160). Within 4 points of an `under` stretch, ground over the deck is now no floor for a car about as high
+  as the deck: down through door A the pitch goes 133 -> 166 in steps of no more than 13, on every lap of three races.
+- **The walls** (RaceTrackTunnel.cs `Surfaces`, `StripHeights`): each road segment had been a level box of its own -- wall, light strip
+  and roof -- so down a 26 % ramp the strips went down in steps, and the boxes' ends showed light and dark along the walls. The pieces
+  are now surfaces through the road's own points: walls straight up beside the rails, one colour; the roof from wall to wall; and one
+  gold strip on each wall, at one height over the deck along a run of tunnels -- the middle of their height as it mostly is (1,100 in
+  CX's ramps), lowered to stay 200 under a roof too low for it (955 in the portals) and eased over 6 cells, so it never steps. Each
+  piece's origin is in whole units, so the pieces either side of a joint share their points. (Otringal's two tunnels are built the same
+  way and look the same.)
+- **The flying monsters** (RaceTrackFlyers.cs): a monster's way kept clear of the hall's pillars and walls -- decor boxes at its height --
+  but the ramps' decks and tunnel pieces have boxes with no top, which nothing touches, so the ramps weren't seen: one monster's way
+  crossed door A's U-turn at the road's own height, another's ran into door C's ramp tunnel, a third flew half a cell past the U-turn's
+  edge at the cars' height. Now the road counts too: within its half width and 1.5 cells (the monster -- entity 329, body 451 -- is 760
+  wide and flies along its way), from 600 under the deck up to a car's height over it or a tunnel's roof. A way keeps its longest run of
+  clear points (a point left out in the middle had it fly straight across the gap): 8, 13, 11 and 10 points, from 11, 13, 16 and 17.
+
+![Through door A's portal: one colour, one line](racetrack/cxtower/round4_door_a_portal.png)
+![Up the ramp to door C](racetrack/cxtower/round4_ramp_walls.png)
+
+### The fifth round: wider where there is room (2026-10-17)
+
+The user: "CXTower track feels too tight let's see where there's scope for widening the track slightly but let's keep the current route
+just making changes where we're able too".
+
+The route is the same: the road's middle hasn't moved, and nor has the racing line -- the opponents and the test pilot drive the lines
+they drove, planned within the old widths (the plan's `lineHalfs`, `RaceTrackBuilder.PlanRacePath`). The road is wider wherever nothing
+stands near it, eased between one place and the next (`cxtower_design.py`, `WIDTHS`). Half widths, cells from the road's middle to its
+rail (the rail keeps a car's middle 1.25 inside it):
+
+| stretch | before | after | what limits it |
+|---|---|---|---|
+| the start straight | 3.5 | 4 | the pit lane beside it: 0.75 between the decks |
+| the turn into the south-west trench, the trench | 3.5 | 3.75 | the south-west tower's base at the turn's end, 0.7 clear (a car's box, square to the island, 0.45); the trench's sides are ground, cut back |
+| door A and door C: the portals and the tunnels down and up | 3 | 3 | a tunnel's roof is kept under the ground over its walls, and the plateau's edge falls away beside both ramps: half a cell wider, the roofs would be 240 lower, 1,200-1,400 over the deck at the doors' faces (the car is 940 tall) |
+| the U-turn and the ring's west inner lane | 3 | 3.15 | the west outer lane 7 cells over: 0.65 between the decks |
+| the ring's west outer lane and north side | 3 | 3.2 | the hall's walls, 0.3 clear |
+| the ring's south inner lane | 3 | 3.4 | the gas monster between it and the outer lane (below) |
+| the ring's south outer lane | 3 | 3 | the same gas monster |
+| the ring's east side | 3 | 3.5 | nothing near: the wall is 7 cells off |
+| the north-east trench | 3.5 | 4 | ground, cut back |
+| round the north-east and south-east towers, the S-bend | 3.5 | 3.5 | the towers' bases and struts, 0.15-0.6 clear, and the cube's edge |
+| the east side between the towers | 3.5 | 4 | the cube's edge: the rail half a cell from it |
+
+The roads narrow into the doors over 7 cells (from 3.75 to door A, from door C to 4).
+
+What else the wider road moved:
+
+- *The south side's gas monster* stands between the two lanes, its run's `out` past the inner lane's rail, and must be the outer lane's
+  half and 2.5 cells from that lane's middle (`RaceTrackGasMonster`, `ClearOfLap`); the lanes are 11 apart. It stands 2 out now (from
+  2.5): at 1.5 its poses put its neck through the rail. So the inner lane is 3.4 and the outer one stays 3.
+- *Gas monsters on a floor stand on it*: `Gas` now also asks for the floor's box under the spot. With the north and west lanes wider, their
+  monsters' far-side spots were past the hall's walls, outside the cube (a spot exactly a cell from a wall had been ruled out by rounding
+  alone). The monsters are where they were.
+- *Piers*: a pier stands on the ground, so a road `under` the ground is not in its way (`PlacePiers`). The ring's wider east lane, 4.5
+  cells from the outside road over the gas, had taken four of its piers; and two the ring kept out before stand now, on the north side
+  and in the S-bend (12 piers, none left out).
+- *A checkpoint*: the builder lays a line across a corner where it reaches past the road's edge or is stopped by another part of the lap
+  no nearer than the edge, probing in half cells; across the ring's south-west inner corner it now stopped short of the wider edge (the
+  west outer lane beside). The plan adds a line of its own there (`checkpointTweaks`), as it was: 9 checkpoints.
+
+The flying monsters' ways, the tunnels, the power-ups and the racing lines are as they were. Of the other 17 tracks, built together with
+it, every file is the same; only Island CX's own (its island, its RACETRACK.JSON entry, scene 300 and its gas monsters' animations) differ.
+
+The test pilot, three laps against the opponents with the power-ups (the stress test's car, 110 km/h): on the line and 1.5 and 2 cells
+either side of it, and the hot car (everything +20 %), 8 races and 5 time trials -- every race finished, no rescues, falls, stuck cars,
+edge holds or missed checkpoints (the same runs on the old build: one stuck car reset, the hot car 1.5 cells off the line in the ring's
+south lane). Lap times are mostly the hazards: 17-37 s laps either way, a clean one about 20.5 s.
+
+## The Temple of Bú: the Halloween race (2026-10-16)
+
+LBA1's Temple of Bú ported as an island of its own, in LBA1's own colours, and a Halloween race on it: through its rooms on a raised road with
+doorways cut through the walls, down a spiral through the dark to its crypt and back up. There are jack-o'-lanterns, gravestones, cauldrons,
+witches throwing fire balls, ghosts and bats, and mini pumpkins for mushrooms. See `docs/LBA2_TEMPLE_OF_BU.md`.
+
+## The game has the keyboard from the start (2026-10-12)
+
+The user: "After hitting play sometimes we have to manually click the game area to get it to respond to input, let's see if we can remove
+this limitation". The game's window was given the keyboard once, as it was embedded; anything of the editor's that took it after that
+kept it -- WPF giving the focus back to the control that last had it when the editor's window is activated again (after the race car's
+setup closes, after another program), the game's own window restyled by SDL at a change of size -- and only a click on the game gave it
+back. Now the game has the keyboard from the moment it is embedded until a click on one of the editor's own controls, and again from a
+click on the game; while it should have it, it is given it back on the next tick (120 ms) whenever the window in front is the editor's,
+full screen's or the game's own (`EmbeddedGameHost.FocusTick`, `EditorInFront`; a click on the game comes in as the game's window's
+`WM_PARENTNOTIFY`). A dialog, a panel floating on its own or another program in front keeps the keyboard. Checked from the UI: Play, the
+race car setup's Play, and no click -- the game's window had the keyboard from the first look, 6 s on, to the last, 36 s on.
+
 ## The menu command
 
 Tools > LBA2: Desert island race track... (`RaceTrackWindow.cs`, `Terrain/RaceTrackService.cs`) builds the track from the plan built into the program, or from a plan file. The scene options are choices in the dialog; the crossing style, clearing the old track and drawing on the holomap were too, until 2026-09-30 (see "Fixed choices").
@@ -2814,3 +4371,1127 @@ Extra commands in `ScriptRoundTrip`:
 - `initbuggy <game> <scene>`.
 - `scripttext <game> <scene> <actor> life|track`: a script as the editor's C text.
 - `racetrack island <n>` and `racetrack <cx> <cz> --scripts --hero`.
+
+## The race game (2026-10-16): Little Big Halloween Racing Adventure
+
+The user: a standalone build outside LBA Assembler, in the retail game's look and menus, with an installer that takes both games' folders,
+copies their data into its own folder and builds the race tracks there; "Story Mode" (in place of New game), "Track select" and "Specials",
+the first two greyed for the Halloween special; items on Ctrl instead of Shift ("this shouldn't be used when driving anyway"); a car
+selection of ten character cars, the skeleton's and other Halloween ones; and a best-times list per track, the top ten, from a time trial
+-- no opponents, no pickups, a can of Gazogem for each lap.
+
+The installer is its own project, `E:\dump\LittleBigRacingAdventure` (its README says how it installs and builds). The engine side is here:
+
+- **Ctrl uses the item** (RACEMOD.CPP `PowerUps`, `RaceMod_FilterInput` from PERSO.CPP's frame input): the behaviour key, read from the
+  frame's input before it is masked, so a key bound to it in the options and a pad's left shoulder use items too; in the car the behaviour
+  menu doesn't open (its other behaviours take Twinsen out of the car). Shift opens the inventory again, as in the game. LBA Assembler's
+  Play has the same keys.
+- **The race game** (RACEGAME.CPP, on when `RACEGAME.TXT` is beside the game's data): the main menu is the race game's -- Resume (a race
+  on), Story Mode and Track select (greyed and passed over: GAMEMENU.CPP's rows, its keys and GAMEMENU_MOUSE.CPP's hit test ask
+  `RaceGame_RowDisabled`), Specials, Best times, the game's Options, Quit. Specials -> the track -> Race or Time trial -> the car page (its
+  body turning in a box, measured by the pixels it draws: the character cars' header boxes are their template's) -> the special's race
+  file with the car's `drive_as=` and the race game's keys, written to `RACE_NOW.TXT` in the user's folder and loaded (`RaceMod_LoadFile`),
+  then a new game with no introduction. No first-launch introduction either.
+- **New race-file keys** (RACEMOD.CPP): `start_scene=` (a new game's scene: the start line's), `start_in_car=1` (Twinsen put in the car as the
+  scene opens: the car's own SET_MOVE, `AdjustDirObject`), `trial=1` (a can of Gazogem at GO and at the start of each later lap, the item box
+  shown without mushrooms, the time from GO to the last line into the best times: `RaceGame_Finished`), `end_to_menu=<ms>` (after the race,
+  back to the menu: PERSO.CPP's menu key asks `RaceMod_WantsMenu`).
+- **Best times**: `BESTTIMES.TXT` in the user's folder, `track|ms|best lap ms|car|date`, the ten fastest of each track kept.
+- **Difficulty** (2026-10-17): a race on a track with levels -- its race file has `difficulty_level=` lines: the Temple of Bú's -- asks
+  Easy, Medium or Hard between Race and the car page (the last one chosen comes up first, kept in `RACEGAME_PREFS.TXT` in the user's
+  folder; Esc on the car page goes back to it); the pick goes into `RACE_NOW.TXT` after the file's own `difficulty=`, so it counts. A time
+  trial has no levels (Twinsen alone): its best times are the same at every level. What the levels do: docs/LBA2_TEMPLE_OF_BU.md.
+- **Screenshots of the menus**: the console's `screenshot` is taken in a modal's own loop too (PERSO.CPP's pre-present chain: the main
+  loop's capture never runs in a menu), so a headless run with `--listen` -- and no `--fixed-dt`, `--exec-at` or `--tick`, any of which arms
+  the automated boot that goes past the menu -- can picture every page: `E:\dump\TEMP\templediff\menudrive.ps1`.
+
+Tested from a headless install (`LBHRA-Setup.exe --install`) of the pristine assets into `E:\dump\TEMP\lbra\install`, driven through the
+engine's `--listen` socket (`key`, `autodrive`): the menus, all ten cars on the car page, a time trial (laps of 54.7, 56.5 and 54.2 s, a
+can each lap, 2:48.59 the best time), Ctrl using the can with no behaviour menu, a race against the three (1st of 4), and each back to the
+menu.
+
+### The first run: controls, power-ups, qualifying (2026-10-17)
+
+The user: "a powerup page for LBRA that shows the user all the powerups and what they do, we can show this as a flash screen the first
+time they load a race, and have a view option for it in settings if they wish to view it again, we should also the first run show the
+controls, and let's also force a qualifying lap the first time they play, with the option to skip qualifying in further runs and start
+from the back of the grid."
+
+Race game only (RACEGAME.CPP; the editor's Play is unchanged):
+
+- **The first run's pages**, right after the car page (and the qualifying answer), as the race file is loaded and before the scene: the
+  player's first race or time trial gets the **Controls** page (the keys and a pad's buttons; the gears' keys when the car's are changed by
+  hand), the first race with power-ups the **Power-ups** pages (the pickups, then the track's power-ups four a page, each in its item box
+  turning as the race draws it, its name and what it does). Enter turns the pages ("Enter: start" on the last), left and right too, Esc
+  skips the rest. Once shown they don't come back by themselves.
+- **Options** (GAMEMENU.CPP `OptionsMenu`, the game's own menu with two rows after its own: `RaceGame_OptionsMenu`/`RaceGame_OptionsRow`):
+  **Power-ups** and **Race controls** show the pages again (the game's own "Controls" row is the key remapping).
+- **The track's power-ups** come from its race file alone (RACEMOD.CPP `RaceMod_ReadPage`): the ones `RandomPowerUp` draws there
+  (`fuel_always=` drops Gazogem, no `fake=` copies the fake pickup, no `haunt=` the ghost; `powerup_only=` lists them), the golden Gazogem
+  with a `roulette=`; a time trial's Gazogem alone. The pickups' look is a mushroom actor's body, read from its scene in SCENE.HQR the way
+  `LoadScene` reads it (the Temple's: its pumpkin). `RaceMod_DrawItem` draws a box with `ItemBox`, the page's icons in place of the race's.
+- **Qualifying**: the first race always has a qualifying lap (`qualifying=1` added to `RACE_NOW.TXT`); once one has been driven
+  (`RaceGame_Qualified`, from RACEMOD's qualifying lap), a race asks after the car page: "Qualifying lap" or "Skip: start at the back of the
+  grid" (`qualifying=0` + **`grid_back=1`**: `FormGrid` puts Twinsen behind every opponent, they in their qualifying times' order; the log
+  says "Twinsen (no qualifying: at the back)"), the last answer chosen first; Esc is the car page again. Not asked for a time trial or a
+  track without grid spots.
+- **Settings**: `RACEGAME_SETTINGS.TXT` in the user's folder, beside `BESTTIMES.TXT`: `controls_seen`, `powerups_seen`, `qualified`,
+  `skip_qualifying` (other keys kept as they are). A new user folder (a reinstall) starts the first run again.
+- **Screenshots in menus**: the console's `screenshot` is taken in `DoGameMenu` and on these pages too (it was only the game loop's), so a
+  headless `--listen` run captures them.
+
+Tested headless and muted on a scratch install (`E:\dump\TEMP\lbrapages`: `LBRA-Setup.exe --install`, the worktree's engine copied over
+the game's exe, `drive.ps1` through `--listen`): a fresh user folder's first race (controls + 3 power-up pages, then a forced qualifying lap
+of 122.8 s and the grid from it), a second run (no pages, the question, skip: "4 Twinsen (no qualifying: at the back)", "Position 4th of 4"),
+a third (qualifying chosen, the skip answer pre-selected, Esc back to the car page), Options > Power-ups / Race controls, a time trial first
+(controls only) then a race (power-ups only, Esc skipping), and the editor's Play of the Temple (no `RACEGAME.TXT`) the same as the old
+engine's with `qualifying=0` (Twinsen on pole) and `qualifying=1`.
+
+
+
+## One item box (2026-10-17)
+
+The user: "Let's also reduce item boxes from two to one. Let's keep the second item box for Otringal for when a user gets the golden
+gazogem, and only make it visible if they already have another item, when the user uses their primary item we can remove the additional
+item box again and replace the first box with the golden gazogem item, this also means that we can drop the item selection key to simplify
+the controls."
+
+All in RACEMOD.CPP (`PowerUps`, `GiveItem`, `GoldIntoBox`, `BoxFree`, `WheelPrize`, `SlotMachine`, `RaceMod_Draw`), race-track mode only:
+
+- **One box.** Twinsen holds one item. A mushroom he comes to with the box already full is not taken: it stays standing for the next car
+  (it isn't in a car's way since `RaceMod_NoCollide`, so the old "give way, empty" for the CheckObjCol jam is no longer needed). The rest
+  of a row he has just taken one from still gives way, empty, as an opponent's row does (one item a row, `RACE_ROW_MS`): left standing
+  too, they armed the cars behind a leading Twinsen far more than before (the Temple's opponents took 70 mushrooms in a test race against
+  1 at HEAD). The log says "a mushroom left standing: Twinsen's item box is full" (at most once every 5 s).
+- **Ctrl uses it**, in the editor's Play and in the race game alike (`RaceMod_FilterInput`, the behaviour key, since 2026-10-16). **Q is
+  gone**: nothing reads it, and nothing is selected. The box is ringed in gold while it holds the item Ctrl uses.
+- **The golden Gazogem's second box** (Otringal's roulette wheel, the green). Won with the box empty, it goes into the box. Won while the
+  box holds an item, it waits in a second box beside it, drawn only while it holds something. When the box's item is used (Ctrl), the
+  golden Gazogem moves into the box and the second box goes; the next press is its first boost. It stays in the box for its 8 s as
+  before (a boost at each press), and if a second golden Gazogem waits behind a running one, it moves in when the first's time is up.
+  With both boxes full, the green gives its 5 s boost instead.
+- **Red, the slot machine.** With the box empty as the car lands, the reels spin and the box is kept free for the prize (a mushroom passed
+  meanwhile stays standing: "kept for the slot machine"); a win goes into it. With the box full as the car lands there is no spin: red's
+  2.5 s boost instead, as without power-ups.
+- **The time trial's cans** (the race game): a can at GO and at each later lap, but none while Twinsen still holds the last one.
+- **Opponents** never held items: each uses what it takes at once, one from a row (`OpponentMushrooms`, `o->TakeAt`). Unchanged; they now
+  also find the mushrooms Twinsen leaves standing.
+- **Saved games**: `ForgetPowerUps` empties both boxes on a load, as before; a new track (`ResetTrack`) also ends a running golden
+  Gazogem and the slot machine.
+- **Console tests**: `racebox <n> [won]` (power-up n into the box as a mushroom's, only into a free box with the roulette turning, or with
+  `won` 1 as a prize, the golden Gazogem 11 into the second box when the box is full) and `raceprize <0|1|2>` (the wheel's prize now: 0
+  black, 1 red, 2 the green).
+
+![one box: empty, the roulette, a penguin; the golden Gazogem waiting, moved in, its gold bar; the slot machine, its prize; red with the box full](racetrack/build/item_box_one.png)
+
+**Verified** (headless, muted, `E:\dump\TEMP\itembox`: plain copies of the stress test's 18-track game and the Temple's newest build):
+- *The states* (Otringal, the car standing on the grid, `state.sh`, `slot.sh`): a penguin taken with its roulette; oil offered with the
+  box full, left standing; the green with the box full -> the second box; Q pressed -> nothing; Ctrl -> the penguin dropped and the golden
+  Gazogem moved in; its boosts and gold bar; used up after 8 s; the green with the box empty -> straight into the box; red with the box
+  empty -> the slot machine (wins: a penguin, a super jet-pack, a fire ball, the protection spell, lightning; one miss), a mushroom
+  offered meanwhile left standing; red with the box
+  full -> red's boost; the green with both full -> the green's boost; saved with both boxes full, loaded -> both empty.
+- *Pilot races* (3 laps, the opponents, power-ups, the pilot using each item a second after its roulette; `races.sh`, `otrstat.sh`):
+  every race finished. Desert, Mosquibees, Emerald and the Temple (with its ghost) twice each: no rescue. Otringal 14 times: 3 rescues,
+  all the same pile-up in scene 92 by the spaceport's pad -- cars stopped together by a penguin's blast or a ball, the opponents then
+  held again and again by the landed shuttle, Twinsen's car pinned behind them at the rail, put back on the road after 3 s (`StuckCar`).
+  At HEAD, 0 in 10. Twinsen takes about half as many items now (Otringal: 19-30 a race, 33-54 at HEAD), so he races nearer the pack;
+  the opponents' pickups are much as before (Otringal median 36, 33 at HEAD). A way out, if it recurs: an opponent's car stopped by a hit
+  not solid to Twinsen's (`RaceMod_NoCollide`, as on the super jet-pack).
+- *The Temple driving* (`run.sh temple drive`): the one box during the race, ringed while it holds an item.
+
+## A quicker roulette, its stop unmistakable (2026-10-17, later)
+
+The user: "Let's reduce the time it takes to select a powerup. Currently when selecting a powerup the last few frames show for too long,
+which can make a user think they've got a power up whilst it's still rotating."
+
+**Why the last frames lingered.** The roulette ran 4.5 s past 45 items, its place `45 (1 - (1 - t)^2)`: an ease-out whose rate falls to
+nothing at the stop. Each step lasted longer than the one before it, and the last ones most of all -- the item *before* the one drawn stood
+in the box 0.67 s, the two before it 0.28 and 0.21 s -- and since the box was ringed in gold the whole time, a standing item looked like
+the result. Then it changed.
+
+**Now** (RACEMOD.CPP `ShownItem`, `ItemBox`, every track -- the race game's too):
+- *0.9 s, 14 items* (`RACE_ITEM_ROLL_MS`, `RACE_ITEM_ROLL_STEPS`): the rate falls only to half its start's (`RACE_ITEM_ROLL_SLOW`), an
+  item every 48 ms at first and every 96 ms at the end, the last step landing on the item drawn. The odds, the rows, the one box and the
+  golden Gazogem's second box are as they were (the item is drawn as the mushroom is taken; only its showing changed).
+- *Going by, nothing looks settled*: the items are drawn at 0.8 of their size and the box has no ring.
+- *The stop*: the item pops up 1.45 times its size and comes down to it over 0.3 s (`RACE_ITEM_POP`, `RACE_ITEM_POP_MS`); the box's ring
+  comes on white and wider for 0.24 s (`RACE_ITEM_FLASH_MS`), then gold -- gold now means "ready". An item won outright (the slot
+  machine's prize, the golden Gazogem, a time trial's can) pops in the same way.
+- *Ctrl* uses the item only once it has stopped, as before (a press while it turns does nothing and isn't kept; holding the key through
+  the stop doesn't fire it: the next press does). The test pilot still uses each item 1 s after its stop (`autodrop_ms`).
+- *The slot machine's reels* (Otringal's roulette wheel, red) have their own code (`SlotShown`): they turn at a steady 70 ms an item and
+  stop dead, one after another, so nothing lingered there and their timing is unchanged. They share the drawing, so each reel is drawn
+  smaller while it turns and pops up as it stops, and the winning line's ring flashes white as the third stops.
+
+![Before: the last 1.5 s of the 4.5 s roulette; now: the whole 0.9 s roulette and its stop; the slot machine's reels](racetrack/build/item_box_quick_roulette.png)
+
+**Verified** (headless, muted, `E:\dump\TEMP\ghostfx`: `roll.sh` -- the Desert car standing on the grid, a penguin into the box with
+`racebox 3`, a picture every frame; `slot.sh` -- Otringal's slot machine, `raceprize 1`): a Ctrl press 0.2 s before the stop does nothing,
+one a frame (20 ms) after it drops the penguin; the reels pop at 1.2, 1.9 and 2.6 s. Pilot races (`races.sh`, 3 laps against the
+opponents, the pilot using each item 1 s after its stop), this build against the one before: no rescue in either; the opponents still
+take and use their items. **The item rate goes up**: the box is free 3.6 s sooner, so the pilot takes about twice as many items, and
+leading he empties the rows the opponents behind him found standing before (one item a row). Taken in the 3 laps, Twinsen's and all the
+opponents': Desert 44 and 36 (19 and 64 before; 1st of 6, 2nd before), Mosquibees 18 and 4 (6 and 27; 1st of 3, 3rd before), the Temple
+61 and 20 (26 and 29; 1st of 4 both) -- one race each, the races aren't repeatable to the frame. A player who keeps an item for a
+moment takes fewer; if the old rate is wanted back, a pause after each item before the next mushroom gives one would do it.
+
+## The red magic ball follows the track (2026-10-18)
+
+The user: "Powerups: The Red magic ball to follow the track until it hits the car in front."
+
+**Before.** The red ball went after the car in front (by how far round the race each car was), along the *guide* line (the first
+opponent's) at 24,000 units a second. Its car's place on that line was looked for afresh every frame anywhere on it, and from 6,000 away it
+flew straight at the car, through whatever was between. It never changed its car, and a ball thrown by the leader darted straight ahead for
+112 cells, off the road at the first bend.
+
+**Now** (RACEMOD.CPP `RedBall`, `RedAim`, `RedGap`, `LineNear`, `CarAhead`/`RaceShare`, `BranchStep`, `HeroBranch`; every track, Twinsen's
+balls and the opponents' alike):
+- *Its way*: the racing line of the car it goes after. That is the car's own way round, so the ball is on that car's level of a raised road,
+  goes over its carried jumps as the line does and through every scene of the lap. The car's place on the line is the car's own (its S), in
+  sight or scenes away. After Twinsen, who has no line, the ball takes the thrower's line, and Twinsen's place on it is looked for within 40
+  points of where he was (on a raised road the height counts, so another level of the road is never taken for his). The way to the car is a
+  distance along the track (a car most of a lap ahead is that far along it), and the ball never runs past the car's place.
+- *Its speed*: twice the player's car's top speed, which is 220 km/h with the race game's car (110). It comes up on a car at the speed the
+  car itself drives: a car 20 cells ahead is reached in about 0.7 s, 100 cells ahead in about 3.3 s. It is faster than a car on Gazogem
+  fuel (1.5 times), never slower than the old 24,000, and never slower than 1.4 times its car's speed or its thrower's.
+- *The last stretch*: within 10 cells it comes over to its car's side of the road. Within 3 cells, on the car's own level, it flies straight
+  at the car, so it connects with a car anywhere across the road (the hit reach is the balls' 950). If the car gets 16 cells away (a rescue,
+  a teleporter), the ball goes back to following the track.
+- *Loops*: at a loop's foot the ball goes round the ring, inside it over its band, as a car does (the line itself steps across the road
+  there, from the lane in to the lane out). It then carries on from the lane out.
+- *A car it can't hit yet*: a car in a jump's flight, going round a loop or carried over a jump is not struck there. Struck, an opponent stood
+  in the air on its line over the gap and Twinsen's flight broke off. The ball follows 1.5 cells behind until the car is down, then hits it.
+- *Branches*: if Twinsen is on a branch of the raised road (Wannies Island's shortcut, its pit lane), a ball behind the branch's mouth turns
+  into it after him and rides the branch's own road. A ball already past the mouth waits where the branch comes back onto the lap.
+- *Another car to go after*: if its car finishes the race, is put back on the road (Twinsen's rescue) or drops out, the ball goes after the
+  car now in front of it. With none, it carries on as a leader's ball. A ball from before a new grid (a lost sprint run again) fades.
+- *No car in front* (the thrower leads): along the track 112 cells (as far as before, but round the bends), going after a car met within 16
+  cells ahead on the way (a back marker the leader is coming up to lap), then it fades with the magic ball's burst.
+- *Immunities*: as before (`CarStruck`). The protection spell holds and the super jet-pack absorbs the ball, which is used up either way.
+- *Opponents*: the same ball. On Hard (the Temple's level, `OpponentAims`), an opponent holds a red ball until Twinsen is the car directly in
+  front of it, as before, but now however far ahead and on whatever level. The 900-unit height check was for the straight balls.
+- *The car in front*: found by how far round the race each car is, each opponent's progress taken as its share of its own line's length
+  (`RaceShare`). The Emperor's palace's lines take their own ways through the rooms and are up to half as long again as each other, so a
+  car further along a longer way had been taken for one ahead. A car that has finished is no one's car in front.
+- *Seen*: Twinsen's magic ball sprite in red, as before, 450 over the road, now also drawn up to 32 cells past the edge of the scene's cube
+  (the road in sight goes on there). It leaves a trail of the red ball's own sparkle (`SPRITE_BALLE_SHADOW_3`, the ball on its way back to
+  Twinsen's hand in the game), a small see-through one every 45 ms.
+- *The log*: "Twinsen's red ball follows the track to The skeleton (24 cells ahead)", "... (160 cells ahead, out of sight in cube 10,7)", a
+  "follows the track: 26.2 cells behind Baldino (scene 231, in sight)" each second, "goes round loop 4", "turns into the raised road's
+  branch 1 after Twinsen", "closes in on The skeleton (2.6 cells)", "hits The skeleton (0.6 s, 39 cells along the track, in sight, cube
+  7,8)", "the car it went after has finished -- no car in front of it now, ...", "meets Baldino on its way (14.1 cells ahead)", "fades out:
+  no car met on its way (1.8 s, 112 cells along the track)".
+- *Console test*: `raceattack <n> [item]`: opponent n (1 the first) throws a ball power-up now (8 red, the default), wherever its car is.
+- *The race game's power-up page*: "Follows the track to the car in front and stops it."
+
+![The red ball: round a bend to the skeleton; up a ramp and round the right-hander; round a loop's ring; the leader's ball after a back marker; an opponent's ball along Wannies Island's shortcut onto Twinsen](racetrack/build/red_ball_track.png)
+
+**Verified** (headless, muted, `E:\dump\TEMP\redball`: plain copies of the stress test's 18-track game and the Temple's newest build; `run.py`,
+`scout.py`, `loopscout.py`, `batch.py`):
+- *Twinsen's ball, followed from his chase camera* (`raceitem 8` at a moment `scout.py` picked, the race's randomness fixed by
+  `qualifying_seed`): the Temple, the skeleton 17 cells ahead round a left-hander, hit after 0.4 s and 26 cells; 26 cells ahead up a ramp
+  and round a right-hander, 0.7 s and 42 cells; 24 cells ahead on a straight, 0.6 s and 39 cells. The Emerald Moon: Baldino 21 cells
+  ahead past loop 4, the ball round the ring and on, hit after 1.0 s and 59 cells; Baldino round a loop when the ball reached him, held
+  1.5 cells behind and hit as he came out.
+- *Scenes away* (the Desert, 19 scenes): Twinsen's ball at the Dino-Fly 160 cells ahead in cube 10,7, hit after 3.4 s and 205 cells; Moya's at
+  Baldino 122 cells ahead, hit after 3.9 s and 239 cells, out of sight; the log following each ball through the cubes once a second.
+- *The leader's ball* (the Emerald Moon, both opponents at 45 %): Baldino, a lap down, 14 cells ahead: "meets Baldino on its way", hit
+  after 0.3 s; with no one ahead, "fades out: no car met on its way (1.8 s, 112 cells along the track)".
+- *A branch* (Wannies Island): Twinsen standing on the shortcut, the old Wannie's ball 39 cells behind: "turns into the raised road's
+  branch 1 after Twinsen", hit after 0.6 s and 38 cells, coming at him from behind along the shortcut's road.
+- *Another car*: Baldino finishing the one-lap race before Twinsen's ball reached him: "the car it went after has finished -- no car in
+  front of it now", faded 112 cells on. Twinsen put back on the road with a ball after him (teleported off the road under the Temple's
+  deck): "was put back on the road -- after Twinsen now (36 cells ahead)", hit.
+- *Hard* (the Temple, every mushroom a red ball): an opponent holding its ball for Twinsen threw it once he was the car in front and hit him;
+  balls held 6 s without that went after their own car in front.
+- *Red balls only* (`powerup_only=8`, the pilot using each a second after its roulette; all 18 tracks, one race each, `batch.py`): every race
+  ran to its end. One rescue, on Sendell's Well: Twinsen stuck 3 s behind a car a ball had stopped on its one-car-wide road. HEAD had 10
+  (one there too). 1,313 red balls: 474 thrown at a car in front, 460 of them hit it (the rest went after another car when theirs finished,
+  or were still on their way when the run ended); 839 with no car in front (a leader's, or a car's whose race was over), 39 of those met a
+  back marker. 33 went round a ring. HEAD: 1,209 thrown, 590 at a car, 568 hits.
+- *Every power-up* (the usual draws; the Temple, the Emerald Moon, Wannies Island, the Desert, the town circuit, the Emperor's palace,
+  Otringal, Mosquibees Island; two races each, this build and HEAD): all 16 finished, no rescue in either. The opponents took 419 items
+  (413 at HEAD). Of 47 red balls, the 15 thrown at a car all hit it.
+
+The 18 tracks stress-tested and car setups scored per track (2026-10-16): docs/LBA2_RACE_TRACK_STRESS_TEST.md (`raceplan`, tools/RaceTrackStress).
+
+## The pack kept together (2026-10-20)
+
+The user: "Let's tweak the car behaviour to keep them more bunched so there's more overtaking, let's also change powerups that are given
+to cars to help keep cars bunched more too." Every race with opponents, every track (`RACEMOD.CPP`, the pack kept together):
+
+- **The pack's middle** (`PackFactors`): the median of every car's place in the race, Twinsen's among them. An opponent more than 0.5 s
+  ahead of it eases off, one behind it pushes, up to the level's share at 7 s (easy eases 12 % / pushes 8 %, medium -- and a track with no
+  levels -- 9 % / 9 %, hard 6 % / 11 %). Behind Twinsen the push and the level's catch-up don't stack: the more of the two.
+- **The slipstream**: a car 1 to 12 cells behind another (full from 2.5 to 6 cells) is 3.5 % quicker -- Twinsen's car too
+  (`RaceMod_SpeedFactor`, its top speed and pull).
+- **Form**: each opponent 3.5 % quicker and slower in turn, each on its own beat of 50 to 85 s.
+- All of it eased in over 1.5 s (`o->Pack`, `o->Band`): no car brakes on a straight nor shoots off.
+- **Skills drawn nearer the middle** of `opponent_pace=<lo> <hi>` (0.6 of the way out: 72-98 is drawn as 77-93); a fixed skill as given.
+- **Items by place**: the leader draws mostly the protection spell and the balls that go on ahead of it, Gazogem fuel a third as often
+  and fewer drops; the back draws the super jet-pack, lightning, the red ball and the fire ball more. The opponents at the front pass
+  rows by (`PackTakes`: the leader 60 / 50 / 35 % of them by level, the second about a fifth); Twinsen takes from every row. The
+  Temple's ghost when due is untouched.
+- **The log**: at each of Twinsen's race laps `pack at Twinsen's lap N: <order, each car's gap to the leader in s>; spread, Twinsen to the
+  nearest, passes so far` (a pass counted once a car is a cell clear), and each opponent's item with its place (`0.33 of the way back`).
+
+**Measured** (the Temple, 5 laps, no qualifying, the test pilot at 100 % -- the perfect line -- and 88 %, seeds 101, 202, 303; means over
+the three; spread = first to last at Twinsen's lap lines, s):
+
+| Level, pilot | Spread | The opponents' spread | Twinsen to the nearest | Passes among the opponents | Passes with Twinsen | Twinsen's places |
+|---|---|---|---|---|---|---|
+| Easy, 88 % | 49.4 → 39.5 | 15.4 → 3.8 | 34.0 → 35.7 | 9.7 → 12.7 | 0 → 0 | 1 1 1 → 1 1 1 |
+| Easy, 100 % | 63.8 → 56.4 | 14.8 → 4.0 | 49.0 → 52.4 | 5.3 → 13.7 | 0 → 0 | 1 1 1 → 1 1 1 |
+| Medium, 88 % | 12.8 → 6.8 | 9.6 → 3.5 | 3.4 → 3.3 | 16.3 → 21.0 | 2.0 → 5.7 | 3 1 1 → 4 1 1 |
+| Medium, 100 % | 27.2 → 16.9 | 14.5 → 8.5 | 12.8 → 8.5 | 8.7 → 11.3 | 1.3 → 0.7 | 1 1 1 → 1 1 1 |
+| Hard, 88 % | 8.0 → 4.0 | 5.7 → 2.7 | 2.5 → 1.4 | 16.7 → 28.0 | 12.3 → 16.0 | 4 3 1 → 4 4 1 |
+| Hard, 100 % | 8.5 → 5.4 | 6.3 → 3.7 | 2.3 → 2.0 | 15.3 → 25.3 | 9.7 → 12.0 | 1 1 4 → 4 4 1 |
+
+Hard's losses are close: the three opponents 1 to 5 s ahead at the line. Easy keeps its runaway lead for Twinsen (no catch-up there by
+design); its opponents race each other in a pack. The leader's strong items (a boost, lightning, the red and fire balls, the ghost)
+went from a quarter of its draws to a sixth, its Gazogem fuel from 12 % to 6 %; the ghost still came 4 to 6 times a race.
+
+The Desert (five opponents, no levels: medium's numbers; 3 laps, seed 101; the test pilot stuck far behind there in both builds, so the
+opponents alone): they finished 428.6 to 558.8 s from GO, the first four within 52 s; now 462.2 to 492.8 s, the first four within 2.8 s.
+
+## The handbrake (2026-10-21)
+
+The user: "Let's modify the engine to allow us to have access to a 'handbrake' so we can use it to skid around corners. Let's
+initially map this to shift." In the race-track mode only (the race game and the editor's Play), the player's car only.
+
+- **The key**: Shift, either one -- or whatever key Options gives the inventory, which the car has no use for (the buggy's
+  behaviour has no `CF_INVENTORY`), and a pad's **Y**, the inventory's button (`RaceMod_FilterInput` notes `I_INVENTORY` and keeps
+  it out of `Input` in the car). Nothing else reads Shift while driving (Ctrl took the items off it on 2026-10-16).
+- **The model** (RACEMOD.CPP `RaceMod_Handbrake`, `RaceMod_Slide`, `RaceMod_MoveBeta`; BUGGY.CPP `RaceSpeed`, `MoveBuggy`): held,
+  the back wheels lock -- no drive, a brake 0.22 of the pedal's (the Temple's car: about 56 km/h a second), the steering 1.5 times
+  as quick -- and the way the car goes (`s_slideBeta`) parts from the way it points: it follows the heading round only slowly (the
+  gap shrinking by e^-1.5 a second), never more than 56 degrees behind it, and the car loses speed sliding sideways (0.6 of it a
+  second times the sine of the slide's angle). Let go, the grip comes back over 0.45 s (to 9 a second) and the way it goes swings
+  round to the heading; the slide is over once they are within half a degree (3.5 with the grip all back and the steering still
+  on). A slide starts only above 10 km/h; not on the grid, in the air, over a jump or round a loop, skidding on oil or on the super
+  jet-pack. The car moves each frame by its speed as ever -- only the direction is the slide's -- so the rail and the walls hold a
+  sliding car as any other; while they hold it back (its last move short of 0.6 of the one meant) the grip comes back 5 a second
+  quicker, so it scrapes along rather than pressing on. Across a cube's edge the slide goes on.
+- **Tuning**: the race file's `handbrake=<on 0|1> [brake] [steer] [grip] [slip]` (defaults `1 0.22 1.5 1.5 640`; slip in 4096ths of
+  a turn); `handbrake=0` turns it off for a track.
+- **The camera**: the rail camera keeps behind the way the car goes while it slides (it chose its side of the car by the heading:
+  swung square across the road, the car had the eye flip round in front of it).
+- **Heard and seen**: a tyre squeal looped while it slides, louder the further sideways and the faster, a little higher the faster
+  (`SkidSound`: `RACESOUNDS/SKID.WAV` if the game folder has one, else made by the engine -- a wavering 1,180 Hz tone over hiss, half a
+  second looped); a puff of the game's smoke from a back wheel every 90 ms while it slides past 18 degrees above 25 km/h.
+- **The Controls page** (RACEGAME.CPP): "Shift -- Handbrake" and "Y button -- Handbrake"; P and Esc share a row as a pad's Back and
+  Start do, and the lines are as far apart as the rows leave room for (23 on the Temple's page, as before).
+- **The log**: `[racemod] handbrake on at <km/h>`, every 0.2 s while it slides `handbrake t <ms> key heading way slip speed grip
+  [held back] at x,y,z`, `let go`, `the slide over after <s> (<why>) -- <from> to <to> km/h, <most> degrees sideways at most`.
+
+**Measured** (the Temple, `--fixed-dt 20`): never pressed, nothing changes -- a time trial lap 58.12 s and a seeded race lap 70.26 s
+(the opponents' laps too), every cartrace and racemod line the same as the engine before. The test pilot through the U-turn hairpin
+with Shift held 15 / 25 / 40 frames: slides of 33 / 53 / 56 degrees, 109 km/h down to 80 / 69 / 55, the lap 0.2 to 0.7 s slower than
+the pilot's own line (it brakes there anyway) and the car out of the bend on the road each time. Swung square across the straight with
+the handbrake held, the car slid sideways into the rail and was held there on the deck, no rescue.
+
+## The ghost car (2026-10-24)
+
+The user: "Add a function that records a "ghost" car for a track ... either so a user can watch their lap back, compete against their
+best lap, or share their best lap with somebody else." They suggested logging the keys, since a time trial has no power-ups.
+
+- **Why not the keys**: the engine moves everything by the real time each frame took (`TimerRefHR`, a variable step), so the same
+  keys drive a different lap at a different frame rate. Two headless runs of the same input already drift by seconds. The ghost
+  keeps where the car was instead: exact on any PC, at any frame rate.
+- **Recording** (RACEMOD.CPP, the ghost section before `RaceMod_Frame`): every frame of a time trial's lap, after the frame's moves
+  (`GhostRecord`, at most every 15 ms), one sample: the lap's clock, the car's place in island units, its angles as drawn, its body
+  and animation, the island. With `drive_as=` it is the car drawn in Twinsen's place, pitched as `DrawDriveAs` pitches it. The lap's
+  clock at each checkpoint goes with it (`GhostSplit`).
+- **Kept** (`GhostLapDone`, from `RaceMod_Lap` and from `SprintOver` for a sprint's run): a lap quicker than the player's own best ghost
+  is written to `<user folder>\GHOSTS\<track>.ghost`. The track is `ghost_name=` (the race game writes its track's name), else the race
+  file's name. A lap quicker than the ghost raced so far is raced from the next lap on.
+- **The file**: text. A head (`ghost=1`, `track=`, `lap=` ms, `car=`, `date=`, `splits=`, `points=`), then one line a sample:
+  `t x y z alpha beta gamma body anim island`. A 57 s Temple lap is about 3,400 lines, 155 KB. Written to `.new`, then renamed.
+- **Raced** (`ghost=2` the track's fastest file in `GHOSTS`, any name; `1` the player's own; `0` none): `DrawGhost` in `RaceMod_Draw`,
+  after `DrawDriveAs`. It is interpolated between samples (not across a jump of more than 4096 units: a rescue, a teleporter). It is
+  drawn tested against the scene's depth without writing it (`FILL_POLY_FOG_NZW`), into a screen copied just before. Every pixel it
+  changed is mixed with the one under it (`GhostMix`: 55 % of the ghost's colour, tinted 30 % to pale blue, the palette's nearest,
+  made as needed and again when the palette changes). The display's line over Best time shows the ghost's lap. For 3 s after a
+  checkpoint or the line it shows the gap in words, "0.44 ahead" or "1.37 behind": the font has no `+`.
+- **Played back** (`ghost_watch=<file>`, `GhostWatch`): Twinsen's car hidden, the ghost drawn solid where it is, the car put there
+  every frame so the camera follows. No laps counted, no grid, no rescues, no keys but the menu's. Past the cube's edge, the car goes
+  into that cube's scene as a carried jump's car does (`FrogCarry`, now with a `why`). After the lap's end it rests 2.5 s and goes
+  round again, back to the start's scene if the run ended elsewhere (a sprint).
+- **The race game** (RACEGAME.CPP): `StartRace` writes `ghost_name=`, `ghost_car=` and `ghost=` for a time trial. Best laps shows the
+  track's fastest ghost ("Your ghost car" / "Shared ghost car" and its time): Enter plays it back (`StartRace` with `ghost_watch=`),
+  G goes round the fastest / your best lap / none (`ghost=` in `RACEGAME_SETTINGS.TXT`), O opens the folder (`SDL_OpenURL`, not under
+  the control socket). The page moved up and its car names are cut to its width: "Twinsen's Halloween buggy" ran past the edge.
+- **Tested** (an LBRA install from this build, `E:\dump\TEMP\lbra\ghost_inst`, driven by `--listen`): the Temple with Twinsen's
+  buggy. Lap 1 (57.67 s) was kept; the next laps raced it, the ghost seen ahead after a stop, the splits shown; lap 5 (57.16 s)
+  replaced it. Otringal with a character car (`drive_as=`), three scenes and two carried jumps a lap: kept, raced, played back
+  through its scenes. Polar Island's sprint: kept at the finish (52.64 s), played back through 20 scene changes and round again
+  from the start's scene. A copy renamed with a faster time showed as "Shared ghost car" and was played back.
+
+**Smoothing the playback, and no flashes** (the same evening -- the user: "the car position seems to move very slightly backwards and
+forwards, and appears a little jerky and we also have occasional screen flashing"):
+
+- **The clocks**: the engine simulates in 16 ms steps (`FixedTimestep`, PERSO.CPP's sub-step loop) while a 60 Hz frame is 16.7 ms, so
+  a frame runs one step, and every 0.4 s two. The samples were stamped with the frame's clock (`RaceMod_Frame`), a millisecond or two
+  off the step that moved the car, and every 0.4 s one went twice as far in the same time. And the replay put the car where the ghost
+  was in the frame's time, while the camera follows it in the steps: the camera lagged and caught up, the car slid back and forth.
+  Both now happen in the step itself (`RaceMod_EdgeCross`, after the hero's move, before the camera): `GhostRecord` stamps each
+  sample with the step's clock (a lap's samples now exactly 16 ms apart), and `GhostWatch` puts the car there, where `DrawGhost` then
+  draws it. A ghost raced is drawn at the last step's clock (`SimNow`: `LastSimRefHR`), as the car on the screen is.
+- **The first files** (`ghost=1`): their times are rebuilt as they load (`GhostRetime`). Each sample counts as a whole number of 16 ms
+  steps (its distance against its neighbours' typical step), then the times are nudged towards the old stamps over half a second
+  either side. On the user's Emerald Moon ghost, the samples whose speed jumped more than 10 % went from 264 to 50 of 1,159. New files
+  are `ghost=2`.
+- **The cube changes**: a change of cube puts the car half a cell on, so the two sides' places don't join. Slid between them, the
+  played-back car kept crossing back and forth between two scenes, and the engine's own zones and edge hold changed scenes too.
+  Each change was a flash. Now a sample is never slid across a change of cube. While a ghost plays back, the only scene changes are
+  its own, at its samples (zones refused: `RaceMod_CubeChangeAllowed`). Its car is never rescued off the island's edge
+  (`RaceMod_OffIsland`) and never stopped by a hit (`RaceMod_CarHit`). The user's Emerald Moon replay had all three: three "back on
+  the road" rescues, an edge hold and a hit. Played back now: exactly the lap's 8 scene changes a lap, nothing else.
+- **What is left**: the engine's own step against the frame, one frame in 25 at 60 Hz moving the car two steps, as it does when you
+  drive.
+
+**The game's icon** (LBRA installer, `GameIcon.cs`): the installed `LBRA.exe` had the engine's icon, so its window, the taskbar and
+Explorer showed it. The installer now replaces the exe's icon groups with `pumpkin.ico`'s pictures through Windows' resource update,
+before it marks the exe a windowed program. SDL takes the window's icon from the exe's first icon.
+
+**Round the loops, and the exe's icon in Explorer** (2026-10-25 -- the user: "On Emerald Moon the car appears to be going around the
+outside of the loop instead of the inside"; "the exe icon for LBRA still retains the engine icon"):
+
+- **The car Twinsen drives as** (`drive_as=`) was drawn pitched with the road's climb alone (`s_drivePitch`, no steeper than
+  `RACE_DRIVE_SLOPE_MOST`), so round a loop it stayed nearly upright: roof to the ring, wheels to the sky. Twinsen's own buggy was
+  posed right, because `RaceMod_Loop`'s `CarPose` turns him round the ring. `DriveAsPose` now gives the car drawn in his place his
+  pose while a loop has him (`s_loopState`), and the slope's pitch otherwise. `DrawDriveAs` and the ghost's recording both use it, so
+  ghosts recorded from now on go round the inside too. A ghost recorded before this keeps the upright pose in its samples.
+- **The ghost's angles** are not slid between two samples where one turns over a quarter of a turn. Over a loop's top the three
+  angles swap round, and slid each on its own the car tumbled for a frame.
+- **Tested**: Emerald Moon with the vampire's coffin. Live, the car rides the inside of loop 1, wheels on the ring. A new ghost lap
+  played back rides the inside of loop 2.
+- **The icon**: the installed exe already held only the pumpkin's five pictures, 16 to 256 pixels. Explorer was showing the icon it
+  had cached for that path before the update. The installer (`GameIcon.Refresh`) now tells the shell the exe changed and empties its
+  icon cache (`SHChangeNotify`: `SHCNE_UPDATEITEM`, `SHCNE_ASSOCCHANGED`).
+
+**A ghost that drowned** (2026-10-25 -- the user: "One of the ghosts I recorded yesterday isn't playing back correctly, the ghost car was
+dying. I think it was the Citabau track"):
+
+- **The cause**: Citadel Island's town's race file has no `cube_scene=` lines, and they were the only cube-to-scene table the playback
+  had. Its lap changes cube 15 times. While a ghost plays back, the engine's own zones are shut (`RaceMod_CubeChangeAllowed`), so the
+  car stayed at the edge of its cube. 448 ms in, the ghost goes into cube (7,10) along the shore. Twinsen, held at the edge over the
+  sea, drowned: the life gauge, then the death's restore, the game clock wound back 5 s. `RaceMod_Rescue` didn't save him, because
+  with no safe place on record it lets the engine have him.
+- **The fixes**:
+  - `CubeScene` is a cube's scene: `cube_scene=` first, else the island's, read once an island from SCENE.HQR's scene heads (island,
+    cube, kind; the nearest in number where two outside scenes share a cube). `LoadSceneCubeXY` only answers for the cubes round the
+    current one. `FrogCarry` uses it, so the frog's throw does too.
+  - While a ghost plays back, `RaceMod_Rescue` holds the car, so Twinsen is never drowned or put back on the road.
+- **Tested**: the user's own Citadel town ghost (the flying carpet, 31.81 s) in the sandbox. "Island 0: the scenes of 9 of its cubes",
+  then all 15 of the lap's changes (scenes 46, 49, 42, 48, 47, 45, 47, 50, ...) and round again. No clock going back, no falling, no
+  rescue; the carpet on the road all the way.
+
+## Ghosts to beat: Easy, Medium and Hard on every track (2026-10-25)
+
+The user: "Let's generate easy medium and hard ghosts to beat for each track. Hard tracks should make use of any shortcuts and be
+optimised for best lines using the best car for the specific track."
+
+- **The game side**:
+  - The game folder's `ghosts\` holds the game's own ghosts, each with `level=Easy|Medium|Hard` in its head.
+  - `RaceMod_GhostFind` modes: 1 own, 2 fastest of all (own, shared, game's), 3/4/5 the game's Easy/Medium/Hard, 6 the fastest of the
+    player's and the shared ones. `ghost=` in the race file takes 0-5.
+  - Racing a game's ghost: the display names it ("Hard ghost 0:46.28"), and a lap under it says "You beat the Hard ghost!" once a trial.
+    A level ghost stays raced, rather than giving way to the player's own quicker lap.
+  - The lap's time against the ghost stays on the display its 3 s: a checkpoint just past the line had covered it at once.
+  - Best laps: Up, Down go through the player's/shared ghost and the three levels; Enter plays the one shown back. G goes round the
+    fastest, your best lap, Easy, Medium, Hard, none.
+- **The shortcuts** (`autoshort 1`, the console; `BuildShortLine`): a line for the autodrive alone. The lap's counting keeps the racing
+  line. Spliced in:
+  - each raised-road branch under 0.9 of the way round it saves;
+  - each teleporter within 12 cells of the line that comes out further round the lap, turned in towards from as far back as it is off;
+  - each rail opening, over the edge at its middle and on along the road below.
+
+  On the Temple of Bú the hidden passage and the spiral drop are both taken, every lap counted: 46.28 s against 54.53 s on the racing
+  line. Wannies Island's branch is taken, but its lap is slower there (the frog). Island CX's branch is a pit lane, longer, and is left.
+  The palace's teleporters save nothing.
+- **The cars**: `raceplan file` gives each car's star profile's perfect lap on the track loaded (top x(1+0.08 d), pull x(1+0.5 d)(1+0.08 d),
+  steering x(1+0.2 d), d = (stars - 2.5) / 2.5). Hard takes the quickest unlocked car: mostly the first quetch child's kart (2.5/1/4) or
+  the undergas bulldozer (1/1.5/5). The Temple: the Tralu's cave. Polar Island: the Dark Monk's car. Island CX: the firefly tart.
+  The Francos: the nomad grobo's truck. The palace: Mr. Kurtz's laboratory.
+- **Made by** `E:\dump\TEMP\lbralltracks\gen.ps1` on an LBRA install (the menus driven through `--listen`):
+  - Easy: Twinsen's Halloween buggy at 70 % of the line's speed, its laps 1-2.
+  - Medium: the same car at 85 %, lap 3.
+  - Hard: the best car on the shortcut line at 100 %, then 104/100/108/102 % with the look-ahead varied, its fastest lap.
+  - The pace's effect isn't linear: on Otringal 60 % gave 46 s, 78-92 % all about 32-34 s.
+  - Wannies Island: a trial per level of 6 laps, best kept, labelled by time.
+- **Times** (Easy / Medium / Hard, s): Temple 80.9/65.6/46.3, Polar 70.9/58.9/52.9, Citadel storm 14.8/12.6/10.2, Citadel town
+  52.6/43.6/36.1, Desert 65.4/54.2/46.7, Emerald 33.9/28.2/22.9, Otringal 38.4/32.6/25.9, lava lake 17.2/14.6/11.3, Francos
+  45.0/38.5/31.7, Elevator 18.1/15.2/11.3, Wannies 11.7/11.6/11.4, Mosquibees 23.7/19.8/16.5, Volcano 34.0/28.5/23.0, CX 30.9/23.0/18.3,
+  palace 51.3/42.4/37.2, statue 24.0/20.0/15.6.
+- **Shipped**: the LBRA installer embeds `Game\ghosts\*.ghost` as `game/ghosts/...`, so they go into the install's `ghosts\`.
+- **Found on the way**: on Wannies Island the race game's menu during or after a race can leave the game in hall 123 (scene 123, island
+  6) with no menu. The menu's resume reloads the current save there, and a car driven on past the finish goes in. Not fixed yet.
+
+**Wannies Island: the race sent to the hall** (2026-10-25 -- the user: "Look into it properly please"):
+
+- **What happened**: on Wannies Island, Esc during a race (or the race over going back to the menu) left the game in hall 123 with no
+  menu, the race gone.
+- **Why**:
+  - Wannies Island is made on LBA2's scenes 96-99. Twinsen's own life script in its start scene, 98, begins the arrival's cinema:
+    `CINEMA_MODE 123`, a cinema whose destination is the hall.
+  - The race takes the scene over, so the cinema never runs its course. `CinemaMode` stayed 123 all race; no bands showed.
+  - PERSO.CPP's menu key, while a cinema with a destination is on, calls `ResetCinemaMode`: "skip the cinema", `NumCube = -1;
+    NewCube = CinemaMode`. That made the jump to the hall, which cubetrace showed as `-1 -> 123`. The race's own way back to the menu
+    (`RaceMod_WantsMenu`) goes through the same key.
+  - Found with `cubetrace`, new logs of the menu's decisions (GAMEMENU.CPP `[menu]`), Twinsen's life while racing (`[racemod]
+    Twinsen's life a -> b`; it never changed: no death) and of every script cinema (GERELIFE.CPP `[life] ... cinema mode`).
+- **The fix**: GERELIFE.CPP `LM_CINEMA_MODE` asks `RaceMod_NoCinema`. While a race is on -- the car on a track with a start line, or
+  `start_in_car=` -- a script's cinema is left out and said.
+- **Tested**: Wannies Island's trial, "cinema mode 123 left out (a race)". Esc during lap 2 opens the menu; Resume goes on with the race
+  in its scene; the race over goes back to the menu over the track.
+- **Not the cause** (tried first, reverted): the zones into a scene inside, and holding the race's way back to the menu while a cinema
+  was on.
+
+## Racing a ghost: its own page, levels unlocked in turn; Best laps simplified (2026-10-25)
+
+The user: "Let's change this interface because it's terrible ... first have the user select the track, then Time Trial, then add a
+screen so they can choose to race a ghost ... force them to beat easy to unlock medium, and to beat medium to unlock hard ... simplify
+the Best laps screen ... top 5 times ... a watch section ... Remove "O to open the ghosts folder"".
+
+- **Race a ghost** (RACEGAME.CPP `GhostPage`, after a Time trial is chosen, before the car page): Back, No ghost, Your best lap, Easy,
+  Medium, Hard (IDs `RG_ID_GHOST_NONE` 2360 .. `_HARD` 2364), each with its lap. A missing ghost is greyed; a locked level reads "Medium
+  ghost: beat Easy" and is greyed. The rows sit lower than other pages' (centre 308, header at 92) so the header clears the menu
+  picture's second title line. The choice is saved as `ghost=0|1|3|4|5`; Esc on the car page comes back here.
+- **Unlocks**: `ghost_beaten=<n>|<track>` lines in `RACEGAME_SETTINGS.TXT` (1 Easy beaten, 2 Medium, 3 Hard). RACEMOD's GhostLapDone
+  calls `RaceGame_GhostBeaten(level)` (COMMON.H), which keeps it and returns the level it opens: "You beat the Easy ghost! Medium
+  unlocked".
+- **Your best lap** is the GhostFind mode 6 (the player's own or a shared one, the quicker): the race file gets `ghost=6` for it, and
+  RACEMOD swaps in a new best lap for mode 6 as for 1 and 2. The row reads **Shared ghost** when the quicker one is shared, and **Your
+  recorded lap** when Best laps holds a faster lap with no ghost (laps from before ghosts were kept).
+- **Best laps** (`TimesPage`): three rows -- the track (Left/Right: tracks), Your best lap, Ghost: Easy/Medium/Hard (Left/Right go round
+  the levels there are) -- the selected one framed and orange; the five fastest laps between the track and the Watch header. Enter
+  watches; any level can be watched, locked or not. G and O are gone, and with them the ghost-order cycling.
+- **Tested** (sandbox, Otringal): the page with Medium/Hard locked; Easy raced with the autodrive, "the Easy ghost beaten, Medium open",
+  `ghost_beaten=1|Otringal`, Medium open on the page after; Best laps' rows, Left/Right round the levels, the Easy ghost watched; the
+  Temple's page (its own unlocks); a shared ghost faster than the player's shown and raced.
+
+## The next fixes: start camera, menu row, harder ghosts' times, a time trial's laps (2026-10-25)
+
+- **Emerald Moon's start camera** (the user: "up in the air and at the side"): only after another run had been left through the menu
+  while the race camera's hook had the view (round a loop, or easing back from it). `FollowCamOwnEyeAt` and the ease back
+  (`FollowCamLeave`) are places in the cube the car was in, and `FollowCamReapplyLift` put the view back on them every frame, so the
+  new race opened looking from the old run's spot, the car out of the picture, until it moved. New `FollowCamDropOwnEye`
+  (FOLLOWCAM.CPP/H) forgets both; RACEMOD calls it in `RaceMod_NewGameScene` and when a race is begun again from the grid.
+  `FollowCamResetToView` now clears the leave too. Repro script: `E:\dump\TEMP\lbra\alltracks\emcam.ps1 [-After 2]`.
+- **The main menu's row**: `RaceGame_Menu` builds its rows each time and opened on Specials; now on the row chosen last (Track select,
+  Specials, Best laps) unless a race is paused (Resume first). The sub-pages already kept theirs.
+- **Harder ghosts' times**: GhostLapDone looks up the Medium and Hard ghosts' laps (`RaceMod_GhostFind` 4, 5) when a lap beats the
+  raced ghost, and passes the hardest one beaten; `s_ghostBeaten` is now that level + 1, so a later lap beating a harder time is
+  said too. `RaceGame_GhostBeaten` returns what opens ("Medium", "Hard", "Medium and Hard").
+- **A time trial's laps**: `LapsPage` (IDs 2365..2369) after Time trial, before the ghost page: 1, 3, 5, 10, Endless.
+  `trial_laps=` kept; the race file gets `race_laps=` from it (0 endless: RACEMOD counts laps with no end, "Lap 7"). Sprints and a
+  ghost played back keep the track's own. An endless trial's fastest lap goes into Best laps as it is driven
+  (`RaceGame_TrialBest`, COMMON.H), replacing the one it put there before (kept with laps 0).
+- **Tested** in the sandbox: the start camera after leaving round a loop and while easing out of one; an endless trial against Easy
+  (lap 1 beat Medium's time: "You beat Easy and Medium! Medium and Hard unlocked", `ghost_beaten=2`; Best laps' entry replaced as
+  the laps got faster; "Lap 5" on the display); 1 lap chosen on the page, the trial over after it, the menu back on Track select.
+
+## Extreme ghosts: the test pilot's racing line and handbrake slides (2026-10-25)
+
+The user: "All the hard ghosts I've raced so far have seemed quite easy to beat, let's add an extra difficulty ghost called "Extreme"
+that is almost impossible to beat. Make sure we're using the best car for the track, taking all the optimum lines, and sliding around
+corners where that's quicker".
+
+- **The level**: GhostFind mode 7 (`level=Extreme` in a game ghost's head; mode 6 was taken by own + shared). RACEGAME: the ghost page's
+  seventh row (`RG_ID_GHOST_EXTREME` 2370, rows centred at 290 as the in-race main menu's, the header in white over the picture's
+  title -- a shaded strip there never showed over the menu picture), opened by beating Hard (`ghost_beaten=` up to 4); Best laps'
+  ghost line goes round four levels; `RaceGame_GhostBeaten` returns every level a lap opens ("Hard and Extreme"). GhostLapDone checks
+  every harder level, Extreme too.
+- **autoslide** `<0|1> [on degrees] [plan]`: the pilot's speeds planned with the steering `plan` times as quick (`s_autoSteerPlan`, in
+  PlayerPlan and FinishAutoLine), and the handbrake (I_INVENTORY from RaceMod_AutoInput) held while the way the car goes (`s_slideBeta`
+  while sliding) is more than `on` degrees off the bearing to the line ahead, let go within a third of that. A held slide turns the
+  car's path RACE_HB_STEER (1.5) times as fast once the slip is full, with no drive and almost no scrub: a bend the steering limits
+  is taken half as fast again. Emerald Moon, the bulldozer: 23.24 s a lap without, 21.1 with.
+- **autoline** `<0|1> [margin cells]`: the pilot's line (a copy of the racing line when autoshort takes no shortcut) moved across the
+  raised road to the least-bending line: each free point only along its normal, towards (-p[i-2k] + 4p[i-k] + 4p[i+k] - p[i+2k]) / 6,
+  k = 16, 8, 4, 2, 1, held inside its room on the road found once up front (`RAISED_INSET` + margin from the edge, the same level).
+  Points stay off the raised road, in or near a jump's span, within 10 cells of a loop, by teleporters and rail openings, at steps in
+  the line. A moved point keeps the racing line's banking (its radius times the racing line's over the plain circle's). Kept only if
+  its planned lap is quicker. Emerald: planned 24.75 -> 23.59 s; driven with slides, about 0.2 s a lap. `LBA2_AUTOLINE_DUMP=<file>`
+  writes both lines' points.
+- **Fixed on the way**: the pilot's own line (FinishAutoLine) planned its speeds before OpponentLoops placed the loops on it, so every
+  ring's speed cap and the steering into it went by a loop at the line's start -- an autoshort line on a track with loops lapped 50 %
+  slower. Loops are now placed first.
+- **Generator** `E:\dump\TEMP\lbra\alltracks\xgen.ps1 [-Only 'a|b'] [-Root <sandbox>] [-Port n]`: the top 3 cars by raceplan (locked
+  ones too), each 3 laps of an endless trial on `autoshort 1; autoline 1 0.25; autoslide 1 14 1.35; autodrive 1 5 0 100`, then the
+  best car with six variations (slide plan 1.5, on 18 or 10 degrees, look 6, pace 104, no autoline), two laps each. The own ghost keeps
+  the fastest lap of the lot; it becomes `<track> - Extreme.ghost`. Two run at once on `ghost_inst` / `ghost_inst2` (ports 27123/4).
+  `trycfg.ps1` tries settings by hand.
+
+## Polar Island's mini-map, sprint runs, a missed checkpoint's lap, Restart (2026-10-25)
+
+- **Mini-map** (the user: Polar Island's "only has the raised track section on it and not the part that's ground level"): the map drew
+  the raised road whenever a track had one. `MapGuideOverRaised`: when a tenth or more of the guide line's points are off the raised
+  road (RaisedAt, 1024 padding) it draws the guide line instead -- Polar: 1330 of 1661 off -- and the raised road's branches beside it.
+- **Sprint runs** (the user: "In time trial mode for our two point to point tracks, let's respawn the user back at the start line after
+  they complete a lap so they don't have to restart"): the laps page asks **How many runs?** for a sprint (1, 3, 5, 10, endless);
+  RACEGAME writes `trial_runs=`. Over the finish with runs to go, `SprintRunAgain` keeps the run (GhostLapDone, RaceGame_TrialBest,
+  `s_runsBest` -- the grid clears s_bestLap), holds its time on the display, and RaceMod_Story sends the car back with `RaceFromGrid`
+  (the old loss restart, made a function) RACE_RUN_AGAIN_MS later once it isn't flying: Polar's finish is at carried jump 2's lip, and
+  sent back at once the jump caught the car again the next frame and carried it into the scene past it, where it stuck. HUD "Run 2/3".
+  The last run ends as before (SprintOver, with the runs' best); RaceGame_Finished takes the interim Best laps entry out first.
+- **A missed checkpoint in a time trial** (the user: "have the time reset if a user passes the start/finish line after missing a check
+  point"): RaceMod_Lap starts the lap again from the line -- clock, checkpoints from the first, ghost recording -- "Missed checkpoint 3:
+  the lap starts again". A race keeps its old rule (the lap uncounted until the checkpoint is taken).
+- **Restart** (the user: "We should also add in a restart menu option"): RG_ID_RESTART 2371 under Resume in a race of the race
+  game's (going on or just over), "Restart the race / the time trial" or "Watch again from the start": StartRace again with the race's
+  own setup (`s_raceWatch` kept for a ghost played back). The greyed Story Mode row is left out while it shows: seven rows.
+- **Tested** (sandbox 3): Polar 3 runs (52.7 / 52.9 / 52.9 s, the respawn after each, the trial over after the third); Otringal: over the
+  line, teleported back onto the grid and over it again -- "Missed checkpoint 3: the lap starts again", checkpoints from 1; Esc in the
+  trial, "Restart the time trial", the trial again.
+
+## Extreme ghosts, the second day: Wannies Island and the pilot's lines (2026-10-26)
+
+- **First pass, all tracks** (xgen.ps1): 13 of 16 beat Hard by 3-13 %. The Elevator Platform, Wannies Island and the palace didn't.
+  The second pass (`-Second`: the Hard ghost's car and the Extreme ghost's, plain settings at 100-110 % besides slides, seeded with
+  the Extreme ghost so only a quicker lap replaces it) took the Elevator Platform to 10.69 s (Hard 11.33).
+- **Wannies Island**: Hard's 11.4 s laps were the racing line's; the pilot's line with autoshort took branch 1 (68 cells against 181)
+  and lapped in 21-25 s however it was driven -- shorter on the map, far slower on the rollercoaster. Fixed for the generator with
+  `-NoShort` (autoshort 0). In the engine:
+  - `BuildAutoLine` leaves out, one at a time, each branch whose leaving out plans the lap quicker (`s_shortSkip`; teleporters stay in
+    both). The plan didn't see Wannies' case (the racing line planned no quicker), so it changes nothing there, but holds elsewhere.
+  - `FinishAutoLine` takes each point's banking from the racing line's nearest point when the line has shortcuts spliced in (point
+    counts differ) -- before, a shortcut line planned every banked bend as flat.
+  - Tried and taken out again: the pilot slowing to come to the giant frog's mouth while it is open, as the opponents do (learning
+    how late it came). Its arrival was erratic (+-2.5 s), and the slowing cost more than the mouth did: the pace hardly matters on
+    Wannies (Easy at 60 % lapped 11.71 s, Hard at 100 % 11.43) -- what is quickest is driving on and taking the mouth as it comes.
+- On Wannies the slides and the line pulled tight cost time (14.8-16.7 s against the plain racing line's 12.2): the plain settings
+  at higher paces are its Extreme.
+- Also tried and taken out: the pilot braking as late as it can (only for a slower point ahead): no quicker on the Emerald Moon,
+  and on Wannies Island the speed it carried into the carried jumps cost 8-12 s a lap.
+- **Wannies Island's lift film** (the user: "the lift cut scene is displaying before every test, is this a bug?"): the start scene's
+  script plays ACF ASCENSEU (the lift, ~20 s) before every race and trial there. GERELIFE LM_PLAY_ACF now asks RaceMod_NoCinema
+  and leaves it out in a race, as LM_CINEMA_MODE is: "[life] actor 0 of scene 98: film ASCENSEU left out (a race)".
+- **The high leap** (the user: "None of your test laps on the Wannie's race track are taking the shorter jump route, perhaps this is
+  quicker?"): branch 2 runs over the line's start, and autoshort left every such branch. `autoshort 1 <branches>` now takes those
+  branches and no others (s_shortForce); one over the start turns the pilot's copy of the racing line round to start where the
+  branch comes back to it (RotatedLine) and splices it in at the end. Driven: the vampire's coffin 10.85 s (the racing line's best
+  11.36 s, the frog's way 21+ s) -- the Extreme ghost. The branch is 71 cells against 65 the way round but skips the climb.
+
+## The Updates page's word kept up to date (2026-10-26)
+
+- The user: the page "never seems to change from 'Checking for a new version...', but did install correctly on exit". The page drew
+  the updater's word (Update\status.txt) once, as its menu was entered, and the menu then waited for a key: the check's answer, written
+  20 s later, wasn't shown till something was pressed. GAMEMENU `MenuRedrawHook`: with MenuRelayoutReturns set, DoGameMenu asks it while
+  it waits and returns MENU_RELAYOUT when it says the page's text changed (the row chosen kept in the menu's first word -- the resize's
+  return now keeps it too). RACEGAME `UpdateWordChanged` looks at status.txt twice a second against the time the page drew.
+
+## Ghost sharing: a zip of a player's ghosts, and racing another person's (2026-10-26)
+
+- The user: "update ghost sharing so a user can share a zip file with all of their ghosts in, exported with their name, then update the
+  "Race a ghost" screen so they can select a specific person's ghost ... an "Other" option, that then lists all of the installed ghosts
+  from other people relevant to that track".
+- Ghost files may carry `driver=<name>`. RACEMOD `RaceMod_GhostOthers` lists a track's ghosts in GHOSTS but the player's own, each
+  person's quickest (driver=, else the file name after the last " - "), the quickest first; `ghost=8` + `ghost_file=` races that file
+  (the display: "Sam  0:27.15"). `RaceMod_GhostFolderSignature`: the folder's count and newest change.
+- RACEGAME: the ghost page's eighth row, **Other people's ghosts (n)** (8 rows at centre 284, the canvas's 480 just holding them);
+  OthersPage: Back, up to 5 ghosts, Import ghosts..., Share my ghosts...; the choice kept as `ghost_other=`. The page drawn again
+  when the GHOSTS folder changes (MenuRedrawHook). "Your best lap" is now the player's own only (GhostFind mode 1, not 6).
+- Import and Share are the setup's: RACEUPDATE `RaceUpdate_Tool` starts `Update\LBRA-Setup.exe --export-ghosts|--import-ghosts
+  "<GHOSTS>"` (LBRA Installer\GhostShare.cs): Share asks the name (GHOST_NAME.TXT beside GHOSTS) and where to save
+  `LBRA ghosts - <name>.zip` (each own ghost as `<track> - <name>.ghost` with driver=, and a README); Import takes zips or .ghost
+  files (an OpenFileDialog, or files after the folder on the command line; LBRA_GHOSTS_QUIET=1 for tests) into GHOSTS as
+  `<track> - <driver>.ghost`.
+- Also: a time trial's best lap goes into Best laps the moment it is over the line (RaceGame_TrialBest for every trial, not only an
+  endless one) -- a player's report: leaving a trial before its end lost the lap.
+
+## Time trial run-up, renamed tracks, Track select's scrollbar, the pad's double step (2026-10-26)
+
+- **A run-up in a time trial** (the user: "start further back from the start/finish line to give the users car time to accellerate
+  before crossing the start line"): RACEMOD `TrialStartSpot` puts the player's car on the car's guide line 10 cells before the start
+  line (the guide line's point nearest the line's segment, within 3 cells; walked back 10 cells down to 2 while it is in the start's
+  cube and within 1500 of the line's height), facing along the line. A trial outside the start scene (Polar, the Palace) sends the car
+  to that spot as the grid waits. Desert: 10 cells back, the countdown, GO, checkpoint 1 as before.
+- **The storm's countdown**: Citadel 1's trial file had no `qualifying=0`, so its trial began as a qualifying lap (PHASE_QUALIFYING)
+  and never counted down. A time trial is never a qualifying lap now (`if (s_trial) s_qualifying = 0`).
+- **Renamed tracks** (Citadel 1, Citadel 2, Emerald Moon, Celebration 1, The Palace, Celebration 2): RACEGAME.TXT's `track=` line takes
+  a fifth field `was=<old name>`; RACEGAME `RenamedTracks` moves the old name's best laps and ghost_beaten to the new, and the
+  player's GHOSTS files (`<old>.ghost`, `<old> - X.ghost`) to the new name with their `track=` line rewritten. The setup writes the
+  was= field (GameInstall.cs `Renamed`) and clears the shipped ghosts before copying the renamed ones.
+- **Track select's scrollbar**: down the list's right edge, its thumb the rows shown out of all of them; a click or a drag on it
+  scrolls there, as the mouse wheel does (ConsumeMouseWheelY), the track chosen kept among the rows shown. It replaces the "..." marks.
+- **The pad's double step** (a player: "when I navigate the car selection menu with the D-pad or left stick, it skips over 1 car in
+  every horizontal step"): the pass a pad way is pushed, MyGetInput hands the pad's own scancode (K_GAMEPAD_BASE up) on in MyKey
+  for "press any key"; RACEGAME Nav/Step only looked at the pad with MyKey 0, so the way went unrecorded, Input stepped once, and the
+  next pass took the still-held way for a new push and stepped again. Nav/Step follow the pad's way every pass and take a pad
+  scancode in MyKey for no key; DoGameMenu's two pad readers (GAMEMENU) too.
+
+## Recording a video from inside the engine: framedump (2026-10-26)
+
+- The user: "Record an interesting video of game footage with clips from all tracks including showing off power ups to be uploaded
+  to YouTube". Console `framedump start <video.mp4> [seconds] [fps] [wall]` (FRAMEDUMP.CPP) pipes every presented frame -- the
+  engine's own, before the console's overlay; nothing of the screen is read -- to ffmpeg (LBA2_FFMPEG) as an x264 MP4, and the
+  effects' mix to `<video.mp4>.wav`. `framedump at <seconds> <command>` runs a console command on that frame of the recording
+  (`raceitem 9` at 3 s); `framedump stop` ends it early.
+- The game's own time: the dump arms the fixed-dt clock (16 ms a tick, as `rec start` arms it mid-session -- TimerRefHR kept, or a
+  race on the grid waited 27 s for its countdown), each frame is placed by that clock (repeated or left out to hold `fps`) and that
+  span of the effects mixed with it (AIL Sample_CaptureMix), so picture and sound keep step however slowly ffmpeg takes frames.
+  `wall` leaves the clock alone: a menu's loop never runs the tick hook that moves an armed clock.
+- LBA2_AUDIO_CAPTURE=1 gives the sound device silence (the effects mixed for the dump only: nothing heard on a shared machine);
+  LBA2_NO_ATTRACT=1 keeps the main menu from its idle demo (a test run's menu clock can reach the minute before a script picks).
+- The video's scripts (record.ps1, shoot.ps1, menu_shot.ps1, edit.py: 1080p60, captions, LBA2's CD track under the game's sound,
+  -14 LUFS) are scratch in E:\dump\TEMP\lbra\video.
+
+## A game ghost's time beaten with any ghost raced (2026-10-26)
+
+- A player: the Island of the Francos' Extreme ghost was "not unlocking when they beat the time". The Extreme ghost is there (30.28 s;
+  Hard 31.67 s) and racing the Hard ghost unlocks it (tested: 30.43 s, "You beat the Hard ghost! Extreme unlocked"); but GhostLapDone
+  only looked at the game's ghost times while one of them was raced -- a lap under 31.67 s with No ghost, Your best lap or another
+  person's ghost opened nothing. Now every time trial lap is held against the track's game ghosts (RaceMod_GhostFind modes 3, 4, 5, 7):
+  "You beat the Hard ghost's time! Extreme unlocked" (tested with ghost=0: 31.01 s). With no game ghost raced it speaks only of a level
+  not beaten before (RACEGAME `RaceGame_GhostBeatenLevel`), not of a known one every trial.
+
+## The test pilot overtakes: autopass (2026-10-26)
+
+- The user, of the trailer: "lots of places ... where one car is directly behind the one in front instead of trying to over take".
+  The pilot drove the opponents' own line, so it sat in their wake. Console `autopass <0|1> [cells]` (RACEMOD `PassOffset`): a car
+  within six cells ahead and 1.7 cells either side of the pilot's lane takes the pilot out to the side the other leaves (up to `cells`,
+  1.2 by default; the trailer used 1.3), eased 30 units a tick, and back onto its line once it is by. Desert, from 6th on the grid:
+  1st in 17 s, the cars side by side through the dunes. For footage and tests only; nothing turns it on in play.
+
+## A sprint's time trial started on the line (2026-10-26)
+
+- A player: Polar Island's time trial "starting on the start line, rather than behind it, so the lap never starts". TrialStartSpot
+  walked back along the guide line from the start line, but a sprint's line starts there and PathAt holds a place before its start at
+  its first point -- the car went onto the line itself, never crossed it, and the lap never began (Polar Island and The Palace, the two
+  sprints). Now a sprint only goes back as far as its line goes, else keeps the track's own start (behind the line). Checked every
+  track's time trial to "halfway round lap 1": all 16 start their lap (14 with the run-up, the two sprints from their own start).
+
+## A time trial's run-up doubled; Polar Island's own trial start (2026-10-26)
+
+- The user: "double how far back a car starts for a time trial, and let's set Polar as far back as we can do"; then "The Temple track
+  had the same issue as Polar island, so we need to start the car further back with this track too". RACE_TRIAL_RUNUP 10 -> 20 cells
+  (TrialStartSpot still walks down to 2 cells where the start line's cube or a drop cuts it short); the Temple of Bú: 20 cells.
+- A sprint's racing line begins on its start line, so it has no run-up to walk back along. New race-file key `trial_start=<cube x>
+  <cube z> <x> <y> <z> <beta>`: a time trial's own start, used before the run-up. LBRA's installer writes it (GameInstall.cs
+  `TrialStarts`) for Polar Island: 8 10 5888 1300 27136 2048 -- the dock straight's last grid row, 20.5 cells behind the line; probed
+  with the engine's own screenshots, the road's rounded end is about a cell further and the sea past it.
+
+## Mini-maps, the Mosquibees gantry, Wannies' sky, the Temple's flag marshal (2026-10-26)
+
+- The user: "All tracks appear to be missing the pitlane. Emerald Moon has gaps where the vertical loops are, Otringal has a gap where
+  the roulette wheel, let's add in a large circle to match it, Celebration 1 has a stretch of the pitlane missing where the car drives
+  on the ground, Let's remove the sky layer for Wannies Island, Mosquibees track has the post of the start/finish line in the middle of
+  the pitlane, this needs widening. Celebration 2, the start finish line that's on the ground isn't mapped. The magicians assistant on
+  the start line for the Temple track, let's remove her collision so cars can drive through her".
+- RACEMOD `MapExtras` draws, in step with the road's edge and asphalt passes: the raised road's strip (the Emerald Moon's and the Temple's
+  pit lanes); the new key `map_road=<n> <x z>...` (the build's "pit" road on the ground -- RaceTrackService `MapRoads`, RaceCarEngineFile:
+  Citadel 1 and 2, the Desert, Mosquibees); the raised road's wide run by the start line twice as thick (Volcano's and Otringal's pit
+  decks); a loop's floorless points bridged (the Emerald Moon's four rings); a ring at the roulette wheel's wall (Otringal); and the guide
+  line wherever it runs off the raised road's own floor at its height, a few points on into the road (the Celebration tracks' ground
+  straights). MapLine centres a start or finish line where the guide line crosses it (Celebration 2's ground line, 9 cells wide, the
+  road two cells off its middle).
+- Mosquibees' gantry: the start line's curbs took the pit lane's point nearest the line's middle -- on a short pit lane still moving out,
+  further along and nearer the lap -- so a post stood in the pit lane (posts 8.1 cells either side). Now the pit lane's point level with
+  the line along the lap: posts 11.3 cells either side, two cells past the pit lane.
+- `sky=0` (RACEMOD `RaceMod_NoSky`, EXTFUNC's two DrawSkySeaZBuf calls): no sky layer; LBRA's installer writes it for Wannies Island,
+  whose road climbs to 25,000, through the sheet (GameInstall.cs `NoSky`).
+- The Temple's flag marshal: RACE_MARSHAL_SOLID 0 -- MarshalPost and MarshalKeepOff no longer put cars out round her (the opponents
+  still keep their grid columns past her).
+- Then (the user: "We need to smooth out the mini-map for Emerald moon, it's a bit jagged in places. Where we've added the jump section
+  in the line is totally offset. The pitlane isn't well smoothed in to the rest of the track"): the racing line cuts the road's corners,
+  so drawing it over the raised road's floorless runs offset the dish jump and jagged the loops. Now `MapFloor`/`MapFillFind`: a run of
+  floorless raised points under 60 cells long with floor both ends, on one stretch, is drawn by the road's own points (the jump, the
+  loops' sideways steps); the guide line only where no raised point of any kind is within three cells at its height (true ground
+  stretches); the loop bridging dropped. The raised road's strip eased onto the road's line over 5 cells at each end (a smoothstep).
+
+## Best laps' page 17, the sum of best played back, the picture; restart in qualifying; Citadel 2's checkpoint 8; the camera in a car (2026-10-27)
+
+- The user: "Under "Best Laps" Let's add a new page in at the end of loop so it's page 17 that's a list of each track name, along with a
+  users best time, then at the bottom show the total time to complete all the laps. Also add a button in that generates an image to the
+  clipboard in the format "Track name", "Time", "Car used", along with a sum of best at the bottom of the image"; "If a user selects
+  their sum of best, then play back all track ghosts in order"; "When a user goes through the best laps page, let's have the ghost time
+  shown to be the time of the highest ghost they've unlocked".
+- RACEGAME TimesPage: after the tracks shown (with two or more) the page "All tracks" -- each track's best lap (SmallText: the font drawn
+  at two-thirds), the sum of best (SumOfBest; "(n without a lap)"), Copy as an image. `AllBestPicture` draws a card -- the player's name
+  from GHOST_NAME.TXT, Track name / Time / Car used, the sum -- as wide as the screen allows (up to 800), takes it, saves "Best laps.png"
+  beside the settings (SavePNG reads rows a screen's width apart) and puts it on the clipboard: RACEUPDATE `RaceUpdate_ClipboardImage`,
+  CF_DIB and the PNG as "PNG" (LBA2_NO_CLIPBOARD=1 for tests: the clipboard is the person's at the machine).
+- Enter on the sum of best: `WatchListStart` plays the player's best lap of every track in turn. RACEMOD GhostWatch asks
+  `RaceGame_WatchDone` at the lap's end; non-zero sets s_menuAt, and RaceGame_Menu starts the next track's straight away (no menu shown);
+  choosing anything but Resume from the menu ends the list. Tested: Temple, Polar Island, Citadel 1 in turn.
+- A track's page shows the ghost of the hardest level unlocked there (ghost_beaten: Easy, then Medium, Hard, Extreme).
+- Restart during a qualifying lap ("it starts the race with Twinsen first on the grid"): the qualifying choice went into the race file
+  once (s_qualifyNow, then -1); a restart wrote none and the race file's own put Twinsen on pole. `s_raceQualify` keeps it and Restart
+  uses it again. Tested: Desert, restarted in the qualifying lap -- "a qualifying lap first" again.
+- "Extend checkpoint 8 on Citabau further into the inside of the corner": citadel_track_plan.json `checkpointTweaks`
+  [{number 8, right 4}] -- a right-hand corner, the line's right end 4.7 cells from the racing line; now 10.5 cells right of the
+  road's middle (was 6.5).
+- "Let's add a camera option for Story mode ... Auto when in a car, and classic when out": the Options' camera cycles Classic -> Auto ->
+  Auto camera in a car -> Classic (MENU_LABEL_AUTO_CAMERA_IN_CAR, six languages; cfg AutoCameraInCar). PERSO.CPP's main loop sets
+  FollowCamera from Comportement == C_BUGGY when it is on (FollowCamResetToView on the way in; "[camera] ..." in the log).
+
+## LBA1's digger on Polar Island, and the grobo with its key (2026-10-27)
+
+- The user: "Let's pull the digger vehicle from LBA1 into LBA2, this vehicle is featured on Polar Island and Twinsen rides in it, let's
+  give it the same stats as Twinsen's buggy, but make the acceleration slightly worse"; "This car should then be used in Polar Island in
+  story mode instead of Twinsen's car"; "We also need to pull across the grobo character that gives Twinsen the key to the tractor into
+  Polar Island near the start line. LBA2 already has grobo's so we could base it on one of those and change the clothing".
+- The digger: LBA1's BODY.HQR 130 ("Bulldozer", the Tractor entity 80's body; LBA1 and LBA2 bodies share one scale and facing --
+  Twinsen measures the same in both). RaceTrackCharacterCars.BuildDigger puts it as it stands on the racer's hull bone, each colour
+  moved to the LBA2 ramp nearest its own ramp (Lba1ToLba2Colours: bank to bank, so a lit polygon runs a ramp of its hue; LBA1's gold
+  has no match in LBA2 and comes out ochre), the wheels' bones a point each, Twinsen in the cab behind the windscreen. Race car 225 of
+  RACECARS.JSON, the racer entity's body 69 (InstallDigger, after the monsters'), LBRA's car grid at 2 / 2.5 / 2.5 (the Halloween
+  buggy's 2.5 / 2.5 / 2.5, slower away).
+- Outside a race: ISLANDCARS.TXT ("island_car=<island> <body> <anim> <accel %>", RaceTrackCharacterCars.SetIslandCar; the race build
+  and Tools > Polar Island write it). RACEMOD IslandCarFrame / IslandCarDraw (RaceMod_Frame and RaceMod_Draw with no race on): on that
+  island Twinsen and his car hidden -- him driving, or it parked (NUM_BUGGY) -- and the body drawn in their place (DrawDriveAsOn, the
+  racer's animation); BUGGY.CPP's acceleration times RaceMod_StoryAccel (85 %).
+- The grobo (Terrain/Polar/PolarGrobo.cs): LBA1's scene 109 actor 6 (entity 11, BODY.HQR 17, "Grobo: Green vest") says LBA1 texts 12
+  and 11 and gives the key; Twinsen says 10 without it. Here LBA2's baggage-claim grobo (entity 33, body 54) with his teal top and its
+  red trim moved to the green ramp (the entity's body 1), on the dock four cells and more from Twinsen's start, on the far side from the
+  car; spoken to, he says texts 20 and 21 (the island's text file, LBA1's lines in its five languages and a Portuguese one) and sets game
+  variable 230. Every scene's copy of the car's script (the Desert buggy's) asks for it: Action beside the car without it, Twinsen says
+  text 22 (message_obj). Tested headless: no key, he stays out; the grobo, then the car, he drives.
+
+## Polar Island: nothing hanging over the sea, and sea past its last cubes (2026-10-27)
+
+- The user: "Polar island has a lot of bits floating in the air, let's either remove them, or work out what they should be attached to";
+  "The start of Polar island where the track starts in-game connects to another scene without a water segment, are we able to resolve
+  this so the illusion isn't broken?".
+- What hung: LBA1's sea is a layer of water bricks (layer 1) and what stands on it -- the dock's posts, the rocks' stacks, the crane's
+  feet -- stands on its top, 512 up on the island; the engine's sea is at 0. And at the island's edges LBA1's grids have nothing at all
+  under the quays, decks and pillars -- its camera never showed beneath them, the void was black. PolarObjects now carries each object
+  column's lowest brick on down to the sea where it is over sea (no land column, or water's): on the water, or over nothing up to layer 11
+  (1,327 cells). Not over land, not on LBA1's invisible brick 222 (collision a deck rests on), not the rocky peak's heights.
+- The race build left one more: a slab of the dock crane in cube (8, 8), 2,080 over the road, its structure's other pieces cleared from
+  the road and it bigger than ClearRuins' small parts (16 cells to 12). ClearRuins now takes what is left of a structure the road ran
+  through hanging -- its underside more than AdriftBy over the ground under it, touching nothing left of the structure -- however big
+  (and what rested on it after it). On the other fifteen tracks it changes nothing (setup.log's ruin counts the same).
+- The sea: POLAR.ILE's cubes were 5..9 x 4..10, the land's; past them the engine draws no sea, and the race's start, in cube (8, 10), looked
+  out at the edge of the world. They are now 4..10 x 3..11 (PolarTerrain.CubeX0 / CubeZ0 / CubesX / CubesZ): a ring of sea cubes all round,
+  63 cubes (the engine's MAX_CUBE is 255), no scenes in them.
+- `ScriptRoundTrip floaters <ILE> [gap] [strict] [near x z r]` lists decors held up by nothing (resting on, or fixed beside within a quarter
+  of a cell, something held up -- spread till nothing changes; "strict": resting on only); `floaters <ILE> strip <out> <cx> <cz> [x0 x1 z0
+  z1 | body n]` writes a copy without some of a cube's decors, to find which one a picture shows. Polar's race build had 21 such decors,
+  now 4 (small gaps, 450-770, over the hillsides' slopes, away from the road).
+
+## Polar Island: the grobo through the race build; the backs and insides of buildings (2026-10-27)
+
+- The user: "I just tried to test Polar Island in the editor, and there's no grobo visible for Twinsen to talk to for the key. Let's also
+  improve the decor, for example some of our buildings have no back to them. We should check everything".
+- The grobo: the race build's actor clearing (RaceTrackScenes, RemoveActors) took him out of scene 251 with every other actor. Polar
+  Island's StoryEntities now name his entity (33): kept, and moved off the road if he were on it. And a folder whose originals
+  (*.before-racetrack) have the island from before him -- the user's editor folder -- gets it made again: PolarInOriginals now also asks
+  for this version's sea ring (cube (CubeX0, CubeZ0)) and the grobo in a scene; otherwise the build puts the folder back and adds the
+  island again (EnsurePolar). Tested headless in an LBRA install: Action beside him sets game variable 230.
+- Floors LBA1 never drew: under a building's roof LBA1's grids often have no brick at all (its camera never looked down there), and the
+  island showed the sea there, a pool inside the walls. PolarTerrain.Columns gives such a place (no brick, ground or water all round
+  within 10 cells along x and z, land on two sides at least) the lowest of that land's ground, and never over what stands there.
+  Shut-in water went from 240 cells to 8.
+- Insides: over such a floor, up to the roof (10 layers at most), each cell takes the nearest wall's brick along x or z (PolarObjects).
+- Backs: an empty cell in a run of at most 2 along x or z, over ground, closed in at both ends -- one a wall brick standing end-on to the
+  run, the other a wall brick or ground -- takes the nearer wall's brick. Not over water, not within 2 cells of LBA1's car tracks, not
+  where LBA1 has any brick, even an invisible one.
+- "Wall brick": whole footprint and both sides at least 80 % drawn (a fence's slats, posts and specks of a few pixels are not -- a
+  4 x 7-pixel speck has a whole footprint, and filling with it drew a black slab by a tank on the cliff).
+- Checked with `ScriptRoundTrip polarview` from four sides on every land cube, before and after (all 21); the three white sheds (cubes
+  (7,4), (7,7), (7,9)) are closed. 604 inside cells, 93 back cells, 234 cells down to the sea.
+- Still no grobo after the user rebuilt in the editor: StoryEntities are kept only with the build's story on, and the race track window
+  turns the story on for Citadel Island only (LBRA's installer leaves it on, which is why its test passed). He is now in KeptEntities,
+  kept by every build, story or not. `ScriptRoundTrip buildhere` now sets the story as the window does, so it builds what the editor builds
+  (the island's name as RaceTrackIsland has it: "Polar Island"; an unknown name builds the Desert's).
+
+## Polar Island's story start: the grobo behind the grid, his grey face, the digger parked and driven; mushrooms over a cube's edge (2026-10-27)
+
+- The user: "The grobo on Polar is too far away from the start/finish line, let's have him spawn in behind the cars closer to Twinsen,
+  the grobo's face colour is also wrong, it's black when it should be grey. Twinsen's buggy is supposed to be swapped out for the tractor
+  that we've made for Polar Island when in story mode"; "sometimes Funfrock's car vanishes from view and then comes back, the same with
+  some of the mushrooms not visible until the last second".
+- Story mode is the dream: a new game starts Twinsen on foot behind his car on the grid of scene 252.
+  - The grobo: RaceTrackIsland.StartPerson (entity 33) -- the race build takes every scene's copy out and brings one, from the island's
+    scene of him, five cells behind the pole and 1.2 to the side away from the next car, facing Twinsen (RaceTrackScenes, StartPersonActor):
+    just out of his script's reach (1500) from Twinsen's start, so the Action key at the car isn't his.
+  - His face: PolarGrobo.BuildBody wrote the body unlit (Body.Lit false: no normals, every polygon flat at its ramp's dark end), so his
+    grey skin was near black and his vest dark. Now written lit, each polygon its retail type (Lba2Type = Material). Every race build
+    installs the body again (RaceTrackService, after the digger), so a folder whose originals have the old one gets the new.
+  - The digger: Polar Island's own car for Twinsen (RaceTrackCharacterCars.TrackCar, as the Temple's pumpkin F1), with his own buggy or
+    either laser buggy (TrackCarFor; the lasers stay). The race file's drive_as= is the digger's.
+  - Parked: race mode drew the car he drives as only while he drove; on foot beside it the buggy showed. HeroLook now hides the parked
+    buggy (s_raceParked) and DrawDriveAs draws the car in its place, before RaceMod_Draw's "not driving" return. And the digger parked
+    has nobody in it: ISLANDCARS.TXT takes a fifth number, the island car's empty body (the build appends the digger without Twinsen,
+    driver: false), which DrawDriveAsOn draws for a parked car that is the island's own (in a race and out of one).
+  - Tested headless (a sandbox built with `buildhere`, the window's story setting): at the start the empty digger, Twinsen, the grobo
+    behind; Action at the car: no key, he stays out; at the grobo: game variable 230 set; at the car: in (behaviour 12), the digger driven.
+- Mushrooms: each is an actor of its cube's scene, stood on the road only while Twinsen is in that scene -- a row just over a cube's edge
+  (Polar Island's 21 small scenes; scenes 236 and 240 share a row across their edge) came into sight as he crossed. The build now writes
+  each mushroom's place on the island (mushroom=scene actor y x z), and DrawFarMushrooms draws those of other scenes within 40,000 units
+  with the body this scene's mushrooms have (as the jet-pack and drive_as are drawn: after the scene, depth-tested). A race: up to six
+  drawn from the next cubes at once.
+- FunFrock's car: not seen vanishing yet. LBA2_CARVIS=1 logs the first opponent's car's state as it changes (out of sight, hidden,
+  bodiless, behind the camera, off the screen) and the far mushrooms drawn; an autodriven race showed his car never hidden, on the screen
+  whenever it was in view.
+
+## The race track window's plan file, with several islands ticked (2026-10-27)
+
+- The user: "We have the option of building a race track in LBAAssembler, but the option to select a plan file to do this with isn't
+  selectable, is this properly implemented with all recent updates?"
+- A plan file doesn't say which island it is, so "A plan file:" was enabled only with one island ticked -- and with all of them ticked
+  (the usual build) it was greyed, its tooltip (why) never shown on a disabled control. Now it is there whenever an island is ticked: a
+  "the track of" list picks which of the ticked islands the file is (Citadel Island: its town circuit, as before), the others built with
+  their own tracks; "Save its built-in track as a plan file…" writes the program's own plan for that island (the embedded
+  docs/racetrack/*_track_plan.json) to start a new one from, and fills the path in. The build reads a file with the same reader as the
+  built-in plans (RaceTrackPlan.Read), so everything a built-in plan can say a file can.
+
+## A sample plan file (2026-10-27)
+
+- The user: "Let's provide a sample plan file so users know what to create".
+- docs/racetrack/sample_track_plan.json: the Desert island's lap in 63 points (every 15th of the built-in plan's 945; the builder spaces
+  and smooths them again), its pit lane, the usual road widths and one checkpoint tweak, with a // comment on each part saying what it
+  is, what is required (originCellX, originCellZ, points) and what else a plan can say. Plans now read with comments and trailing commas
+  allowed (RaceTrackPlan.Read).
+- Embedded in the program (RaceTrackPlan.Sample.json); the race track window's "Sample…" button saves it where the user says, fills in
+  the path, chooses "A plan file" and the Desert island as the track of (when ticked).
+- Tested: `ScriptRoundTrip buildhere <folder> "Desert island" --plan docs/racetrack/sample_track_plan.json` (buildhere's new --plan, as the
+  window's plan file builds) on a copy of the pristine test folder: a 1288-cell lap, its pit lane, 16 checkpoints (the plan's tweak
+  applied), the grid, five opponents' lines; the top view shows the road round the island as the built-in lap.
+
+## The race track generator: a track drawn on the map, or placed in sections (2026-10-27)
+
+- The user: "The track plan format isn't feasible for a user to hand generate. Let's update LBAAssembler with the ability to take a
+  screenshot of an island with a map drawn on it, then we can automatically generate the track accordingly. Let's have this as a new
+  track generator wizard. The user selects an island, then with an image of the map they draw the track in one colour, let's go with
+  green, jumps in pink, pitlane in orange, and vertical loops in blue. Let's also let the user place track sections onto an island by
+  hand, and automatically snap them together so the user doesn't have to perfectly align them".
+- Tools > LBA2: race track generator (TrackGeneratorWindow), three pages:
+  1. The island (the race track window's list, but the Temple and the palace, whose roads the build makes; the island as it was before
+     a build: its *.before-racetrack file).
+  2. The drawing, on the island's map (IslandMapRenderer, 3 pixels a cell): pens -- road green, jump pink (over the road where it flies),
+     loop blue (over the road where it stands), pit lane orange (beside the road) -- an eraser, pen width, undo (Ctrl+Z), Ctrl+wheel zoom.
+     Track sections (straights, 45/90-degree bends, hairpins, a jump, a loop, a pit lane): pick one, click on the map; within 8 cells of an
+     open end it snaps onto it, turned to go on from it (and its end onto an open start); the wheel turns it, "Move or turn sections"
+     drags and turns placed ones (let go near an open end: snapped), a right click removes one. "Save the map as a picture" / "Load a
+     drawn picture": draw in any paint program; what differs from the map in the pens' colours (TrackSketch.Classify, by hue, strong
+     colours only) is taken, the picture scaled to the map.
+  3. The track: followed (TrackSketchTracer), drawn over the map (its way, jumps magenta, loops cyan, the pit lane, the start), what was
+     found and any problem; "The other way round"; "Save the plan…"; "Build…" saves it beside the editor (TrackPlans\) and opens the race
+     track window with the island ticked and the plan chosen (RaceTrackWindow.UsePlan).
+- TrackSketchTracer: the road (green, pink, blue) closed over small gaps, its biggest piece; a start on a straight in the stroke's middle;
+  marched both ways a step at a time, each step the way that stays on the road and bends least, set back to the stroke's middle -- where
+  the stroke is wider than a road across (a crossing) straight on, not to the middle; a lap when it comes back round (or both ends meet),
+  else a sprint. Into cells a cell apart, smoothed. Each point's kind from what is drawn round it. Jumps: up to 22 cells of each pink
+  stretch, slid along it to where the ramp, flight and landing are all in one cube (a flight over a cube's edge breaks), the road straight
+  under them; loops at a blue stretch's middle, the road straight 14 cells either side (old moon's: radius 4, 3 across); heights from the
+  ground, smoothed, level over each jump and loop, grade 15 %. The pit lane: the orange stroke's two farthest ends. Start: the pit lane's
+  middle (the builder's), else the longest straight. Crossings noted (the build makes its own jump there).
+- Placed sections with nothing drawn by hand on the road are followed as they are (their exact middle line, chained end to nearest start
+  within 14 cells), not through the picture -- a small square of wide strokes traced as a sprint cutting across its inside.
+- Tested: `ScriptRoundTrip sketchtest` draws an island's built-in lap on its map as a user would (green, a pink, a blue and an orange
+  stroke), reads it back as a picture and traces it: the Desert lap (crossing itself once) a 1374-cell lap, a jump, a loop and the pit
+  lane, which builds (a 19.5-cell gap jump, the road straight under it, the loop's ring standing); Mosquibees' 502 for its 500. A UI test
+  on a sandbox (env LBA2_TRACKGEN_PICTURE / _SECTIONS / _SAVE drive it without dialogs): the picture -> the same lap; nine sections
+  dropped a few pixels and degrees off, snapped -> a 255-cell lap with a jump and a loop, which builds (the ring on the road in the 3D view).
+- Not yet: Otringal's drawn lap traced as a 641-cell sprint for its 711 -- a tight double hairpin inside the town drawn in wide strokes
+  merges; draw such places with a thinner pen or further apart.
+
+## The race track generator: slopes, spirals and roads passing over each other (2026-10-27)
+
+- The user: "We should make sure the track builder allows for slopes, and upward spirals, along with other over lapping sections of
+  track". The builder has done so for a while (the raised road: Volcano Island's double spiral, Wannies' helix, the Elevator Platform);
+  the generator now says it. Also fixed the same day: Back to the generator's first page crashed the editor (its island list added to a
+  second page; v2026-10-27i).
+- Sections that climb (Part.Rise): Ramp up / down (1500 over 30 cells), Steep up / down (2000 over 20), Spiral up / down left / right (a
+  turn and a quarter, 12 cells round, 4000: one turn over the other; the quarter more so its end is clear of its start -- a whole turn
+  ended where it began and the chain couldn't tell what followed what). The chain (TrackGeneratorWindow.Chain) carries each point's height
+  over the first.
+- Any climb and the plan is a raised road from start to finish (Raised [0, n-1], RaisedHalf 4.75, RaisedCut, grade 25 %), as the Elevator
+  Platform's: each point the ground averaged 20 cells round it (so two roads at one place have one base, their climb between them whole)
+  plus 900, plus the climb, smoothed along the way, lifted where it would be under the ground. No pit lane on it (said). A lap whose climbs
+  don't come back down is a problem; where the road passes over itself (centres within 7 cells, decks overlapping by half and more) the two
+  decks must be 1600 apart, else a problem naming the place and the heights.
+- First tries, kept for why: the whole lap lifted over its highest ground (5400 to 8600 everywhere); heights max(ground, start + climb)
+  (the lower turn lifted by the ground under it to 1577 under the upper); the ground smoothed along the way (a spiral's turns have
+  different neighbours along it); the overlap test at 9 cells (roads side by side, rails touching); 3200 spirals (the spiral's way out
+  passes under its first quarter turn at two thirds of its climb).
+- Tested: a lap of sections with a spiral up and a spiral down (LBA2_TRACKGEN_SECTIONS, the UI test) -> 474 cells, a raised road 4054 to
+  8851, "passes over itself with room"; built on the Desert island: 119 deck pieces, 38 piers, steepest 15 %, the spiral standing over
+  itself in the 3D view. LBA2_TRACKGEN_DUMP=<csv> writes each point's place, climb, height and ground.
+
+## The race track generator: hairpins in a drawing, turning sections, snapping either way round (2026-10-27)
+
+- The user: a lap drawn on Wannies Island "doesn't appear joined up" on page 3 (two pictures); "I can't seem to turn a section of track
+  when turn is selected, it just moves the track instead"; "When attempting to snap a turned section to one end of a piece of track such
+  as a hairpin left, to another hairpin piece it snaps both ends together instead of just the intended one".
+- Drawing: the march looked 50 degrees either side and stopped where nothing lay ahead -- the drawing's two hairpins (the stroke's tip at
+  the top left, the turn over the fortress) were its "ends", a 276-cell sprint. Now, nothing ahead and not at a crossing, it looks round to
+  170 degrees for road not yet gone along (marked 1.4 times the stroke's half width round each step: narrower, the stroke's own edges read
+  as fresh road and it went back round the lap the wrong way); at a crossing never round the corner (the crossing road is fresh too: the
+  Desert test drawing went round its lower half three times) but straight on with a little more room. The user's drawing: a 520-cell lap.
+  Desert 1375, Mosquibees 502, Wannies 461, Volcano 397 as before; Otringal, a sprint before, a 676-cell lap.
+  `ScriptRoundTrip sketchimage <game> <ILE> <picture.bgra> <w> <h> <out>` traces a picture as the generator does (ffmpeg -f rawvideo
+  -pix_fmt bgra makes the raw file from a screenshot).
+- Turning: "Move or turn sections" moved on a drag and turned on the mouse wheel only. Now "Move sections (drag)" and "Turn sections (drag
+  round; Q / E turn 15°)": a drag turns it about its start (a joined start stays joined); Q and E turn the one being placed or the one under
+  the mouse.
+- Snapping: a section snaps by one joint, either way round -- a piece of road has no way of its own (Section.Reversed: its parts in the
+  other order, each turning and climbing the other way; Placed.Flipped) -- its start onto an open end or its end onto an open start, the
+  joint within reach needing it turned least from the way it lies, then the nearest. A left hairpin dropped with its far end at another's
+  end goes on from there as an S; driven the same way as the other it closed into a circle. The next section to place starts turned to go
+  on from the last placed.
+
+## The race track generator: drawing in the air -- a height for the pens, a 3D view, a height profile (2026-10-27)
+
+- The user: "We need to also enhance map generation to allow us to easily draw track in the air, perhaps we should allow the map image to
+  be rotatable?"; asked which way (a height profile, a rotatable 3D view, height pens): "Let's implement both option 1 and 2".
+- Height: a slider on the drawing page (0: on the ground). The pens lay what they draw at it (TrackSketch.Heights, per pixel, NaN on the
+  ground); on the map it shows lighter and striped; the ground's height under the mouse is shown, and how far over it the pen draws.
+- 3D view (Track3DView, a WPF Viewport3D): the island's surface (a vertex every few cells, IslandOps.Altitude) with the map and what is drawn
+  on the ground on it; what is drawn in the air as squares at its height in the pens' colours, its shadow on the ground under it; a
+  see-through plane at the pens' height (none at 0). Right button turns it, Shift + right (or the middle) moves it, the wheel zooms; the left
+  draws where the mouse meets the plane (the ground at 0: hit tests of the one model). Sections are placed on the 2D map.
+- Height profile (page 3): the track's height (yellow) over the ground (brown) along it, jumps and loops marked; dragging sets the height
+  under the mouse and eases it 30 points either side; the point is marked on the map; let go, the track is made again with it; "Heights as
+  drawn" forgets it. The profile is matched to the new route by where its points are (the route's start moves with its pit lane, and
+  raising it drops the pit lane), not by number.
+- The plan (TrackSketchTracer.Plan): each point's drawn height the highest drawn round it. Raised road: from sections' climbs the whole
+  track (as before); from heights drawn or dragged, only that stretch -- RaiseRamp (40) points of ramp each end, the ground road's own
+  heights (its jumps' and loops' level stretches) elsewhere, one stretch (a lap's can't run through its start: then the whole lap, said).
+  No steeper than 25 %: a hill widened, never cut (GradeLimited), the raised stretch then out over its slopes. Roads over each other: room
+  checked only where one of them is raised (two on the ground are the build's crossroads).
+- Tested (the UI test with LBA2_TRACKGEN_AIR / LBA2_TRACKGEN_PROFILE hooks, the Desert drawing): a stretch drawn at 6000 -> points
+  1035-1146 raised, the rest on the ground, built (112 cells on piers); a profile dragged to 7000 -> 131 cells on piers, built; the plain
+  drawing and the spiral lap as before; the 3D view shown and turned to and from. Fixed on the way: a raised drawing without sections hit a
+  null (the lap-closing check read the sections' climbs); the profile's first edit raised the whole lap (compared with the bare ground,
+  under the jump's level run-up); it was rotated to the start twice.
+
+## Polar Island's story start: FunFrock drives off, the grobo gives the key, the chase, the end either way (2026-10-27)
+
+- The user: "Let's start story mode on Polar Island with FunFrock speaking "You'll never catch me, whoever makes it to the Sendells first
+  will get all of their magical powers" at which point Funfrock starts driving off into the distance, let's start with the digger off the
+  track next to the grobo. Twinsen speaks aloud "No, Funfrock come back, what am I going to do I need to stop him". The grobo turns to
+  Twinsen and says "Quick, Twinsen, take my vehicle, the fate of the world rests upon your shoulders". This causes the grobo to give
+  Twinsen the key ... We should slow Funfrock a little to allow Twinsen to catch up ... we should try to have Funfrock win just ahead of
+  Twinsen, so Twinsen watches Funfrock take the jump first. At which point regardless of who wins the end of the race triggers and
+  Twinsen is in bed at home with Zoe waking him up".
+- Engine (RACEMOD.CPP), three race-file keys, written only into the story's dream file for Polar Island (RaceCarEngineFile; the race
+  game's Track select race is as it was -- tested: Twinsen starts in his car, on the grid):
+  - chase=<his text> <Twinsen's> <helper entity> <helper's text> <game var>: ChaseOpening in place of the grid and the intro -- in the
+    start line's scene the one to beat on pole (OnSpot), his line, "go" (no count); RACE_CHASE_PAUSE_MS of him driving off; Twinsen's
+    line; the grobo (the actor of entity 33) turned to Twinsen, his line, game variable 230 set (the key). The opponents drive while
+    Twinsen is on foot (`moving` in a chase).
+  - chase_lead=<cells> (14): ChaseLead scales his pace by 1 + (lead wanted - lead) / (1.5 x lead wanted), 0.3 to 1.4.
+  - dream_any_end=1: he goes on over the finish (the jump into the peak) to his line's end; his finish ends the dream too,
+    RACE_DREAM_END_FLIGHT_MS (1.6 s) later -- the win's sets applied all the same (game variable 205: scene 0's opening, Twinsen in bed).
+- Build: the texts 23-25 in the island's file (six languages, PolarDream), sorted by id; the digger parked off the road 5.5 cells to the
+  side of the pole's column, beside the grobo, facing the way the lap runs (RaceTrackScenes, the StartPerson block).
+- Tested headless (the story set, autodrive): FunFrock on pole says his line and drives off, Twinsen and the grobo speak, the key is
+  given; Twinsen gets in, crosses the start line and chases; FunFrock, held a little ahead, finishes first ("FunFrock got there first"),
+  over the jump, Twinsen watching just behind; the picture fades to white and Twinsen wakes up in scene 0, Zoe there.
+
+## Auto camera in a car the default; key remaps kept (2026-10-27)
+
+- The user: "Let's have the camera for Story mode, and in LBAAssembler to default to "Auto camera in a car". LBA2 also allows keys to be
+  reconfigured, is it possible to stop my key configuration being over ridden by a new release of LBAAssembler".
+- Camera: AutoCameraInCar's default TRUE (CONFIG_FILE.CPP); a cfg from before -- its 0 only the option's old default written out -- turned
+  on once at ReadConfigFile, CameraDefaults: 1 marking it done (a camera chosen afterwards is kept; tested both ways).
+- Keys: the remaps were in lba2.cfg only once the engine exited cleanly (BOOT_EXIT WriteConfigFile; resolution changes aside), and the
+  editor stops Play by ending the engine's process, as a crash does -- and a release's publish closes the running editor and its engine
+  (the standing rule). Every remap made in such a session was lost; the user's lba2-play\lba2.cfg held the defaults. Now leaving the
+  keyboard and the gamepad configuration screens saves the cfg at once (CONFIG.CPP MenuConfig, MenuGamepadConfig). Publishing never
+  touches release\lba2-play (checked), and a headless run keeps the keys (tested).
+
+## The digger and the buggy; on foot by the raised road; Citadel's actors, doors, lifts, piers and ferry (2026-10-27)
+
+- The parked digger showed the buggy's wheels under it, and the buggy alone while a behaviour key's name was up (the user: "I was
+  behaviour switching with the F keys outside of the vehicle, this caused the digger to display as the buggy"). Two causes: the exterior
+  terrain pass's actor drawing (EXTFUNC.CPP AffichageActorsZBuf, the renderer's) drew INVISIBLE actors and those out of sight at Y -20000 in
+  the game too -- now only in the editor's renderer (GLOBAL.CPP RendererShowHiddenActors, set by RendererBootAssets); and the behaviour
+  name's text (OBJECT.CPP INCRUST_SYS_TEXT) left the clip round itself, cutting away the car drawn after it -- RaceMod_Draw unsets it.
+- On foot by the raised road (Citadel: "walking into the raised track about chest height causes him to initialy clip into the track then
+  spawn on top of it ... Twinsen is unable to jump off the track at the raised sections"): the deck is Twinsen's floor only a step up on foot
+  (RAISED_FOOT_STEP 300, RaceMod_FloorForFoot) and its side a wall he slides along (FootDeckWall); the rail holds the car only -- on foot
+  he walks or jumps off the edge as off any ledge.
+- Citadel Island keeps the actors off the roads (RaceTrackIsland.KeepOffRoadActors; "make sure we've not removed any actors that aren't
+  directly on the track such as the cow"): an actor goes only where it, or a point its scripts send it to, is in the way of the cars --
+  RaceTrackReport.InTheWay: within a road's width (the curbs', a raised road's own) and a cell, from under its surface to RoadHeadroom over
+  it. Every island keeps whoever switches doors (SET_CHANGE_CUBE) and the actors those scripts wait on, where they keep off the road; kept
+  cutscene actors are moved aside only when in the way in 3D (a lift's platform beside the road was moved 12 cells from its zone).
+- Zones ("keeping all zones that don't directly interfere with the tracks on all levels"): other than the fixed cameras, a zone goes only
+  where it is in the way (InTheWay at its own heights).
+- Doors into inside scenes (RaceTrackService.DoorBoxes, the original scenes' cube changes to scenes off the island): their decor -- a lift,
+  a cave's rock, a house -- stays unless on the asphalt itself. A door whose every original piece of decor went: gone from the scenes if
+  lost in all of the island's files; one walked into its wall (ZONE_TEST_BRICK) and lost in one weather's file only is shut while that
+  file is shown (door_off=<file> <scene> <box>, RACEMOD.CPP RaceMod_DoorShut in GereZoneChangeCube) -- the storm track's deck over the lift
+  by its start line; the museum's door, its building's top taken by the storm track and the whole of it by the town circuit.
+- Piers: none in a lane between buildings (walls within 3.5 cells both sides) nor at a door ("The entrance to the port area on Citadel
+  has a track support in the way") -- the one at cell (519, 595), 4,073 high.
+- The ferry (scene 43): invisible, and the ticket does nothing at the quay or to the ferryman, until the town circuit is won and the
+  weather is fine ("lets Twinsen take the ferry in the rain by selecting his ferry ticket from his inventory").
+
+## New Game, Raph's pull-up, the bike taxi, Desert's actors, the school's gates and rim (2026-10-27)
+
+- New Game after a run reads the race file afresh (RaceMod_NewGameScene, from the second game of a session): Polar Island's dream and its
+  chase opening start again ("Selecting new game after starting Polar island in play mode doesn't initialise the track correctly"). The
+  console's `newgame` runs the menu's New Game for headless tests.
+- Raph (parade_stop=<text>, RaceTrackStory RaphYell): the variable set when Twinsen stands on the start line on foot (its zone), he laps on
+  until he comes up to him, brakes from 14 cells with the tyres' squeal, pulls up 2.6 cells to his side, yells "Get off the track", and
+  rolls on to his park.
+- One weather's road only: an actor in the way of one file's road and not the other's stays where it is, and actor_at=<file> <scene>
+  <actor> <x> <y> <z> puts it aside while that file is shown (RaceTrackScenes Result.ActorsAt) -- Citadel's bike taxi under the shelter by
+  the shop in the storm, the town circuit running through the shelter.
+- Desert island keeps its actors off the road (KeepOffRoadActors) -- the camel, the garden balsam (scene 62's actor 7: removed with the
+  rest, it couldn't be picked up). An actor that stands clear but walks onto the road keeps its way, the points on the road moved off it
+  (PointsOffRoad). 41 actors still go, every one standing on the road; no zone goes but 16 fixed cameras along the track.
+- The School of Magic's gates open from the start (HeldVars 65 = 1, which also shows the open gates' decor), and its canyon's rim comes
+  back up to the island's own height where the levelling cut it, clear of the road by its curbs and 0.75 cells (OwnRimsAt, 253 points).
+
+## Desert's water deck, Citadel's museum lift, FunFrock outside his car (2026-10-27)
+
+- Desert's water crossing (RaceTrackIsland.WaterDeck; "a two sided draw bridge ... If a draw bridge isn't feasible let's change it into a
+  small raised track section with a slight ramp up and down"): the lap's longest water span a raised road from shore to shore, humped to
+  2,200 over the sea with 18 % ramps, as wide as the road (RaceTrackBuilder.WaterDeck), and the island's own sea back under it -- every cell
+  that was sea before, near the deck and no ground road, its triangles and heights as they were (WaterUnderDeck, 523 cells). The ferry sails
+  under it. A drawbridge would need decks the engine moves; the hump is the fallback the user named.
+- Citadel's museum (scene 48; its top taken for the storm track's deck): walls built up from what is left of it, 2,618, to the deck's
+  underside (DeckWalls, RaceTrackRaisedBody.Block), and a lift on the deck where its upper window was (DeckLifts: a draw-only pad and post,
+  a door zone over it into scene 15 at the window's own place, 12288 3000 13312). Tested: Twinsen walks onto the pad and is in the museum.
+- Polar Island's story start (chase_car=<body> <anim> <entity>): FunFrock's car stands empty on pole (RaceTrackCharacterCars
+  BuildFunFrockEmpty -- the car with its driver's polygons taken out, his bones kept for the racer's animations -- installed as "FunFrock's
+  car, empty"), FunFrock himself beside it (RaceTrackIsland.ChaseDriver: scene 95's actor 14, entity 217, scripts emptied); he says his
+  line, walks to it (RACE_CHASE_WALK_MS) and gets in, and the car drives off. The camera looks at the opening from the other side
+  (the classic camera's angle turned half round through AddBetaCam), and back once Twinsen is in his car.
+
+## The bridge raised for the ferry, arrows alike, Raph waits on the road, the museum lift both ways, the car at home (2026-10-27)
+
+- Desert's bridge (WaterDeck): "the top of the ferry still clips through it, let's have a road ramp up, the bridge over, then a ramp back
+  down again" -- a ramp up on the ground at 15 %, the deck over the water only (its sea and 2 cells either side) at 3,400, a ramp down: 76
+  cells in all, 23 of deck.
+- Arrows (RaceTrackRaisedBody.Tile): "raised road sections have tended to have small triangles, and Desert track featured arrows instead,
+  let's be consistent across all tracks" -- the deck's arrow is the ground's: a shaft (its first cell, ArrowShaftHalf either side) and a
+  head (three cells, ArrowHalfWidth either side at its base), orange.
+- Raph (parade_stop=<text> <entity> <var>): stopped beside Twinsen he stays on the road -- the game's Raph, who talks for him, moved with
+  his car -- until Twinsen drives with his gloves (game variable 7); then he drives to his park, facing the way he goes, and turns as he
+  parks ("during the cut scene had his car slide sideways to the edge of the track").
+- The start line's car: in only with the action key -- its script's carry_obj_by clause (the car's number in the game's scene, another
+  actor's once the build took some away) put Twinsen in it as he stood by it.
+- The museum lift: one pad 2.5 cells across, level with the road, no post; the museum's window out (scene 15's door into 48 nearest the
+  lift's arrival) brings Twinsen up onto the road beside it.
+- Twinsen's car on Citadel (RaceTrackIsland.CarHome; RACEMOD.CPP game variable 211, RACE_GRID_CAR_VAR): on the start line only when the
+  race file starts the game there (the race game's start_in_car=, start_scene=); otherwise made under the carport at his house the first
+  time (scene 49, INIT_BUGGY 1) and shown where he left it in the start scenes (INIT_BUGGY 0).
+- The cow (2026-10-27, "The cow is still missing from the citadel track"): an actor seen -- a body, not hidden -- that stands on the road, on
+  an island that keeps its actors, is moved aside (ShiftOffRoad, its way's points with it) and kept; only the hidden ones on the road
+  still go. Citadel: 25 actors removed (87 before), the cow moved 8 cells off the town circuit.
+- A door shut in one weather's file (door_off=) shuts the way back to its place from the scene it leads to as well: the sewers' ride up
+  to the start line's lift, whose platform the storm track's deck took ("causes twinsen to momentarily be up in the air").
+
+## The cow and the bike taxi in their weather, the museum lift a real lift, banks walked on (2026-10-27)
+
+- An actor in the way of one weather's road only stays where it is in the other, its scripts' points untouched, and is put aside
+  (actor_at=) while that weather's file is shown: Citadel Island's cow ("you've moved the cow, even though the rain track goes nowhere
+  near its position"), the bike taxi under the shop's shelter. On an island with two files, actors and points follow the reshaped ground
+  up, never down (Reseat raiseOnly): lowered for one file they stood buried in the other's.
+- The museum lift (deck_lift=, RACEMOD.CPP DeckLift): no door zone -- the action key on the pad takes Twinsen down with it through the
+  road (RACE_LIFT_MS, RACE_LIFT_DROP; its decor moved by DecorPoseHook, now RaceDecorPose for it and the roulette wheel) into the museum;
+  the museum's window brings him onto the pad from below, and it rises with him. His keys held while it moves, standing.
+- Citadel's steep banks (SoftBanks): the island's own ground kept, walled for the cars only -- the blocking bit and game code 10
+  (MAPTOOLS.CPP CJ_CAR_WALL), open to Twinsen on foot (TerrainFootOpen, set by RaceMod_FloorForFoot): he walks on them, the cars still
+  can't climb them.
+- Twinsen placed at a scene's start or back after a clover (OBJECT.CPP) takes the raised road as his floor only a step up, as he walks.

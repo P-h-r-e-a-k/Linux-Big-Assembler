@@ -1,4 +1,5 @@
 #include "C_EXTERN.H"
+#include "MAPPACK.H"
 #include "RES_SWITCH.H"
 #include <POLYGON/POLYFILT.H>
 
@@ -718,7 +719,7 @@ void UseOneClover(void) {
 
             // reajuste altitude au cas ou l'on soit sur un penché
             // (on a race-track mod's raised road, the road's own height: the ground under it may be the sea)
-            RaceMod_FloorFor(ptrobj->Obj.Y);
+            RaceMod_FloorFor(ptrobj->Obj.Y); RaceMod_FloorForFoot();      // (on foot: the raised road his floor a step up only, as he walks -- RACEMOD.CPP)
             y = CalculAltitudeObjet(x, z, -1);
         } else {
             x += (SIZE_BRICK_XZ / 2);
@@ -1303,6 +1304,7 @@ void ChangeCube() {
     SaveComportement = Comportement;
     //	ValideBeta = ptrobj->Obj.Beta ;
 
+    extern S32 RaceMod_OnFoot(void);
     if (FlagReajustPosTwinsen
             AND !(ptrobj->WorkFlags & ANIM_MASTER_GRAVITY)
                 AND(ptrobj->CarryBy == -1 OR !(ptrobj->CarryBy & CARRY_BY_DECORS))) {
@@ -1310,8 +1312,10 @@ void ChangeCube() {
         if (CubeMode == CUBE_EXTERIEUR) {
             ShadowX = SceneStartX;
             // (a scene that starts on a race-track mod's raised road starts on it, not on the ground under it)
-            RaceMod_FloorFor(SceneStartY);
-            ShadowY = CalculAltitudeObjet(SceneStartX, SceneStartZ, 0);
+            RaceMod_FloorFor(SceneStartY); RaceMod_FloorForFoot();      // (on foot: the raised road his floor a step up only, as he walks -- RACEMOD.CPP)
+            // (a race-track mod's Twinsen out of his car exploring -- on_foot=, RACEMOD.CPP: from the height he came in at, onto the top of
+            // the floor he is in there; from the ground he went through the temple's floors into the sea under them)
+            ShadowY = RaceMod_OnFoot() ? SceneStartY : CalculAltitudeObjet(SceneStartX, SceneStartZ, 0);
             ShadowZ = SceneStartZ;
         } else
             GetShadow(SceneStartX, SceneStartY, SceneStartZ);
@@ -1331,6 +1335,8 @@ void ChangeCube() {
         ptrobj->Obj.Y = SceneStartY;
         ptrobj->Obj.Z = SceneStartZ;
     }
+    // (... and onto the floor he came in inside, carried by the decor or not: RACEMOD.CPP RaceMod_FootArrive)
+    { extern void RaceMod_FootArrive(void); RaceMod_FootArrive(); }
 
     RestartPerso();
 
@@ -1484,6 +1490,9 @@ void HitObj(U8 numhitter, U8 num, S32 hitforce, S32 beta) {
 
     // a race-track mod's opponent hit by Twinsen (his magic ball from the car): stopped as the race's own balls stop it (RACEMOD.CPP)
     { extern S32 RaceMod_OpponentStruck(U8 num, U8 hitter); if (RaceMod_OpponentStruck(num, numhitter)) return; }
+    // ... and Twinsen's race car flying a jump: its hit animation would end the flight in the air (RACEMOD.CPP RaceMod_InFlight)
+    if (num == NUM_PERSO AND RaceMod_InFlight())
+        return;
 
     if (ptrobjt->Flags & NO_CHOC)
         return;
@@ -2680,8 +2689,11 @@ void ReceptionObj() {
             return;
         }
 
-        // (a race-track mod's race: no fall kills or hurts Twinsen in his car -- it stops a moment, as on a land mine: RACEMOD.CPP)
-        if (StartYFalling - Nyw >= 16 * SIZE_BRICK_Y AND !RaceMod_NoHarm()) { // trop haut mort directe
+        // (a race-track mod's race: no fall kills or hurts Twinsen in his car -- it stops a moment, as on a land mine: RACEMOD.CPP; and
+        // off the raised road where its rail lets go -- rail_open=, the Temple of Bu's spiral drop -- he lands as from a step)
+        if (RaceMod_SoftLanding()) {
+            InitAnim(GEN_ANIM_RIEN, ANIM_REPEAT, NUM_PERSO);
+        } else if (StartYFalling - Nyw >= 16 * SIZE_BRICK_Y AND !RaceMod_NoHarm()) { // trop haut mort directe
             InitHitExtraPof(APtObj->Obj.X,
                             APtObj->Obj.Y + APtObj->YMax + 1,
                             APtObj->Obj.Z,
@@ -5880,6 +5892,8 @@ startaffscene:
     if (CubeMode == CUBE_EXTERIEUR) {
         if (Island == 0 AND TEMPETE_ACTIVE AND RainEnable)
             AffRain();
+        if (SnowFalls())
+            AffSnow();
 
         SetCLUT(PalLevel);
         Switch_Fillers(FILL_POLY_TEXTURES);
@@ -6544,6 +6558,10 @@ static S32 DrawTurnedExtra(T_EXTRA *e, S32 num) {
 }
 
 S32 GereZoneChangeCube(T_OBJET *ptrobj, T_ZONE *ptrz) {
+    // (a race-track mod's car: not straight back into the scene it has just come from -- RACEMOD.CPP RaceMod_CubeChangeAllowed)
+    { extern S32 RaceMod_CubeChangeAllowed(S32 scene); if (!RaceMod_CubeChangeAllowed(ptrz->Num)) return FALSE; }
+    // (nor through a door whose lift or wall is gone from this weather's island file -- RACEMOD.CPP RaceMod_DoorShut)
+    { extern S32 RaceMod_DoorShut(const T_ZONE *zn); if (RaceMod_DoorShut(ptrz)) return FALSE; }
     if (((ptrobj->Move != MOVE_BUGGY_MANUAL AND ptrobj->Move != MOVE_BUGGY)
              OR(CubeArrowFlags(ptrz->Num) & 4)) // Exterieur
         AND(ptrz->Info7 & ZONE_ON)) {
@@ -6614,7 +6632,8 @@ S32 GereZoneChangeCube(T_OBJET *ptrobj, T_ZONE *ptrz) {
                 }
             }
 
-            NewCube = ptrz->Num;
+            // (a zone of an LBA Assembler map's scene into the map's own scene k names it 30000 + k: MAPPACK.CPP)
+            NewCube = MapPack_ZoneScene(NumCube, ptrz->Num);
             NewPosY = y - ptrz->Y0 + ptrz->Info1;
             newbeta = (-ptrz->Info3 * 1024) & 4095;
 
@@ -6633,6 +6652,8 @@ S32 GereZoneChangeCube(T_OBJET *ptrobj, T_ZONE *ptrz) {
             else
                 FlagReajustPosTwinsen = TRUE;
 
+            // (out elsewhere in this weather's island file -- RACEMOD.CPP RaceMod_DoorTo)
+            { extern void RaceMod_DoorTo(const T_ZONE *zn); RaceMod_DoorTo(ptrz); }
             FlagChgCube = 1;
             return TRUE;
         }

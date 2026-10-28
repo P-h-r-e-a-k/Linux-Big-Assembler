@@ -7,9 +7,12 @@ namespace LBAAssembler;
 // second, is 27 km/h. The rates are percentages of the original car's (it gains 4 units a second every millisecond of throttle, loses 12 braking
 // and 7 rolling, and turns a quarter turn a second). In each gear the car pulls harder the lower the gear's top speed, as a gearbox does, so a
 // gear with the original top speed accelerates like the original car.
-public sealed class RaceCarSetup
+// (each track's best setup, TrackSetups, in RaceCarSetup.TrackSetups.cs: it names the race tracks, which tools sharing this file don't build)
+public sealed partial class RaceCarSetup
 {
     public const int MaxGears = 6;
+    // the fastest a gear or reverse may go (km/h): ten times the original buggy's 27
+    public const int MaxKmh = 270;
     public const int OriginalTop = 3800, OriginalReverse = 2000, OriginalSteer = 1024;
     public const double OriginalAccel = 4, OriginalBrake = 12, OriginalCoast = 7;
 
@@ -53,20 +56,36 @@ public sealed class RaceCarSetup
     // An opponent that has fallen behind pushes harder (up to CatchUpPercent more, 60 cells behind).
     public bool OpponentsFightBack { get; set; } = true;
     public const int CatchUpPercent = 8;
+    // The race's level on a track that has levels (Terrain.RaceTrackIsland.Levels: the Temple of Bú's, since 2026-10-17): 0 easy, 1 medium
+    // (the race as it was before the levels), 2 hard -- the opponents' skill over the one to beat's above, their catch-up, the items they
+    // take and how they aim them, the track's hazards (Terrain.RaceDifficulty). Any other track races as it is.
+    public int Difficulty { get; set; } = 1;
     // Play starts on the start/finish straight, Twinsen beside his car, whatever scene is open (and with the zones and routes the editor
     // draws over the game hidden).
     public bool StartAtLine { get; set; } = true;
     // Play starts a new game -- the story from its start, Twinsen in his house -- instead (the folder's tracks each raced where and when the
     // game is: RaceCarEngineFile.WriteStorySet).
     public bool NewGame { get; set; }
-    // The car Twinsen drives: -1 his own buggy, -2 or -3 his buggy firing green or red lasers out of its gun (his laser cars), else a race
-    // car by its number -- the racer entity's bodies (RaceTrackScenes.RacerEntity: the retail racer's car 0, Baldino's rocket car 1, the cars
-    // made after the characters 2 on, Terrain.RaceTrackCharacterCars) and the cast's cars on from 64 (RACECARS.JSON) -- for a test drive of a
-    // track in it (the engine's drive_as= and drive_laser=: RaceCarEngineFile.DriveAsLine). It handles as this setup makes the car.
+    // The car Twinsen drives: -1 the track's own -- his buggy, or the car a track has for him (the Temple of Bú's pumpkin F1, since
+    // 2026-10-17: Terrain.RaceTrackCharacterCars.TrackCar) --, -4 his buggy on every track, -2 or -3 his buggy firing green or red lasers out
+    // of its gun (his laser cars), else a race car by its number -- the racer entity's bodies (RaceTrackScenes.RacerEntity: the retail racer's
+    // car 0, Baldino's rocket car 1, the cars made after the characters 2 on, Terrain.RaceTrackCharacterCars), the cast's cars on from 64
+    // (RACECARS.JSON) and the pumpkin F1, 220 -- for a test drive of a track in it (the engine's drive_as= and drive_laser=:
+    // RaceCarEngineFile.DriveAsLine). It handles as this setup makes the car.
     public int DriveAs { get; set; } = -1;
-    public const int OwnBuggy = -1, LaserGreen = -2, LaserRed = -3;
-    // (that car as the folder's files have it, worked out when the car file is written: RaceTrackService.CarFileWriter)
+    public const int OwnBuggy = -1, LaserGreen = -2, LaserRed = -3, BuggyAlways = -4;
+    // (that car as the folder's files have it, worked out when the car file is written: RaceTrackService.CarFileWriter; and with OwnBuggy,
+    // each track's own car, by the track's name: RaceCarEngineFile.TrackCarLines)
     [System.Text.Json.Serialization.JsonIgnore] internal string? DriveAsKey { get; set; }
+    // (and that car's line on the islands where another copy of it is drawn, by the island's name: the toy truck's violet-wheeled copy on
+    // the islands whose palette draws the violet -- RaceCarEngineFile.DriveAsIslandLines)
+    [System.Text.Json.Serialization.JsonIgnore] internal Dictionary<string, string>? DriveAsIslandKeys { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] internal Dictionary<string, string>? TrackCarKeys { get; set; }
+    // Each track's best setup (TrackSetups) in place of the sliders' top speed, acceleration and steering on the track Play races; braking,
+    // rolling, reverse and the gearbox stay this setup's own, and a track with no best setup drives as the sliders say. Off unless asked for
+    // (2026-10-17, the user: "Yesterday we calculated the optimum car setup for each track, let's add this as an option to override the test
+    // sliders we currently have for car setup"): RaceCarEngineFile.EngineFile.
+    public bool UseTrackSetups { get; set; }
 
     public RaceCarSetup Clone()
     {
@@ -84,6 +103,39 @@ public sealed class RaceCarSetup
         new Preset("Race car (5 gears)", new RaceCarSetup()),
         new Preset("Fast race car (6 gears)", new RaceCarSetup { Gears = 6, GearTopKmh = new() { 12, 18, 24, 30, 37, 44 }, AccelerationPercent = 130, BrakingPercent = 160, CoastingPercent = 110, ReverseKmh = 16, SteeringPercent = 125 }),
     };
+
+    // A track's best setup, in the Race car window's terms: the top gear's top speed (the other gears scaled with it, as the top speed
+    // slider does: SetTopSpeed), the acceleration and the steering. Track: as the stress test's table names it.
+    public sealed record TrackSetup(string Track, int TopKmh, int AccelerationPercent, int SteeringPercent)
+    {
+        public override string ToString() => $"{Track}: top speed {TopKmh} km/h, acceleration {AccelerationPercent} %, steering {SteeringPercent} %";
+    }
+
+    // This setup with a track's best top speed, acceleration and steering in place of its own.
+    public RaceCarSetup With(TrackSetup best)
+    {
+        var copy = Clone();
+        copy.SetTopSpeed(best.TopKmh);
+        copy.AccelerationPercent = best.AccelerationPercent;
+        copy.SteeringPercent = best.SteeringPercent;
+        return copy;
+    }
+
+    // The top speed slider's: every gear's top speed scaled so the top gear's is `kmh`, each still over the one below it.
+    public void SetTopSpeed(double kmh)
+    {
+        var gears = Math.Clamp(Gears, 1, MaxGears);
+        var top = TopKmh(gears - 1);
+        if (top <= 0) return;
+        while (GearTopKmh.Count < gears) GearTopKmh.Add(GearTopKmh.LastOrDefault(27));
+        var scaled = Enumerable.Range(0, gears).Select(g => TopKmh(g) * kmh / top).ToArray();
+        for (var g = 0; g < gears; g++)
+        {
+            if (g == gears - 1) { GearTopKmh[g] = (int)Math.Round(kmh); continue; }
+            var lo = g == 0 ? 1 : GearTopKmh[g - 1] + 1;
+            GearTopKmh[g] = Math.Clamp((int)Math.Round(scaled[g]), lo, Math.Max(lo, (int)Math.Round(kmh) - (gears - 1 - g)));
+        }
+    }
 
     public static int KmhToUnits(double kmh) => (int)Math.Round(kmh / 3.6 * 512);
     public static double UnitsToKmh(double units) => units * 3.6 / 512;

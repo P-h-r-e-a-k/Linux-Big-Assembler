@@ -1,6 +1,7 @@
 #include <SYSTEM/FILES.H>
 
 #include <SYSTEM/DISCIMG.H>
+#include <SYSTEM/ZIPREAD.H>
 #include <SYSTEM/LIMITS.H>
 
 #include <assert.h>
@@ -46,8 +47,14 @@ S32 OpenMode(const char *filename, int mode) {
 // not in the image, so installs without an image behave exactly as before).
 // The disc handle it returns is tagged; Read/Seek/Close dispatch on it. Writes
 // never touch the image.
+// A virtual file (ZIPREAD.H: a file of an LBA Assembler map in the MAPS folder, standing in for the game folder's) is opened before the
+// filesystem's: a map's island is drawn from its own ILE even if the folder has one of that name.
 S32 OpenRead(const char *filename) {
-    S32 handle = OpenMode(filename, MODE_READ);
+    S32 handle = VFile_OpenRead(filename);
+    if (handle) {
+        return handle;
+    }
+    handle = OpenMode(filename, MODE_READ);
     if (handle) {
         return handle;
     }
@@ -57,6 +64,9 @@ S32 OpenWrite(const char *filename) { return OpenMode(filename, MODE_WRITE); }
 S32 OpenReadWrite(const char *filename) { return OpenMode(filename, MODE_RW); }
 
 S32 Close(S32 handle) {
+    if (VFile_IsHandle(handle)) {
+        return VFile_Close(handle);
+    }
     if (DiscImage_IsHandle(handle)) {
         return DiscImage_Close(handle);
     }
@@ -65,6 +75,9 @@ S32 Close(S32 handle) {
 }
 
 S32 Read(S32 handle, void *buffer, U32 maxReadBytes) {
+    if (VFile_IsHandle(handle)) {
+        return VFile_Read(handle, buffer, maxReadBytes);
+    }
     if (DiscImage_IsHandle(handle)) {
         return DiscImage_Read(handle, buffer, maxReadBytes);
     }
@@ -80,6 +93,9 @@ S32 Write(S32 handle, const void *buffer, U32 maxWriteBytes) {
 }
 
 S32 Seek(S32 handle, S32 offset, ESeekOrigin origin) {
+    if (VFile_IsHandle(handle)) {
+        return VFile_Seek(handle, offset, (S32)origin);
+    }
     if (DiscImage_IsHandle(handle)) {
         return DiscImage_Seek(handle, offset, (S32)origin);
     }
@@ -141,7 +157,7 @@ bool ExistsOnFilesystem(const char *path) {
 bool ExistsFileOrDir(const char *path) {
     assert(path != NULL);
 
-    if (ExistsOnFilesystem(path)) {
+    if (ExistsOnFilesystem(path) || VFile_Exists(path)) {
         return true;
     }
     return DiscImage_Exists(path);

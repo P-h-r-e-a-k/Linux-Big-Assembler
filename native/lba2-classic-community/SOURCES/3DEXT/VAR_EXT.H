@@ -68,11 +68,12 @@ extern U8 *GroundTexture;
    pages past ObjTexture), then those ground pages, then those object pages, 256 x 256 each (LOADISLE.CPP LoadIsland).
    - ground: a ground triangle's IndexTex is its page in the top bits (>> GROUND_PAGE_SHIFT) and its texture definition in the cube's
      list in the rest (TERRAIN.CPP GroundTexDef);
-   - objects: a decor's page is in its Body's bits DEC_PAGE_SHIFT.. (4 bits; the body number is the low 16, DEC_INVISIBLE and DEC_DRAWN
-     the next two), the page all its body's textures are on (DECORS.CPP). */
+   - objects: a decor's page is in its Body's bits DEC_PAGE_SHIFT.. (5 bits since 2026-10-16, 32 pages -- the Temple of Bú's bricks
+     fill more than 16; the body number is the low 16, DEC_INVISIBLE and DEC_DRAWN the next two), the page all its body's textures are
+     on (DECORS.CPP). */
 #define ISLE_PAGES_MAGIC 0x45474150 // 'PAGE'
 #define MAX_GROUND_PAGES 8
-#define MAX_OBJ_PAGES 16
+#define MAX_OBJ_PAGES 32
 #define GROUND_PAGE_SHIFT 10
 #define DEC_PAGE_SHIFT 18
 extern U8 *GroundPageBuf;   // ground pages 1.. (page 0 is GroundTexture)

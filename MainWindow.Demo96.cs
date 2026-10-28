@@ -21,7 +21,7 @@ public partial class MainWindow
     private bool Demo96Active => demo96Root is not null;
 
     // where the converted demo goes: the editor's own folder for what it makes (beside the engine binaries it unpacks)
-    private static string Demo96Directory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBAAssembler", "Demo96");
+    private static string Demo96Directory => Path.Combine(DataPaths.LocalAppData, "LBAAssembler", "Demo96");
 
     private void OpenDemo96_Click(object? sender, RoutedEventArgs e)
     {
@@ -90,6 +90,7 @@ public partial class MainWindow
     private void EnterDemo96(string root)
     {
         if (!ConfirmTerrainDiscard()) return;
+        if (!SettleScriptEdits("the 1996 demo opens")) return;
         StopLive();
         EndBodyPreviewLive();
         CloseDirectoryScopedEditors();
@@ -105,6 +106,7 @@ public partial class MainWindow
     private void CloseDemo96()
     {
         if (!ConfirmTerrainDiscard()) return;
+        if (!SettleScriptEdits("the 1996 demo closes")) return;
         StopLive();
         EndBodyPreviewLive();
         CloseDirectoryScopedEditors();

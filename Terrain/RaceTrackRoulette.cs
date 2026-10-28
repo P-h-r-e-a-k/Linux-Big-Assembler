@@ -114,12 +114,12 @@ internal static class RaceTrackRoulette
             }
         if (IslandDecors.Locate(island, cx * 512, cz * 512) is not { } home) return null;
         var homeX = (int)Math.Floor(cx * 512 / IslandFile.CubeSize); var homeZ = (int)Math.Floor(cz * 512 / IslandFile.CubeSize);
-        if (home.Cube.Decors.Count + Bodies + 8 > IslandDecors.MaxPerCube) { report.Notes.Add("WARNING: the roulette wheel: no room for it in its cube"); return null; }
+        if (home.Cube.Decors.Count + Bodies + 8 > IslandDecors.MaxPerCubeRaceTrack) { report.Notes.Add("WARNING: the roulette wheel: no room for it in its cube"); return null; }
 
         var made = new List<int>();
         int Add(byte[] body, double wx, double wy, double wz, double ext, double bottom)
         {
-            if (IslandDecors.Locate(island, wx, wz) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCube) return -1;
+            if (IslandDecors.Locate(island, wx, wz) is not { } at || at.Cube.Decors.Count >= IslandDecors.MaxPerCubeRaceTrack) return -1;
             var number = o.NewBodyBase + report.NewBodies.Count;
             var d = IslandDecors.Blank(number, at.X, (int)Math.Round(wy), at.Z, 0);
             d.XMin = at.X - (int)ext; d.XMax = at.X + (int)ext; d.ZMin = at.Z - (int)ext; d.ZMax = at.Z + (int)ext;

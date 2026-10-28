@@ -1,4 +1,5 @@
 #include "IMAGE_LOAD.H"
+#include "RACEGAME.H" /* RaceGame_On: the race game's menu picture in a window of any shape */
 
 #include <SVGA/SCREEN.H>
 #include <SYSTEM/HQRLOAD.H>
@@ -34,6 +35,50 @@ static void Image_StretchFromStaging(void *destVoid) {
     const S32 destW = (S32)ModeDesiredX;
     const S32 destH = (S32)ModeDesiredY;
     const U8 *src = ImageStaging;
+    /* The race game's window takes any shape (RES_SWITCH.CPP Res_ApplyWindowFit), and its menu's picture is stretched no wider than
+       2:1 (a 16:9 screen, as every widescreen menu has it, or a maximised window on one) and never taller than it is: beyond that it
+       keeps its shape, centred, and the bands either side of it take the colour its edge has most of (the night sky over it, the
+       ground under it) -- never squashed or drawn out more. */
+    if (RaceGame_On() && destW > 0 && destH > 0) {
+        double sx = (double)destW / IMAGE_AUTHORED_WIDTH, sy = (double)destH / IMAGE_AUTHORED_HEIGHT;
+        if (sx > sy * 1.5)
+            sx = sy * 1.5;
+        if (sy > sx)
+            sy = sx;
+        // (the picture's size and place: the whole destination when it isn't held back -- then exactly the plain stretch below)
+        S32 cw = (S32)(IMAGE_AUTHORED_WIDTH * sx + 0.5), ch = (S32)(IMAGE_AUTHORED_HEIGHT * sy + 0.5);
+        cw = cw > destW ? destW : cw < 1 ? 1 : cw;
+        ch = ch > destH ? destH : ch < 1 ? 1 : ch;
+        const S32 ox = (destW - cw) / 2, oy = (destH - ch) / 2;
+        // (each edge's commonest colour, over a strip of it 8 pixels deep: 0 top, 1 bottom, 2 left, 3 right)
+        U8 band[4];
+        for (S32 e = 0; e < 4; e++) {
+            S32 count[256] = {0};
+            const S32 n = e < 2 ? IMAGE_AUTHORED_WIDTH : IMAGE_AUTHORED_HEIGHT;
+            for (S32 d = 0; d < 8; d++)
+                for (S32 i = 0; i < n; i++) {
+                    const S32 x = e < 2 ? i : e == 2 ? d : IMAGE_AUTHORED_WIDTH - 1 - d;
+                    const S32 y = e >= 2 ? i : e == 0 ? d : IMAGE_AUTHORED_HEIGHT - 1 - d;
+                    count[src[y * IMAGE_AUTHORED_WIDTH + x]]++;
+                }
+            S32 best = 0;
+            for (S32 c = 1; c < 256; c++)
+                if (count[c] > count[best])
+                    best = c;
+            band[e] = (U8)best;
+        }
+        for (S32 y = 0; y < destH; y++) {
+            U8 *destRow = dest + y * destW;
+            if (y < oy || y >= oy + ch) {
+                memset(destRow, band[y < oy ? 0 : 1], (size_t)destW);
+                continue;
+            }
+            const U8 *srcRow = src + ((y - oy) * IMAGE_AUTHORED_HEIGHT / ch) * IMAGE_AUTHORED_WIDTH;
+            for (S32 x = 0; x < destW; x++)
+                destRow[x] = x < ox ? band[2] : x >= ox + cw ? band[3] : srcRow[(x - ox) * IMAGE_AUTHORED_WIDTH / cw];
+        }
+        return;
+    }
     for (S32 y = 0; y < destH; y++) {
         const S32 srcY = (y * IMAGE_AUTHORED_HEIGHT) / destH;
         const U8 *srcRow = src + srcY * IMAGE_AUTHORED_WIDTH;

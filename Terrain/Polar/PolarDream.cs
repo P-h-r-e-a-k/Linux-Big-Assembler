@@ -21,6 +21,11 @@ namespace LBAAssembler.Terrain.Polar;
 internal static class PolarDream
 {
     public const int IntroText = 1, LoseText = 2;
+    // The story's start (the user, 2026-10-27): FunFrock's taunt as he drives off, Twinsen's cry after him, the grobo's word as he gives
+    // Twinsen the digger's key (RACEMOD.CPP chase=, ChaseOpening) -- texts of the island's file after the grobo's own (PolarGrobo, 20-22);
+    // FunFrock holds a lead of ChaseLeadCells over Twinsen (chase_lead=), and the race ends the dream whoever gets there first
+    // (dream_any_end=): FunFrock, a little ahead, takes the jump into the peak as Twinsen watches
+    public const int ChaseFunFrockText = 23, ChaseTwinsenText = 24, ChaseGroboText = 25, ChaseLeadCells = 14;
     // the game variable a win sets (the race-track mode's win=): 1, Twinsen wakes up in his bed; 2 once Zoe has woken him, 3 as he gets
     // up, 4 as she comes to kiss him (200-204 are the race track story's, nothing in the game uses 205; 206 is the engine's Citadel weather)
     public const int DreamVar = 205;
@@ -54,6 +59,36 @@ internal static class PolarDream
         "Não! O FunFrock chegou primeiro a Sendell... Não pode acabar assim. Outra vez!",
     };
 
+    private static readonly string[] ChaseFunFrock =
+    {
+        "You'll never catch me! Whoever makes it to the Sendells first will get all of their magical powers!",
+        "Tu ne me rattraperas jamais ! Celui qui atteindra les Sendell le premier aura tous leurs pouvoirs magiques !",
+        "Du wirst mich nie einholen! Wer zuerst bei den Sendells ist, bekommt all ihre magischen Kräfte!",
+        "¡Nunca me alcanzarás! ¡Quien llegue primero a las Sendell obtendrá todos sus poderes mágicos!",
+        "Non mi prenderai mai! Chi arriva per primo dalle Sendell avrà tutti i loro poteri magici!",
+        "Nunca me vais apanhar! Quem chegar primeiro às Sendell fica com todos os seus poderes mágicos!",
+    };
+
+    private static readonly string[] ChaseTwinsen =
+    {
+        "No, FunFrock, come back! What am I going to do? I need to stop him!",
+        "Non, FunFrock, reviens ! Qu'est-ce que je vais faire ? Il faut que je l'arrête !",
+        "Nein, FunFrock, komm zurück! Was soll ich nur tun? Ich muss ihn aufhalten!",
+        "¡No, FunFrock, vuelve! ¿Qué voy a hacer? ¡Tengo que detenerle!",
+        "No, FunFrock, torna qui! Che cosa faccio? Devo fermarlo!",
+        "Não, FunFrock, volta! O que é que eu faço? Tenho de o parar!",
+    };
+
+    private static readonly string[] ChaseGrobo =
+    {
+        "Quick, Twinsen, take my vehicle! The fate of the world rests upon your shoulders!",
+        "Vite, Twinsen, prends mon engin ! Le sort du monde repose sur tes épaules !",
+        "Schnell, Twinsen, nimm mein Fahrzeug! Das Schicksal der Welt liegt auf deinen Schultern!",
+        "¡Rápido, Twinsen, coge mi vehículo! ¡El destino del mundo descansa sobre tus hombros!",
+        "Presto, Twinsen, prendi il mio veicolo! Il destino del mondo è sulle tue spalle!",
+        "Depressa, Twinsen, leva o meu veículo! O destino do mundo está nos teus ombros!",
+    };
+
     private static readonly string[] Wake =
     {
         "Twinsen! Twinsen, wake up! You were tossing and turning all night. Were you dreaming about FunFrock again?",
@@ -70,6 +105,9 @@ internal static class PolarDream
         var words = language < Intro.Length ? language : 0;
         yield return (IntroText, Intro[words]);
         yield return (LoseText, Lose[words]);
+        yield return (ChaseFunFrockText, ChaseFunFrock[words]);
+        yield return (ChaseTwinsenText, ChaseTwinsen[words]);
+        yield return (ChaseGroboText, ChaseGrobo[words]);
     }
 
     // The race's texts into a game folder: the island's (its text file written again with them) and the wake line at the end of Citadel

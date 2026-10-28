@@ -61,6 +61,35 @@ internal sealed class Lba2EntityTable
     // The entities that have this BODY.HQR entry as one of their bodies.
     public IEnumerable<Entity> EntitiesWithBody(int bodyIndex) => Entities.Where(e => e.Bodies.Any(b => b.Body == bodyIndex));
 
+    // The BODY.HQR entry the engine draws for a scene's actor of `entity` whose body is `body` -- the number a scene stores is the body's
+    // generic number in its entity (InitBody/SearchBody, OBJECT.CPP), and an entity without that number gets its normal body, generic 0. Null
+    // when the entity has neither (or isn't in the table).
+    public int? BodyOf(int entity, int body)
+    {
+        if (entity < 0 || entity >= Entities.Count) return null;
+        var bodies = Entities[entity].Bodies;
+        return bodies.Where(b => b.Generic == body).Select(b => (int?)b.Body).FirstOrDefault()
+            ?? bodies.Where(b => b.Generic == 0).Select(b => (int?)b.Body).FirstOrDefault();
+    }
+
+    // What a scene's actor stores to be drawn with BODY.HQR entry `bodyIndex`: an entity (a kind of actor) that has it, the body's generic
+    // number in it, and an animation of it (its generic number: the standing one, generic 0, else the first). Of the entities with the body,
+    // one whose normal body (generic 0) it is first, then one with a standing animation, then the first. Null when no entity has it -- the
+    // engine can't put it on an actor. (A raw BODY.HQR index stored as the body of entity 0 -- the LBA2 scene editor's new actors until
+    // 2026-10-17 -- is a generic number Twinsen's entity hasn't got: the game drew Twinsen in its place.)
+    public (int Entity, int Body, int Anim)? KindForBody(int bodyIndex)
+    {
+        var owner = EntitiesWithBody(bodyIndex)
+            .OrderByDescending(e => e.Bodies.Any(b => b.Body == bodyIndex && b.Generic == 0))
+            .ThenByDescending(e => e.Anims.Any(a => a.Generic == 0))
+            .ThenBy(e => e.Id)
+            .FirstOrDefault();
+        if (owner is null) return null;
+        var body = owner.Bodies.Where(b => b.Body == bodyIndex).OrderBy(b => b.Generic).First().Generic;
+        var anim = owner.Anims.Count == 0 ? 0 : owner.Anims.Any(a => a.Generic == 0) ? 0 : owner.Anims[0].Generic;
+        return (owner.Id, body, anim);
+    }
+
     // The animations (ANIM.HQR indices, without repeats, in the table's order) of the entities that have this body, and the one that is each entity's standing
     // still (its generic animation 0), first, when there is one.
     public IReadOnlyList<int> AnimationsOfBody(int bodyIndex, out int? standing)

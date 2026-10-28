@@ -6,6 +6,7 @@
 */
 
 #include "C_EXTERN.H" // include LBA2
+#include "MAPPACK.H"
 #include "IMAGE_LOAD.H"
 
 #include <SVGA/SCREEN.H>
@@ -84,6 +85,9 @@ void AdjustLba2Mem(void) {
     // Load size plus grosse Scene
     GetResPath(tmpFilePath, ADELINE_MAX_PATH, SCENE_HQR_NAME);
     Load_HQR(tmpFilePath, &PtrSceneMem, 0);
+    // (LBA Assembler's maps in the MAPS folder: their scenes too, which SCENE.HQR's entry 0 doesn't know -- MAPPACK.CPP)
+    if (MapPack_MaxSceneSize() > (U32)PtrSceneMem)
+        PtrSceneMem = MapPack_MaxSceneSize();
 
     PtrSceneMem += RECOVER_AREA;
 

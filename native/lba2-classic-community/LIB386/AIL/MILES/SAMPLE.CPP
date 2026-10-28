@@ -882,6 +882,8 @@ U32 IsSamplePlaying(U32 sample) {
 /* Miles really plays: the flag and this answer agree. */
 S32 Sample_DriverPlaysSound(void) { return Sample_Driver_Enabled; }
 
+U32 SampleMixedFrames(void) { return 0; }
+
 // ████████████████████████████████████████████████████████████████████████████
 
 S32 GetSamplePosition(U32 sample) {

@@ -1,0 +1,13 @@
+{
+  "note": "LBA1 scene 96's zones, cube-local coordinates as LBA1's (the map's cube (7,7) is LBA1's grid). Zone 0 led to LBA1 scene 15 (the Rabbibunny village), not part of this one-scene test: it leads to the map's own scene (30000), Twinsen arriving at the top (LBA1's point 3).",
+  "zones": [
+    { "lba1": 0, "type": 0, "box": [31488, 256, 8960, 31999, 1535, 11519], "fields": { "Destination scene": "self", "Arrival X": 1504, "Arrival Y": 6144, "Arrival Z": 1408 } },
+    { "lba1": 1, "type": 2, "box": [21248, 256, 27616, 22271, 1535, 28639], "fields": { "Zone number": 5 } },
+    { "lba1": 2, "type": 2, "box": [768, 6144, 4352, 2815, 7423, 5887], "fields": { "Zone number": 1 } },
+    { "lba1": 3, "type": 2, "box": [4352, 5632, 4864, 5887, 6911, 6911], "fields": { "Zone number": 2 } },
+    { "lba1": 4, "type": 2, "box": [8960, 6400, 1792, 10495, 7423, 3839], "fields": { "Zone number": 3 } },
+    { "lba1": 5, "type": 2, "box": [256, 6400, 256, 1791, 7679, 1791], "fields": { "Zone number": 0 } },
+    { "lba1": 6, "type": 2, "box": [11520, 4352, 1792, 12543, 5631, 2815], "fields": { "Zone number": 6 } },
+    { "lba1": 7, "type": 2, "box": [21760, 2816, 9472, 23807, 4095, 11007], "fields": { "Zone number": 4 } }
+  ]
+}

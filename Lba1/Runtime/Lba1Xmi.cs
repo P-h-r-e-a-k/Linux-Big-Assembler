@@ -45,6 +45,11 @@ internal static class Lba1Xmi
                 Array.Copy(xmi, p, data, 0, Math.Min(len, end - p));
                 p += len;
                 if (type == 0x2F) { lastTime = Math.Max(lastTime, time); break; }
+                // (a tempo event is left out: XMIDI's delays are already 120 Hz ticks, the original MIDI file's tempo worked into them when it
+                // was made, and its tempo event is kept only as a note of what it was. Kept here, it overrode the 120 ticks a second written
+                // below and every score played 1.1 to 1.9 times too slowly: LBA1's temple music, MIDI_MI.HQR 5, ran 4:12.6 for its 2:42 --
+                // Steam's recording of it, Common\Midi\LBA1-06.mp3, is 2:45; found 2026-10-20)
+                if (type == 0x51) { lastTime = Math.Max(lastTime, time); continue; }
                 var meta = new List<byte> { 0xFF, type };
                 meta.AddRange(WriteVlq(len));
                 meta.AddRange(data);

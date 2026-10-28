@@ -1,4 +1,6 @@
 #include "C_EXTERN.H"
+#include "MAPPACK.H"
+#include "FRAMEDUMP.H"
 
 #include <SYSTEM/INPUT_FLOW.H>
 #include <POLYGON/POLYFILT.H>
@@ -355,6 +357,7 @@ void GamePaused(U32 flags) {
     S32 fin = FALSE;
 
     SaveTimer();
+    { extern void RaceMod_MinimapHide(S32 hide); RaceMod_MinimapHide(TRUE); }    /* a race's mini-map off the paused scene (RACEMOD.CPP) */
 
     if (flags & PAUSE_CLOVER) {
         n = InitIncrustDisp(INCRUST_OBJ | INCRUST_YCLIP,
@@ -416,6 +419,7 @@ void GamePaused(U32 flags) {
     PersoFlashTimer = 0;
 
     ClearWaitNoInput();
+    { extern void RaceMod_MinimapHide(S32 hide); RaceMod_MinimapHide(FALSE); }
 }
 
 /*══════════════════════════════════════════════════════════════════════════*
@@ -449,6 +453,7 @@ static S32 SpellKeyDown(S32 n) {
 S32 MainLoop() {
     /* The exit reason belongs to this entry. See Control_NoteMainLoopEntered. */
     Control_NoteMainLoopEntered();
+    { extern void RaceMod_MinimapHide(S32 hide); RaceMod_MinimapHide(FALSE); }   /* a race's mini-map back after the menu (RACEMOD.CPP) */
     S32 xm, ym, zm;
     T_OBJET *ptrobj;
     U8 i;
@@ -503,6 +508,9 @@ restartloop:
            loop, so by the time control returns the user has chosen Keep or
            Revert (or the 15 s timeout fired). No-op when nothing is pending. */
         Res_RunRevertDialogIfPending();
+        /* The race game's window resized: the picture fitted to its shape (RES_SWITCH.CPP); the switch redraws the
+           whole frame next (FirstTime = AFF_ALL_FLIP). */
+        Res_ApplyWindowFit();
 
         /*#ifdef  THOMAS
 		if( DefKeys[0].Key1==0 )
@@ -627,8 +635,8 @@ restartloop:
         // a race-track mod's test pilot, when a harness turned it on (RACEMOD.CPP RaceMod_AutoInput)
         // ... or a power-up's jet-pack, which has the controls while it lasts
         { extern U32 RaceMod_AutoInput(void); if (RaceMod_Takeover()) Input &= ~(U32)(I_UP | I_DOWN | I_LEFT | I_RIGHT); Input |= RaceMod_AutoInput(); }
-        // ... and Shift drops what Twinsen holds instead of opening the inventory (RACEMOD.CPP)
-        if (RaceMod_BlocksInventory()) Input &= ~(U32)I_INVENTORY;
+        // ... and in the car Ctrl uses what Twinsen holds instead of opening the behaviour menu (RACEMOD.CPP)
+        Input = RaceMod_FilterInput(Input);
 
         ManageTime();
 
@@ -889,7 +897,8 @@ restartloop:
                 RestoreTimer();
             }
 
-            if ((MyKey == K_ESC OR Input & I_MENUS)) {
+            // (or the race game's race over: back to its menu, RACEMOD.CPP end_to_menu=)
+            if ((MyKey == K_ESC OR Input & I_MENUS OR RaceMod_WantsMenu())) {
                 if (CinemaMode > 1) {
                     ResetCinemaMode();
                 } else {
@@ -1710,6 +1719,8 @@ restartloop:
         if (CubeMode == CUBE_EXTERIEUR) {
             if (Island == 0 AND TEMPETE_ACTIVE AND RainEnable)
                 GereRain();
+            if (SnowFalls())
+                GereSnow();
 
             DoAnimatedPolys();
         }
@@ -1775,8 +1786,13 @@ restartloop:
                 CheckZoneSce(ptrobj, i);
             }
 
+            // a race-track mod's car held at its cube's edge with no zone to take it: into the next cube's scene (RACEMOD.CPP)
+            if (i == NUM_PERSO) { extern void RaceMod_EdgeCross(void); RaceMod_EdgeCross(); }
+
             // Samples Always
-            if (pansample AND ptrobj->SampleAlways) {
+            // (not a race's opponent car: its engine is heard from Twinsen's car instead, RACEMOD.CPP EnginesHeard)
+            extern S32 RaceMod_EngineHeard(S32 num);
+            if (pansample AND ptrobj->SampleAlways AND !RaceMod_EngineHeard(i)) {
                 ParmSampleVolume = ptrobj->SampleVolume;
 
                 if (!(ptrobj->SampleAlways & 0xFF000000)
@@ -1908,6 +1924,13 @@ restartloop:
                     RestoreTimer();
                 }
 
+                /* (Auto camera in a car: on while Twinsen drives, Classic on foot -- picked up as he gets in or out) */
+                if (FollowCameraInCar AND (Comportement == C_BUGGY) != (FollowCamera != 0)) {
+                    FollowCamera = Comportement == C_BUGGY;
+                    if (FollowCamera)
+                        FollowCamResetToView();
+                    Log_Info("[camera] %s camera: Twinsen %s", FollowCamera ? "Auto" : "Classic", FollowCamera ? "in his car" : "on foot");
+                }
                 if (FollowCamera AND CubeMode == CUBE_EXTERIEUR)
                     UpdateFollowCameraExt();
             }
@@ -2191,6 +2214,21 @@ static bool ProfileNameOrExit(const char *name, const char *source) {
 static void ControlPrePresent(U32 *frameBuffer, U32 pitch, U32 width, U32 height,
                               const U8 *palette_rgb) {
     Control_ServiceListen();
+    /* (a video being recorded -- the console's framedump, FRAMEDUMP.CPP: the frame as the window gets it, before the console's
+       overlay) */
+    if (FrameDump_Active())
+        FrameDump_Frame(frameBuffer, pitch, width, height);
+    /* A console screenshot asked for in a modal's own loop (a menu: the race game's pages,
+       2026-10-17) -- the main loop's capture below never runs there. Log is the buffer about
+       to be presented, as there. */
+    {
+        char shotPath[ADELINE_MAX_PATH];
+        int is_png = 0;
+        if (Console_HasPendingScreenshot(shotPath, sizeof(shotPath), &is_png) && is_png && Log && PtrPal) {
+            SavePNG(shotPath, Log, ModeDesiredX, ModeDesiredY, PtrPal);
+            Console_ClearPendingScreenshot();
+        }
+    }
     Console_PrePresent(frameBuffer, pitch, width, height, palette_rgb);
 }
 
@@ -2809,6 +2847,8 @@ int main(int argc, char *argv[]) {
     GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
     if (!Load_HQR(tmpFilePath, BufferFile3D, RESS_FILE3D))
         TheEndCheckFile(tmpFilePath);
+    // (the maps' own characters after the game's: MAPPACK.CPP)
+    MapPack_AddEntities(&BufferFile3D);
 
     LoadFicPerso();
     InitObjects(BufferAnim, SIZE_BUFFER_ANIM, GivePtrBody, GivePtrAnim);

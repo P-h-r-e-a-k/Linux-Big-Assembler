@@ -820,7 +820,8 @@ static bool PeekSceneCube(S32 numscene, S32 targetIsland, S32 *outCubeX, S32 *ou
     U8 cubeX = p[1];
     U8 cubeY = p[2];
     U8 cubeMode = p[5];
-    if (cubeMode != CUBE_EXTERIEUR || island != (U8)targetIsland) return false;
+    // (targetIsland < 0: any island -- a map island's scenes, chosen by ISLANDS.TXT, carry their look's number)
+    if (cubeMode != CUBE_EXTERIEUR || (targetIsland >= 0 && island != (U8)targetIsland)) return false;
 
     *outCubeX = cubeX;
     *outCubeY = cubeY;
@@ -938,7 +939,30 @@ extern S32 SearchAnim(U16 numanim, S32 numobj);
 
 static int LoadSceneLive(S32 scene);
 
-int RendererScanIslandActors(int islandIndex)
+// The scenes the game folder's ISLANDS.TXT draws on an island file of their own -- LBA Assembler's maps (File > New map, an island; the
+// "scene <number> <file>" lines EXTFUNC.CPP's SceneIslandFile reads for the game): scene -> file name. Read afresh at every scan: a map's
+// workspace writes it.
+static std::map<S32, std::string> ReadSceneIslandFiles()
+{
+    std::map<S32, std::string> files;
+    char path[ADELINE_MAX_PATH];
+    GetResPath(path, ADELINE_MAX_PATH, "ISLANDS.TXT");
+    if (FILE *f = fopen(path, "r")) {
+        char line[128];
+        while (fgets(line, sizeof(line), f)) {
+            int scene;
+            char name[32];
+            if (line[0] == '#' || sscanf(line, "scene %d %31s", &scene, name) != 2) continue;
+            files[(S32)scene] = name;
+        }
+        fclose(f);
+    }
+    return files;
+}
+
+// islandIndex: a game island's number (the scenes whose island byte it is, 0..221); islandFile: the island file loaded, whose own scenes
+// -- a map's, ISLANDS.TXT -- are scanned instead when it has any, whatever their number (from 400 on) and island byte (their look's).
+int RendererScanIslandActors(int islandIndex, const char *islandFile)
 {
     g_actors.clear();
     g_zones.clear();
@@ -952,7 +976,12 @@ int RendererScanIslandActors(int islandIndex)
     for (S32 cy = 0; cy < 16; cy++)
         for (S32 cx = 0; cx < 16; cx++)
             g_sceneForCube[cy][cx] = -1;
-    if (islandIndex < 0) return 0;
+    const std::map<S32, std::string> ownFiles = ReadSceneIslandFiles();
+    std::vector<S32> mapScenes;
+    if (islandFile && islandFile[0])
+        for (std::map<S32, std::string>::const_iterator it = ownFiles.begin(); it != ownFiles.end(); ++it)
+            if (!strcasecmp(it->second.c_str(), islandFile)) mapScenes.push_back(it->first);
+    if (islandIndex < 0 && mapScenes.empty()) return 0;
 
     S32 savedFlagLoadGame = FlagLoadGame;
     S32 savedLastCubeMode = LastCubeMode;
@@ -973,6 +1002,7 @@ int RendererScanIslandActors(int islandIndex)
     // whatever garbage offset/size it finds past the real entry table.
     // (and no further than the archive's own scenes: the 1996 demo's SCENE.HQR, converted to the retail layout by the editor, has 66)
     S32 lastScene = 221;
+    S32 archiveLastScene = -1;
     {
         char scenePath[ADELINE_MAX_PATH];
         GetResPath(scenePath, ADELINE_MAX_PATH, SCENE_HQR_NAME);
@@ -981,14 +1011,27 @@ int RendererScanIslandActors(int islandIndex)
             if (fread(&tableBytes, 4, 1, f) == 1 && tableBytes >= 8 && tableBytes / 4 - 1 >= 1) {
                 // (entries numscene + 1: the last entry's scene is the entry count less 2)
                 const S32 scenes = (S32)(tableBytes / 4 - 1) - 1;
+                archiveLastScene = scenes - 1;
                 if (scenes - 1 < lastScene) lastScene = scenes - 1;
             }
             fclose(f);
         }
     }
-    for (S32 scene = 0; scene <= lastScene; scene++) {
+    // (a game island: its scenes in the game's range, less any ISLANDS.TXT draws on a file of its own -- a map's scenes carry their look's
+    // island byte; a map's island: its own scenes, those of them in the archive -- empty slots read nothing, PeekSceneCube)
+    std::vector<S32> scenesToScan;
+    if (!mapScenes.empty()) {
+        for (size_t i = 0; i < mapScenes.size(); i++)
+            if (mapScenes[i] >= 0 && mapScenes[i] <= archiveLastScene) scenesToScan.push_back(mapScenes[i]);
+    } else {
+        for (S32 scene = 0; scene <= lastScene; scene++)
+            if (ownFiles.find(scene) == ownFiles.end()) scenesToScan.push_back(scene);
+    }
+    const S32 matchIsland = mapScenes.empty() ? islandIndex : -1;
+    for (size_t si = 0; si < scenesToScan.size(); si++) {
+        const S32 scene = scenesToScan[si];
         S32 cubeX, cubeY;
-        if (!PeekSceneCube(scene, islandIndex, &cubeX, &cubeY)) continue;
+        if (!PeekSceneCube(scene, matchIsland, &cubeX, &cubeY)) continue;
         if (cubeX >= 0 && cubeX < 16 && cubeY >= 0 && cubeY < 16) g_sceneForCube[cubeY][cubeX] = scene;
         if (!LoadScene(scene)) continue;
 
@@ -1417,6 +1460,9 @@ int RendererLoadInteriorScene(int numscene)
     // shading/colours (confirmed live, 2026-09-22: an actor with a hand-authored "on fire" colour scheme rendered
     // washed out instead). Same class of bug as this function's own RazListPartFlow/CacheNativeAnimsForScene fixes
     // below: something the full game boot/scene-transition path sets up that this embedding must redo explicitly.
+    // (an inside scene in citabau's, not in the palette of an island of its own that the view showed before: the Temple of Bú's)
+    extern S32 IslandPaletteOverride;
+    IslandPaletteOverride = -1;
     ChoicePalette();
 
     // Actor animations may start particle flows while the objects initialise; nothing here ever runs or draws them, so free
@@ -2267,6 +2313,28 @@ int RendererRemoveActor(int index)
     NativeDebugLog("RendererRemoveActor: index=%d scene=%d", index, (int)a.SceneIndex);
     ReapplyIfCurrentlyLoaded(a.SceneIndex);
     return 1;
+}
+
+// Drops a scene's session edits (sceneIndex < 0: every scene's) -- for when the editor has written that scene's file behind them (a
+// scene editor's save, an undo step): the next load of the scene must show the file, but an interior's edits outlived every load (only
+// an island load clears them, RendererScanIslandActors) and ReapplyPendingEditsToListObjet put them back over it -- an actor moved in
+// the actor window, then moved again in the scene editor and saved, stood where the actor window had put it, and an actor added there
+// and saved came twice. The scene's actors added this session go with them: their g_actors entries are marked Removed, as
+// RendererRemoveActor does (the next load of the scene lists what its file has). Returns how many scenes had edits.
+int RendererForgetSceneEdits(int sceneIndex)
+{
+    int forgotten = 0;
+    for (std::map<S32, ScenePendingEdits>::iterator it = g_pendingEdits.begin(); it != g_pendingEdits.end();) {
+        if (sceneIndex >= 0 && it->first != sceneIndex) { ++it; continue; }
+        for (size_t i = 0; i < it->second.NewActors.size(); i++) {
+            S32 flat = it->second.NewActors[i].FlatIndex;
+            if (flat >= 0 && flat < (S32)g_actors.size()) g_actors[(size_t)flat].Removed = true;
+        }
+        g_pendingEdits.erase(it++);
+        forgotten++;
+    }
+    NativeDebugLog("RendererForgetSceneEdits: scene=%d, %d scene(s) had edits", sceneIndex, forgotten);
+    return forgotten;
 }
 
 // Full designer-authored T_OBJET.Flags word (COMMON.H) -- collision/physics/

@@ -92,11 +92,14 @@ void InitJingle(void) {
 /*──────────────────────────────────────────────────────────────────────────*/
 
 S32 GetNumJingle(char *name) {
-    char filename[9];
+    /* (the retail jingles' names are DOS 8.3 ones, and this was 9 bytes with a strcpy: a longer music file's name -- the race's own,
+       RACEMUSIC/LBA1_TEMPLE.WAV, 2026-10-18 -- ran past it over the caller's saved registers, and opening the menu in a race crashed
+       the game, 2026-10-19. Any name now fits, and one that long is no jingle anyway.) */
+    char filename[ADELINE_MAX_PATH];
     S32 n;
 
     if (name AND strcmp(name, "")) {
-        strcpy(filename, GetFileName(name));
+        snprintf(filename, sizeof(filename), "%s", GetFileName(name));
 
         for (n = 1; n < NB_JINGLE; n++) {
             if (!strcasecmp(ListJingle[n], filename)) {
@@ -246,9 +249,68 @@ void InitTabTracks(void) {
 // Cette fonction doit orienter la musique soit sur une Track Audio, soit
 // sur du Streaming ADPCM
 
+/*──────────────────────────────────────────────────────────────────────────*/
+/* A race's own music (LBA Assembler, 2026-10-18: the race-track mode's music=, RACEMOD.CPP -- LBA1's temple music for the Temple of Bú,
+   which LBA2's music numbers can't name): while it is set, it plays in place of the scenes' own music (PlayMusic's soft calls, the
+   cube's jingle on every change of cube); a forced one (a script's, the menus') plays as before. */
+
+static char RaceMusicPath[ADELINE_MAX_PATH] = "";
+
+/* Music that keeps going (LBA Assembler, 2026-10-18: a race's music stopped after a few laps): while on, the track playing is played again
+   behind itself when it runs out (CheckNextMusic, every frame of the game) -- unless other music is waiting for it to end. Only the
+   game's own music, a scene's (a soft PlayMusic) or the race's: one a script or a menu forced (playit) plays once, as it always has. */
+
+static S32 MusicLoopWanted = FALSE;
+static S32 MusicForced = FALSE;
+static S32 PausedForced = FALSE; // (the music PauseMusic parked: whether it was forced -- a menu's theme may play in between)
+
+static void ApplyMusicLoop(void) {
+    SetStreamLoop(MusicLoopWanted AND !MusicForced);
+}
+
+void LoopMusic(S32 on) {
+    MusicLoopWanted = on;
+    ApplyMusicLoop();
+}
+
+void SetRaceMusic(const char *path) {
+    if (path AND path[0]) {
+        strncpy(RaceMusicPath, path, ADELINE_MAX_PATH - 1);
+        RaceMusicPath[ADELINE_MAX_PATH - 1] = '\0';
+    } else
+        RaceMusicPath[0] = '\0';
+}
+
+const char *RaceMusic(void) {
+    return RaceMusicPath;
+}
+
+void PlayRaceMusic(void) {
+    if (!RaceMusicPath[0])
+        return;
+    NextMusic = -1;
+    StopLastMusic = FALSE;
+    if (strcasecmp(StreamName(), RaceMusicPath) != 0) {
+        LockTimer();
+        StopMusic();
+        MusicForced = FALSE;
+        ApplyMusicLoop();
+        PlayStream(RaceMusicPath);
+        UnlockTimer();
+    }
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
 void PlayMusic(S32 num, S32 playit) {
     if (MusicLogIsEnabled())
         Log_Info("[MUSIC] PlayMusic num=%d playit=%d", (int)num, (int)playit);
+
+    // (a race's own music in place of the scene's)
+    if (num != -1 AND !playit AND RaceMusicPath[0]) {
+        PlayRaceMusic();
+        return;
+    }
 
     NextMusic = -1;
 
@@ -293,6 +355,9 @@ void PlayMusic(S32 num, S32 playit) {
                    EU starts them silently and recovers when the slider comes
                    back up. Volume belongs to the stream, not to whether the
                    music begins. */
+                // (kept going, LoopMusic, unless forced: said before it starts, so its whole track is kept)
+                MusicForced = playit;
+                ApplyMusicLoop();
                 PlayJingle(PtrTrackCD[num] & MUSIC);
             }
         } else {
@@ -347,6 +412,8 @@ void PauseMusic(S32 fade) {
     if (MusicLogIsEnabled())
         Log_Info("[MUSIC] PauseMusic fade=%d", (int)fade);
 
+    PausedForced = MusicForced;
+
     SaveTimer();
 
     if (fade)
@@ -392,6 +459,9 @@ void ResumeMusic(S32 fade) {
     // from the saved position). The original Adeline code called StopMusic()
     // first -- a harmless no-op on MILES redbook, but it silently killed the
     // SDL stream, so music never came back after the in-game menu / dialogue.
+    // (and the parked music kept going as it was, LoopMusic: the menu's theme played in between was forced)
+    MusicForced = PausedForced;
+    ApplyMusicLoop();
 #ifdef CDROM
     ResumeCD();
 #endif
@@ -523,6 +593,10 @@ void FadeInVolumeMusic(void) {
 /*──────────────────────────────────────────────────────────────────────────*/
 
 void CheckNextMusic(void) {
+    // (music that keeps going, LoopMusic: not while other music waits for it to end)
+    if (NextMusic == -1)
+        PumpStreamLoop();
+
     if (NextMusic != -1) {
         // Retail parity (#406): after the defer window elapses, don't hard-cut the
         // current track -- let it play out and start the queued one only once it has

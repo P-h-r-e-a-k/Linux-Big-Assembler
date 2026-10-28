@@ -79,6 +79,8 @@ public partial class MainWindow
         }
         // (of a folder with several race tracks, the one of the island the editor has open)
         raceToPlay = game == GameKind.Lba2 ? RaceTrackToPlay() : null;
+        // (an open map plays its own scene as a game: no race car, no race -- RaceTrackToPlay)
+        if (game == GameKind.Lba2 && MapOpen) askRaceCar = raceStart = false;
         if (game == GameKind.Lba2 && askRaceCar && !RaceTrackUpToDate()) return;
         if (game == GameKind.Lba2 && askRaceCar && !AskRaceCar()) return;
         // the story from a new game (every track raced where and when the game is), or a race track on its start/finish straight, Twinsen
@@ -98,6 +100,9 @@ public partial class MainWindow
 
     private Terrain.RaceTrackService.TrackInfo? RaceTrackToPlay()
     {
+        // (none for an open map: its workspace is a copy of a folder that may have race tracks built, and a map's island carries a game
+        // island's number -- the snow island's the Desert's -- so Play raced the Desert's track instead of playing the map, 2026-10-22)
+        if (MapOpen) return null;
         if (!Lba2Configured || !Terrain.RaceTrackService.HasBackups(gameRoot)) return null;
         var shown = currentGame == GameKind.Lba2 && !interiorSceneActive && currentIsland is not null ? activeFile : null;
         var sceneIsland = allSceneEntries.FirstOrDefault(s => s.Option.Index == Lba2SceneToPlay())?.IslandFile;
@@ -172,6 +177,8 @@ public partial class MainWindow
         if (!playing && gameHost is null && lba1Play is null) return;
         playing = false;
         SaveAudioIfDirty();
+        playKeys?.Dispose();
+        playKeys = null;
         if (gameHost is not null) { gameHost.GameExited -= OnGameExited; gameHost.Stop(); }
         PlayHostBorder.Child = null;
         gameHost = null;
@@ -188,8 +195,15 @@ public partial class MainWindow
     private void OnGameExited()
     {
         if (!playing) return;
+        var lba2 = playingGame == GameKind.Lba2;
         StopPlay();
-        FileLabel.Text = "The game ended.";
+        // (a game that stopped on an error says which, and the editor's log has its last lines)
+        if (lba2 && Lba2Play.LastError is { } error)
+        {
+            DebugLog.Log($"MainWindow: the game ended on an error: {error}\n{Lba2Play.OutputTail}");
+            FileLabel.Text = $"The game ended: {error}";
+        }
+        else FileLabel.Text = "The game ended.";
     }
 
     // ---- zone boxes and actor paths over the game ---------------------------------------------------------------------------------------
@@ -264,7 +278,15 @@ public partial class MainWindow
         options.NewGame = newGame;
         newGame = false;
         var story = options.NewGame || !EditorSettings.Current.RaceCar.StartAtLine || raceToPlay?.Dream is not null;
-        options.RaceCarFile = Terrain.RaceTrackService.CarFileWriter(gameRoot, raceToPlay, story);
+        // (the story from the town circuit's file -- CITABAU.ILE open -- in the weather once the storm is over: a scene entered as it is
+        // starts in the storm's chapter, and loaded the storm's file, 2026-10-27. A new game keeps the game's own weather)
+        var fine = story && !options.NewGame && raceToPlay?.Dream is null && Terrain.RaceTrackService.FineWeather(raceToPlay, false);
+        options.RaceCarFile = MapOpen ? null : Terrain.RaceTrackService.CarFileWriter(gameRoot, raceToPlay, story, fine);
+        // (whether this play races, and which -- the first thing to know about a race that didn't start)
+        DebugLog.Log(MapOpen ? $"Lba2Play: scene {scene}, the map \"{openMap!.Name}\"'s: no race-track mode"
+            : options.RaceCarFile is null
+            ? $"Lba2Play: scene {scene}, no race-track mode (no race track built in the folder: its RACETRACK.JSON and *{Terrain.RaceTrackService.BackupSuffix} originals)"
+            : $"Lba2Play: scene {scene}, racing {raceToPlay?.Island ?? "the folder's first track"}{(options.NewGame ? ", a new game" : story ? ", the story's set of tracks" : ", from the grid")}");
         raceOverlayHidden = options.RaceCarFile is not null && (EditorSettings.Current.RaceCar.StartAtLine || options.NewGame);
         if (raceOverlayHidden) { options.ZoneMask = 0; options.Paths = false; }
 
@@ -293,13 +315,22 @@ public partial class MainWindow
         if (!attached)
         {
             StopPlay();
-            MessageBox.Show(this, "The game started but its window didn't appear in the editor.", "LBA2: play scene", MessageBoxButton.OK, MessageBoxImage.Warning);
+            // (a game that ended before its window opened said why on its console: shown, and its last lines logged)
+            var said = Lba2Play.LastError;
+            DebugLog.Log($"MainWindow: the game's window didn't appear{(said is null ? "" : $": {said}")}\n{Lba2Play.OutputTail}");
+            MessageBox.Show(this, "The game started but its window didn't appear in the editor." + (said is null ? "" : $"\n\nThe game said: {said}"),
+                "LBA2: play scene", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-        PlayStatus.Text = $"Playing {label}. It plays what is saved on disk. Click the game to give it the keyboard.";
+        PlayStatus.Text = $"Playing {label}. It plays what is saved on disk. The game has the keyboard until you click the editor (click the game to give it back); F11 plays it full screen and back.";
         lba2ControlScene = scene;
+        // (F11: the game full screen, and back into the editor)
+        playKeys?.Dispose();
+        playKeys = new PlayKeyHook(0x7A, host.ProcessId, () => Dispatcher.UIThread.BeginInvoke(new Action(() => { if (ReferenceEquals(gameHost, host)) host.ToggleFullScreen(); })));
         _ = StartLba2Control(scene);
     }
+
+    private PlayKeyHook? playKeys;
 
     // EmbeddedGameHost's own WantsResize: the host area changed enough (debounced) to be worth a live engine
     // resolution switch. `resolution WxH` is a normal console verb (CONSOLE_CMD.CPP's cmd_resolution) that
@@ -320,12 +351,16 @@ public partial class MainWindow
             // Res_SwitchAllowedReason rejected it or Res_Switch itself failed -- either way, nothing to confirm.
             var response = await client.SendAsync($"resolution {w}x{h}");
             if (!ReferenceEquals(gameHost, host) || lba2Control != client) return;
-            if (!response.Contains($"Resolution: {w}x{h}", StringComparison.Ordinal)) return;
+            if (!response.Contains($"Resolution: {w}x{h}", StringComparison.Ordinal)) { DebugLog.Log($"MainWindow: the game kept its size, asked for {w}x{h}: {response.Trim()}"); return; }
+            DebugLog.Log($"MainWindow: the game now {w}x{h}");
             // A real switch always arms a "keep this resolution? reverts in 15s" modal (Res_BeginRevertCountdown).
-            // `key enter` reaches modal loops (it drives the same input layer MyGetInput reads, unlike `input`),
+            // `key` reaches modal loops (it drives the same input layer MyGetInput reads, unlike `input`),
             // with a small delay so the press lands after the dialog's own entry-latch clears rather than
             // being drained by it -- the dialog opens on the next tick, not synchronously within this response.
-            await client.SendAsync("key enter 90 3");
+            // Y (scancode 28) is Keep whichever button has the focus. (It was Enter, which pressed the focused one, and the dialog
+            // opens with Revert focused: every size the game was switched to went back after it, the picture the launch's size scaled
+            // into the new area -- RES_SWITCH.CPP's log "revert dialog -> REVERT", 2026-10-12.)
+            await client.SendAsync("key 28 90 3");
             if (ReferenceEquals(gameHost, host) && lba2Control == client) host.ConfirmResize(w, h);
         }
         catch (IOException) { }
@@ -378,6 +413,10 @@ public partial class MainWindow
     {
         var client = await Lba2ControlClient.ConnectAsync(Lba2BreakpointsPort, CancellationToken.None);
         if (!playing || playingGame != GameKind.Lba2 || lba2ControlScene != scene) { client?.Dispose(); return; }
+        // (the game's warnings and errors by now -- a socket it couldn't open, a race file it couldn't read -- in the editor's log: a report's
+        // editor.log says what went wrong without the game's own log, 2026-10-12)
+        var problems = Lba2Play.Problems;
+        if (problems.Length > 0) DebugLog.Log($"MainWindow: the game's warnings so far:\n{problems}");
         if (client is null) { DebugLog.Log("MainWindow: LBA2 control socket didn't come up; script breakpoints are unavailable this session."); return; }
         lba2Control = client;
         // (a race: the minimap shows the lap and the cars on it)

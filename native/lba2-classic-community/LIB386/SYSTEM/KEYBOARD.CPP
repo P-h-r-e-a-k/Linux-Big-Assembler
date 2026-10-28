@@ -182,6 +182,8 @@ void ManageKeyboard() {
     UpdateKeyboardState();
 }
 
+void (*Keyboard_ToggleFullscreen)(void) = NULL;
+
 void HandleEventsKeyboard(const void *event) {
     // Keyboard *state* is read via SDL_GetKeyboardState in UpdateKeyboardState;
     // we don't consume key events to drive TabKeys. The one thing we do here
@@ -200,6 +202,11 @@ void HandleEventsKeyboard(const void *event) {
     /* Boundary 1's event side. Auto-repeat is excluded: a held key repeats at
        the desktop's rate and none of those repeats is a press, so counting them
        would swamp the one number this boundary exists to produce. */
+    /* F11 / Alt+Enter: full screen <-> a window (the Display menu's own toggle, a key away) */
+    if (ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat && Keyboard_ToggleFullscreen
+        && (ev->key.key == SDLK_F11 || ((ev->key.key == SDLK_RETURN || ev->key.key == SDLK_KP_ENTER) && (ev->key.mod & SDL_KMOD_ALT))))
+        Keyboard_ToggleFullscreen();
+
     if (ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat)
         InputFlow_NoteKeyEvent(TRUE);
     else if (ev->type == SDL_EVENT_KEY_UP)

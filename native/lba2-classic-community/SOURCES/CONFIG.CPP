@@ -16,6 +16,7 @@
 
 #include "C_EXTERN.H"
 #include "CONFIG.H"
+#include "CONFIG_FILE.H"
 #include "IMAGE_LOAD.H"
 #include "DIRECTORIES.H"
 #include "INPUT.H"
@@ -955,6 +956,9 @@ endloop:
     BoxStaticAdd(0, 0, ModeDesiredX, ModeDesiredY);
 
     InitInput();
+    /* The keys as set, saved now: lba2.cfg was written only at a clean exit, so a game the editor stopped, a crash, or an update that
+       closed it lost every remap made in it (the user, 2026-10-27: "is it possible to stop my key configuration being over ridden"). */
+    WriteConfigFile();
 
     InitWaitNoInput(Input | I_MENUS | I_FIRE);
     InitWaitNoKey();
@@ -1271,6 +1275,8 @@ endloop_pad:
     InitKeyStrings();
 
     InitInput();
+    /* (and the pad's, saved now as the keyboard's are: MenuConfig) */
+    WriteConfigFile();
     InitWaitNoInput(Input | I_MENUS | I_FIRE);
     InitWaitNoKey();
 

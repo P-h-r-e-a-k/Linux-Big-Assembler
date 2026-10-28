@@ -51,6 +51,9 @@ internal static class RaceTrackStory
     // Twinsen has slept: the town circuit is open), the town circuit won (1; 2 once the ticket is handed over) and Raph's time beaten
     // (1; 2 once Raph has said so). 200-202 are game variables nothing in the game uses.
     public const int GlovesSlot = 7, FerryTicket = 13;
+    // the harbour (scene 43): the ferry, and Twinsen's own script that takes him aboard with the ticket; Citadel Island's weather (1 fine:
+    // RACEMOD.CPP RaceMod_CitadelWeather)
+    private const int FerryScene = 43, WeatherVar = 206;
     public const int DayVar = 200, Tired = 1, Rested = 2, WonVar = 201, BeatVar = 202;
     // Celebration Island's lava lake: the souvenir seller beaten (1; 2 once he has told what he saw) and his race run (won or not), 203-204
     public const int SellerBeaten = 203, SellerRaced = 204;
@@ -60,8 +63,9 @@ internal static class RaceTrackStory
     public const int HasCar = 207, RaphHere = 208;
     // the race-track mode's: 1 while a gate of the track is shut (RACEMOD.CPP RACE_GATE_VAR) -- the story's race, not one started on its line
     public const int GateShut = 209;
-    // the game's own people at the lighthouse (scene 46), kept by the build (RaceTrackIsland.StoryEntities): Raph by its door, his fiancee,
-    // and Twinsen and Zoe on its top in the spell's last shot (BODY 175); and the behaviour of Twinsen and Zoe walking together (entity 5)
+    // the game's own people at the lighthouse (scene 46), kept by the build (RaceTrackIsland.StoryEntities): Raph by its door and Twinsen
+    // and Zoe on its top in the spell's last shot (BODY 175) -- his fiancee (Fiancee) no longer, since 2026-10-14: she stood and ran on the
+    // town circuit; and the behaviour of Twinsen and Zoe walking together (entity 5)
     public const int LighthouseRaph = 19, Fiancee = 113, CoupleOnTop = 116;
     private const int LighthouseScene = 46, TwinsenAndZoe = 5;
     public const int RaceLaps = 3;
@@ -80,7 +84,7 @@ internal static class RaceTrackStory
 
     // The story's lines (Citadel Island's texts), in English, French, German, Spanish, Italian, Portuguese: TEXT.HQR's own order. The game's
     // own names: the Weather Wizard is the Mage Météo, the Wettermagier, the Mago Meteo, the Mago Metereologo, the Mago do Tempo.
-    private enum Line { Zoe, Wizard, WizardAfter, Raph, RaphBeaten, PaulGloves, PaulReady, Aliens, Tired, Sleep, PaulTicket, RaphTime, PaulStop, ZoeJoins }
+    private enum Line { Zoe, Wizard, WizardAfter, Raph, RaphBeaten, PaulGloves, PaulReady, Aliens, Tired, Sleep, PaulTicket, RaphTime, PaulStop, ZoeJoins, RaphYell }
     private static readonly string[][] Lines =
     {
         new[]
@@ -209,6 +213,15 @@ internal static class RaceTrackStory
             "¡Twinsen, lo has conseguido! Raph va hacia el faro, y el Mago Meteo nos espera allí. ¡Vamos, vayamos juntos!",
             "Twinsen, ce l'hai fatta! Raph sta andando al faro, e il Mago Metereologo ci aspetta là. Dai, andiamo insieme!",
             "Twinsen, conseguiste! O Raph vai a caminho do farol, e o Mago do Tempo espera-nos lá. Anda, vamos juntos!",
+        },
+        new[]
+        {
+            "Hey! Get off the track, Twinsen! Are you trying to get yourself run over?!",
+            "Hé ! Sors de la piste, Twinsen ! Tu veux te faire écraser ?!",
+            "He! Runter von der Strecke, Twinsen! Willst du dich überfahren lassen?!",
+            "¡Eh! ¡Sal de la pista, Twinsen! ¿Quieres que te atropellen?!",
+            "Ehi! Esci dalla pista, Twinsen! Vuoi farti investire?!",
+            "Ei! Sai da pista, Twinsen! Queres ser atropelado?!",
         },
     };
     // the holomap labels: the storm track's start line, the town circuit's
@@ -682,8 +695,10 @@ void comportement_1()
                     raph.X = raphPark[1]; raph.Y = raphPark[2]; raph.Z = raphPark[3]; raph.Beta = raphPark[4];
                 }
                 var shown = raphPark is null ? 0 : 1;
-                // Raph laps the track in his car (the race-track mode's parade=, RaphHere 0), until Twinsen comes by on foot (within 20
-                // cells: the start line's end) -- then he has stopped, his car parked by the start line, and he talks from it (the game's own
+                // Raph laps the track in his car (the race-track mode's parade=, RaphHere 0), until Twinsen stands on the start line on foot
+                // (its zone; the user, 2026-10-27: "let's have him keep driving laps until Twinsen is standing on the start/finish line when he
+                // drives by, then have him pulling up next to Twinsen with a screech of the tyres and yelling at Twinsen to get off the track":
+                // parade_stop=, RaphYell) -- then he pulls up beside him, yells, and parks by the start line, and he talks from it (the game's own
                 // Raph is the one who speaks, out of sight where the car stands; with no room for the car, he stands by the start line, seen
                 // only once he has stopped). With a car and driving gloves (HasCar, the gloves' slot) he says his time; without, what it takes. Raph's time beaten (BeatVar 1, the race-track mode's beat=) and Twinsen out of his car: he is
                 // off to the lighthouse, and Zoe joins Twinsen -- the two of them walking together, as when the game's Raph was freed from
@@ -705,7 +720,7 @@ void comportement_1()
     if (0 == var_game({RaphHere}))
     {{
         invisible(1);
-        if ({Driving} != comportement_hero() && 10000 > distance(0))
+        if ({Driving} != comportement_hero() && {startZone} == zone_obj(0))
         {{
             set_var_game({RaphHere}, 1);
             invisible({shown});
@@ -876,10 +891,39 @@ void comportement_1()
             });
         }
 
+        // 7. the ferry: not there in the storm, nor before the town circuit is won (the user, 2026-10-27: "Citadel island has a bug that lets
+        // Twinsen take the ferry in the rain by selecting his ferry ticket from his inventory, let's add a fix so this doesn't happen, and
+        // keep the ferry invisible until after the Citabau track is beaten") -- the ferry hidden, and the ticket shown to the ferryman or
+        // used at the quay doing nothing, until then
+        Edit(FerryScene, "the ferry is there, and the ticket takes Twinsen aboard, only in the fine weather once the town circuit is won", _ => scripts =>
+        {
+            var hero = scripts.GetText(0, ScriptKind.Life);
+            var board = System.Text.RegularExpressions.Regex.Match(hero, $@"if \(1 == var_game\({FerryTicket}\) && \(0 == l_track_obj\((\d+)\) \|\| 1 == use_inventory\({FerryTicket}\)\)\)");
+            if (!board.Success) throw new NotTheGames("the ferry's boarding");
+            var ferry = int.Parse(board.Groups[1].Value);
+            var open = $"0 < var_game({WonVar}) && 1 == var_game({WeatherVar})";
+            hero = Once(hero, $"if (1 == use_inventory({FerryTicket}))", $"if (1 == use_inventory({FerryTicket}) && {open})");
+            hero = Once(hero, board.Value, $"if (1 == var_game({FerryTicket}) && (0 == l_track_obj({ferry}) || 1 == use_inventory({FerryTicket})) && {open})");
+            scripts.SetText(0, ScriptKind.Life, hero);
+            if (scripts.GetText(ferry, ScriptKind.Life).Contains("comportement_1")) throw new NotTheGames("the ferry's own script");
+            scripts.SetText(ferry, ScriptKind.Life, $@"void comportement_0()
+{{
+    if ({open})
+    {{
+        invisible(0);
+    }}
+    else
+    {{
+        invisible(1);
+    }}
+}}
+");
+        });
+
         store.SaveMany(models.Select(m => new SceneChange(m.Key, m.Value, null)).ToList(), allowErrors: true);
         log.Add($"the race-track mode: Mr. Paul's gloves gate the storm track (variable {GlovesSlot}), Raph's time beaten sets {BeatVar}; the town circuit opens once {DayVar} is {Rested}, " +
                 $"{RaceLaps} laps, a win sets {WonVar}; while {DayVar} is {Tired} everyone says text {Id(Line.Tired)}");
         log.Add($"Raph laps the storm track in his car until Twinsen comes to the start line on foot (variable {RaphHere}){(raphPark is null ? " -- no room for his car by the start line: it goes out of sight" : "")}; he tells his time (text {Id(Line.RaphTime)}) once Twinsen has a car (variable {HasCar}) and driving gloves; Mr. Paul puts Twinsen out of his car on the start line without them");
-        return (log, new RaceTrackService.StoryInfo(Id(Line.Tired), TownArrow, RaphTime: Id(Line.RaphTime), RaphPark: raphPark));
+        return (log, new RaceTrackService.StoryInfo(Id(Line.Tired), TownArrow, RaphTime: Id(Line.RaphTime), RaphPark: raphPark, RaphYell: Id(Line.RaphYell), RaphEntity: raph?.Entity ?? -1));
     }
 }

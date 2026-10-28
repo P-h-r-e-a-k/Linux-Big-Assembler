@@ -200,29 +200,7 @@ public partial class MainWindow
 
     // The views after the nuke's files were written (as after an undo step: RunHistoryStep).
     private void ReloadAfterNuke(SceneNuke nuke, bool lba1)
-    {
-        zoneCache.Clear();
-        if (lba1)
-        {
-            foreach (var scene in nuke.Scenes) lba1Session.ForgetScene(scene);
-            ReloadLba1AfterEdit();
-        }
-        else
-        {
-            foreach (var scene in nuke.Scenes) scriptSession.ForgetScene(scene);
-            ResetLba2Areas();          // (the joined interior maps are drawn from their own copy of the scenes and grids)
-            if (lba2JoinedView) RedrawLba2JoinedMap();
-            else if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
-            else if (nuke.ChangesIsland) ReloadIslandFromDisk();
-            else
-            {
-                InvalidateNativeIsland();
-                actorMarkersIsland = null;
-                if (nativeViewActive) RenderNativeCamera();
-            }
-        }
-        RefreshZoneListIfVisible();
-    }
+        => ReloadScenesAfterWrite(lba1 ? SceneGame.Lba1 : SceneGame.Lba2, nuke.Scenes, islandChanged: !lba1 && nuke.ChangesIsland);
 
     // The island's file changed on disk behind the views (a nuke, or undoing one): the terrain editor, the 3D view, the minimap and the
     // actor dots read it again.

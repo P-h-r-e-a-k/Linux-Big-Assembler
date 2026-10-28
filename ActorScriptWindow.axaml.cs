@@ -153,6 +153,12 @@ public partial class ActorScriptWindow : Window
         ViewTrackButton.IsEnabled = hasScene;
         RevertButton.IsEnabled = hasScene;
         SaveButton.IsEnabled = hasScene;
+        // (a map's scene is saved into the map -- its working copy, which File > Save map writes into its file -- never the game's SCENE.HQR)
+        var map = session is null ? null : Maps.MapWorkspace.For(session.Folder);
+        SaveButton.Content = map is not null ? "Save to the map…" : "Save to SCENE.HQR…";
+        SaveButton.ToolTip = map is not null
+            ? $"Compiles the edited scripts into the map \"{map.Name}\"'s scene; File > Save map writes them into its file"
+            : "Compiles the edited scripts and writes them into the game folder's SCENE.HQR";
 
         disassemblyHasOffsets = OffsetLineRegex.IsMatch(nativeScript);
         DisassemblyTextBox.Text = DecorateDisassembly(nativeScript);
@@ -200,13 +206,22 @@ public partial class ActorScriptWindow : Window
         {
             text = decompiled;
             ScriptTextBox.IsReadOnly = false;
-            HintLabel.Text = "C source — comments are kept in SCENE.HQR.comments.json; edits stay in memory until you Save · F9 sets a breakpoint (unedited script only)";
+            HintLabel.Text = session is not null && Maps.MapWorkspace.For(session.Folder) is { } map
+                ? $"C source of the map \"{map.Name}\" — edits stay in memory until you Save to the map · F9 sets a breakpoint (unedited script only)"
+                : "C source — comments are kept in SCENE.HQR.comments.json; edits stay in memory until you Save · F9 sets a breakpoint (unedited script only)";
         }
         else if (IsCView)
         {
             text = "// This script can't be shown as C text: the decompiler couldn't turn its bytes into source that builds back to the same bytes.\n// The disassembly on the left is the only view.\n";
             ScriptTextBox.IsReadOnly = true;
             HintLabel.Text = "can't be shown as C text — read-only";
+        }
+        else if (session?.OtherFolder is { } other && session.HasUnsavedEdits)
+        {
+            text = $"// Script edits made in another game folder ({other}) aren't saved yet: they are kept for that folder, and\n" +
+                   "// this one's scripts can't be opened until they are saved there or dropped.\n";
+            ScriptTextBox.IsReadOnly = true;
+            HintLabel.Text = "unsaved script edits of another folder — read-only";
         }
         else
         {
@@ -359,6 +374,10 @@ public partial class ActorScriptWindow : Window
         }
 
         var text = EditorText;
+        // (the text into the session as it is checked, not only when the view changes or the window saves or closes: another actor's
+        // window -- its check, its Save -- then knows this one's labels and comportements; 2026-10-23, the ski resort's Twinsen and
+        // snowboarder name each other's, and a Save from one window left the other's text out)
+        CommitEditor();
         var (size, error, warnings) = sceneScripts!.CheckTextFull(source.Slot, CurrentKind, text);
         var edited = text != sceneScripts.OriginalText(source.Slot, CurrentKind);
         StatusText.ToolTip = null;
@@ -433,11 +452,26 @@ public partial class ActorScriptWindow : Window
             return;
         }
 
-        var confirm = MessageBox.Show(this,
-            $"Compile the edited scripts and write scene {string.Join(", ", scenes)} into:\n\n{session.HqrPath}\n\n" +
-            "The first save keeps your original as SCENE.HQR.bak. Comments are stored separately in SCENE.HQR.comments.json " +
-            "(a save that only changes comments leaves SCENE.HQR alone). Reload the island afterwards to see script changes in the viewer.\n\nContinue?",
-            "Save scripts to SCENE.HQR", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (session.OtherFolder is { } other)
+        {
+            MessageBox.Show(this, $"These script edits (scene {string.Join(", ", scenes)}) were made in\n\n{other}\n\nwhich isn't the folder open now. They can only be saved there.",
+                "Save scripts", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var map = Maps.MapWorkspace.For(session.Folder);
+        var confirm = map is not null
+            ? MessageBox.Show(this,
+                $"Compile the edited scripts and write scene {string.Join(", ", scenes)} into the map \"{map.Name}\"?\n\n" +
+                "They go into the map's own scene (its working copy; the game folder's own files aren't touched). " +
+                (map.File is { } file ? $"File > Save map (Ctrl+S) then writes the map into {System.IO.Path.GetFileName(file)}, its scene file (.{(map.Lba1 ? "LS1" : "LS2")}) with them."
+                                      : $"File > Save map (Ctrl+S) then writes the map into a file of its own, its scene file (.{(map.Lba1 ? "LS1" : "LS2")}) with them.") +
+                "\n\nContinue?",
+                "Save scripts to the map", MessageBoxButton.OKCancel, MessageBoxImage.Question)
+            : MessageBox.Show(this,
+                $"Compile the edited scripts and write scene {string.Join(", ", scenes)} into:\n\n{session.HqrPath}\n\n" +
+                "The first save keeps your original as SCENE.HQR.bak. Comments are stored separately in SCENE.HQR.comments.json " +
+                "(a save that only changes comments leaves SCENE.HQR alone). Reload the island afterwards to see script changes in the viewer.\n\nContinue?",
+                "Save scripts to SCENE.HQR", MessageBoxButton.OKCancel, MessageBoxImage.Question);
         if (confirm != MessageBoxResult.OK) return;
 
         var result = session.SaveAll();

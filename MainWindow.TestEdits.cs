@@ -20,6 +20,8 @@ public partial class MainWindow
     private LiveDataRoot? testLba1Root;
     private string? realGameDirectory;
     private string? realLba1Directory;
+    // (the real folders guarded while the test runs: FileTransaction refuses a write into them outside the test copy)
+    private readonly List<IDisposable> testEditsGuards = new();
 
     private bool TestEditsActive => testLba2Root is not null || testLba1Root is not null;
 
@@ -35,7 +37,7 @@ public partial class MainWindow
     private void CloseDirectoryScopedEditors()
     {
         foreach (var window in OwnedWindows.OfType<Window>()
-                     .Where(w => w is Lba2SceneEditorWindow or Lba1SceneEditorWindow or GridEditorWindow or ObjectBrowserWindow or AssetEditorWindow).ToList())
+                     .Where(w => w is GridEditorWindow or ObjectBrowserWindow or AssetEditorWindow).ToList())
             window.Close();
         BodyStudioLauncher.Close();
         AnimationStudioLauncher.Close();
@@ -46,6 +48,7 @@ public partial class MainWindow
         if (TestEditsActive) return;
         if (!Lba2Configured && !Lba1Configured) { SetStatus("No game folder is set to test edits against.", StatusKind.Warning); return; }
         if (!ConfirmTerrainDiscard()) return;      // same check SwitchGame itself makes; done here, once, instead of letting SwitchGameCore's own caller repeat it below
+        if (!SettleScriptEdits("the test starts")) return;
 
         StopLive();
         EndBodyPreviewLive();
@@ -72,6 +75,9 @@ public partial class MainWindow
             }
         }
 
+        if (testLba2Root is not null) testEditsGuards.Add(FileTransaction.Protect(realGameDirectory, testLba2Root.Directory, "test edits are on: their copy of the game folder takes every save"));
+        if (testLba1Root is not null) testEditsGuards.Add(FileTransaction.Protect(realLba1Directory, testLba1Root.Directory, "test edits are on: their copy of the game folder takes every save"));
+
         // Set before anything below can possibly call EditorSettings.Save() -- see its own comment.
         EditorSettings.TestModeActive = true;
         if (testLba2Root is not null) EditorSettings.Current.GameDirectory = testLba2Root.Directory;
@@ -90,7 +96,10 @@ public partial class MainWindow
     {
         if (!TestEditsActive) return;
         if (!ConfirmTerrainDiscard()) return;
+        if (!SettleScriptEdits(commit ? "the test edits are committed" : "the test edits are thrown away")) return;
         CloseDirectoryScopedEditors();
+        foreach (var guard in testEditsGuards) guard.Dispose();
+        testEditsGuards.Clear();
 
         if (commit)
         {

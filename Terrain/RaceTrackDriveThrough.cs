@@ -29,6 +29,8 @@ internal sealed class DriveThroughHut
 internal static class RaceTrackDriveThrough
 {
     public const double Clearance = 1900, Margin = 0.75;
+    // how far along the lap either way from its point nearest a hut the road through it is taken to run (cells)
+    public const double PassageReach = 40;
 
     public static List<int> Make(IslandFile island, TrackRoad road, DriveThroughHut[] huts, RaceTrackOptions o, RaceTrackReport report)
     {
@@ -50,9 +52,21 @@ internal static class RaceTrackDriveThrough
             if (cube is null || first is null) { report.Notes.Add($"WARNING: drive-through hut {hut.Body}: no decor of that body"); continue; }
             var group = cube.Decors.Where(d => d.X == first.X && d.Z == first.Z && IslandFile.ObjectPageOf(d) == 0).ToList();
             double ox = cx * 64 + first.X / 512.0, oz = cz * 64 + first.Z / 512.0;
-            // the road through it: its points within reach of the origin
-            var near = Enumerable.Range(0, road.Count).Where(i => Math.Abs(road.X[i] - ox) < 40 && Math.Abs(road.Z[i] - oz) < 40).ToList();
-            if (near.Count < 2) { report.Notes.Add($"WARNING: drive-through hut {hut.Body}: the road doesn't pass near it"); continue; }
+            // the road through it: the stretch of the lap through it -- PassageReach cells either way along the lap from its point nearest
+            // the origin (at the height nearest the hut's floor: a raised road may pass over it too). (Until 2026-10-14 every point within
+            // 40 cells of the origin: the Island of the Francos' lap passes 25 cells beside two of its huts, and the walls' boxes were kept
+            // out of the passage by that other road's middle -- a box 0.8 cell into the deck, which stopped a car keeping to the rail: the
+            // user, "The right side of the track on Knartas.ile in this position seems to have something us stopping when we're hugging
+            // the right side of the track")
+            var mid = Enumerable.Range(0, road.Count).Where(i => Math.Abs(road.X[i] - ox) < 40 && Math.Abs(road.Z[i] - oz) < 40)
+                .OrderBy(i => Math.Sqrt(Math.Pow(road.X[i] - ox, 2) + Math.Pow(road.Z[i] - oz, 2)) + Math.Abs(road.H[i] - first.Y) / 2048.0).DefaultIfEmpty(-1).First();
+            if (mid < 0) { report.Notes.Add($"WARNING: drive-through hut {hut.Body}: the road doesn't pass near it"); continue; }
+            var reachPoints = (int)Math.Round(PassageReach / o.Spacing);
+            var near = Enumerable.Range(-reachPoints, 2 * reachPoints + 1).Select(k => mid + k)
+                .Where(i => road.Closed || i >= 0 && i < road.Count).Select(i => (i % road.Count + road.Count) % road.Count).Distinct().ToList();
+            // (the passage as wide as the deck through it is, its rails and Margin -- a raised road's half width is its own, point by point)
+            if (hut.Half is null && road.Raised is { } up && road.RaisedHalfs is { } halfs)
+                half = Math.Max(half, near.Where(i => up[i] && i < halfs.Length).Select(i => halfs[i]).DefaultIfEmpty(0).Max() + Margin);
             var parts = new int[3]; var dropped = 0; var kept = 0; var pieces = 0;
             foreach (var d in group)
             {

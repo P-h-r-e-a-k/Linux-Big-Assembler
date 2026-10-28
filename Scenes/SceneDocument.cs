@@ -27,6 +27,11 @@ internal sealed class SceneDocument
     // Raised after every edit, undo, redo, save and revert.
     public event EventHandler? Changed;
 
+    // Raised after any document wrote scenes into the game files (Save, SaveAs, and each step while AutoSave is on), with the scene
+    // numbers written: the other views of those files -- the main window's, another scene editor's -- read them again. (Edits that
+    // aren't saved yet stay the document's own.)
+    public static event Action<SceneDocument, IReadOnlyList<int>>? Saved;
+
     private SceneDocument(SceneStore store, int scene, SceneModel model, byte[]? grid)
     {
         Store = store;
@@ -104,6 +109,7 @@ internal sealed class SceneDocument
         lastMergeKey = mergeKey;
         if (AutoSave) { savedScene = current; savedGrid = currentGrid; }
         Changed?.Invoke(this, EventArgs.Empty);
+        if (AutoSave) Saved?.Invoke(this, new[] { SceneNumber });
     }
 
     public bool Undo() => Step(undo, redo);
@@ -136,6 +142,7 @@ internal sealed class SceneDocument
         lastMergeKey = null;
         if (AutoSave) { savedScene = current; savedGrid = currentGrid; }
         Changed?.Invoke(this, EventArgs.Empty);
+        if (AutoSave) Saved?.Invoke(this, new[] { SceneNumber });
         return true;
     }
 
@@ -144,6 +151,7 @@ internal sealed class SceneDocument
         var result = Store.Save(SceneNumber, current, currentGrid, allowErrors);
         savedScene = current; savedGrid = currentGrid;
         Changed?.Invoke(this, EventArgs.Empty);
+        Saved?.Invoke(this, new[] { SceneNumber });
         return result;
     }
 
@@ -164,6 +172,8 @@ internal sealed class SceneDocument
     public SceneSaveResult SaveAs(int scene, bool allowErrors = false)
     {
         if (!Store.SceneExists(scene)) throw new InvalidOperationException($"Scene {scene} isn't a slot in this game's SCENE.HQR (scenes can't be added, only replaced).");
-        return Store.Save(scene, current, currentGrid, allowErrors);
+        var result = Store.Save(scene, current, currentGrid, allowErrors);
+        Saved?.Invoke(this, new[] { scene });
+        return result;
     }
 }

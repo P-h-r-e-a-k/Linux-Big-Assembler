@@ -1,0 +1,5 @@
+# LBA Assembler object: one brick a line -- cell x, layer, cell z, LBA1 brick
+1 0 0 6761
+1 1 0 6762
+1 2 0 6763
+0 3 0 6764

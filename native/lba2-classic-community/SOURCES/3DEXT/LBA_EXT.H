@@ -45,12 +45,17 @@ S32	Max3( S32 a, S32 b, S32 c ) ;
 */
 // maxima
 
-#define	MAX_OBJ_DECORS		200
+// (the objects of the cube the hero is in: ListTriExt, the frame's list of them to sort and draw, holds this many -- nothing else counts
+// them. 200 in the retail engine; 1,000 here, for islands only this engine plays: Island CX's control tower, its halls under the gas
+// (LBA Assembler's IslandDecors.MaxPerCubeOwnEngine), 2026-10-12)
+#define	MAX_OBJ_DECORS		1000
 
 #define	NB_COTE		 	64
 #define	SIZE_MAIN_MAP		16
 
 #define	MAX_CUBES_PER_ISLE	20	// desert
+#define	ISLE_CUBE_SLOTS		256	// (the per-cube caches' slots, LOADISLE.CPP: as many as an island's cubes can be, 16 x 16)
+#define	ISLE_OBJ_SLOTS		4096	// (the island's bodies kept unpacked, HQR_Isle_Obj: all of the biggest island's -- LOADISLE.CPP)
 
 // cube infos
 #define		INFO_ALPHA_LIGHT	0

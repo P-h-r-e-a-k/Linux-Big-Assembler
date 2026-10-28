@@ -12,6 +12,7 @@ S32 Filler_Trame(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_Transparent(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_FlatNZW(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_FlatZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
+S32 Filler_FlatFogZBufPix(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TransparentZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TrameZBuf(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);
 S32 Filler_TransparentNZW(U32 nbLines, U32 fillCurXMin, U32 fillCurXMax);

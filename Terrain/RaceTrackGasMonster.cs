@@ -26,11 +26,15 @@ internal sealed class GasMonsterRun
     public double Every { get; set; } = 9;
     public double Out { get; set; } = 3;
     public int Most { get; set; } = 5;
+    // A floor they stand on instead of the gas (its height): Island CX's, in the ring of a hall under its gas (the user, 2026-10-15: "In the
+    // underground section there's some gas monsters that attack the player let's build on this theme") -- beside the road where nothing
+    // stands on the floor (no wall within a cell of it).
+    public double? Floor { get; set; }
 }
 
 // A monster as placed: where it rises out of the gas, and where on the road it bites -- its strike zone (island cells, the bite's height
 // the road's); how far towards its bite the road's rail is (cells); once made (InstallPoses), its body and first animation (the entity's).
-internal sealed record GasMonsterSpot(double X, double Z, double BiteX, double BiteZ, double BiteY, double Edge, int Body = -1, int FirstAnim = -1);
+internal sealed record GasMonsterSpot(double X, double Z, double BiteX, double BiteZ, double BiteY, double Edge, int Body = -1, int FirstAnim = -1, double FootY = 0);
 
 internal static class RaceTrackGasMonster
 {
@@ -48,6 +52,8 @@ internal static class RaceTrackGasMonster
     private const double GasLevel = 60;
     // the least distance between two monsters (cells)
     private const double Apart = 9;
+    // on a floor (GasMonsterRun.Floor): the road this far over or under the road it bites is another level's, out of its way
+    private const double FloorLevels = 3000;
 
     // Into the game folder: each monster (report.GasMonsters, which get their body and first animation) -- the game's gas monster twice
     // its size, its neck as long as the road beside it wants (its mouth reaching a tenth again past the poised place over the strike zone;
@@ -75,7 +81,9 @@ internal static class RaceTrackGasMonster
             var g = report.GasMonsters[i];
             double d = Math.Sqrt((g.BiteX - g.X) * (g.BiteX - g.X) + (g.BiteZ - g.Z) * (g.BiteZ - g.Z)) * 512, e = g.Edge * 512;
             // (the neck: long enough for the mouth to reach a tenth again past its poised place, from the foot at the gas)
-            var reach = Math.Sqrt((d - 0.15 * (d - e)) * (d - 0.15 * (d - e)) + (g.BiteY + GasMonsterPoser.PoisedHigh) * (g.BiteY + GasMonsterPoser.PoisedHigh));
+            // (the road's height over its foot: the gas, or the floor it stands on)
+            var road = g.BiteY - g.FootY;
+            var reach = Math.Sqrt((d - 0.15 * (d - e)) * (d - 0.15 * (d - e)) + (road + GasMonsterPoser.PoisedHigh) * (road + GasMonsterPoser.PoisedHigh));
             var stretch = Math.Max(1, (1.1 * reach - plain.HeadReach) / plain.Length);
             byte[] body = twice;
             GasMonsterNeck neck = plain;
@@ -85,7 +93,7 @@ internal static class RaceTrackGasMonster
             {
                 body = GasMonsterNeck.LongNeck(twice, stretch);
                 neck = new GasMonsterNeck(Body.Read(body, 2, allowStatic: true));
-                poses = GasMonsterPoser.Solve(neck, d, e, g.BiteY);
+                poses = GasMonsterPoser.Solve(neck, d, e, road);
                 fits = poses.StruckMiss < 200 && poses.PoisedOver >= GasMonsterPoser.PoisedHigh - 500 && poses.LeastOverRail >= 0 && poses.LeastOverDeck >= 0;
             }
             if (!fits) stretch /= 1.15;
@@ -109,7 +117,7 @@ internal static class RaceTrackGasMonster
             {
                 Directory.CreateDirectory(dump);
                 using var w = new StreamWriter(Path.Combine(dump, $"monster{i}.csv"));
-                w.WriteLine($"# foot 0 road {g.BiteY:0} rail {e:0} bite {d:0}");
+                w.WriteLine($"# foot 0 road {road:0} rail {e:0} bite {d:0}");
                 w.WriteLine("pose,z,y");
                 foreach (var (name, shape) in new[] { ("poised", poised), ("rear", rear), ("struck", struck), ("bit", bit) })
                     foreach (var q in neck.Pose(shape)) w.WriteLine($"{name},{q.Z:0},{q.Y:0}");
@@ -169,9 +177,14 @@ internal static class RaceTrackGasMonster
         var spots = new List<GasMonsterSpot>();
         var boxes = IslandOps.CubeCells(island).SelectMany(c => c.Item3.Decors.Select(d =>
             ((c.Item1 * (double)IslandFile.CubeSize + d.XMin) / 512, (c.Item2 * (double)IslandFile.CubeSize + d.ZMin) / 512,
-             (c.Item1 * (double)IslandFile.CubeSize + d.XMax) / 512, (c.Item2 * (double)IslandFile.CubeSize + d.ZMax) / 512))).ToList();
+             (c.Item1 * (double)IslandFile.CubeSize + d.XMax) / 512, (c.Item2 * (double)IslandFile.CubeSize + d.ZMax) / 512, (double)d.YMin, (double)d.YMax))).ToList();
         bool Gas(double x, double z)
         {
+            // (on a floor: the floor there -- a box whose top it is: beyond a wall there is none, and Island CX's north and west monsters
+            // stood out past its hall's walls once its lanes were wider, 2026-10-17 -- and nothing standing on it, a box over it within a cell)
+            if (run.Floor is { } floor)
+                return boxes.Any(b => b.Item6 > b.Item5 && Math.Abs(b.Item6 - floor) < 1 && x > b.Item1 && x < b.Item3 && z > b.Item2 && z < b.Item4)
+                    && !boxes.Any(b => b.Item6 > b.Item5 && b.Item6 > floor + 100 && b.Item5 < floor + 3000 && x > b.Item1 - 1 && x < b.Item3 + 1 && z > b.Item2 - 1 && z < b.Item4 + 1);
             for (var dz = -1; dz <= 1; dz++)
                 for (var dx = -1; dx <= 1; dx++)
                     if ((IslandOps.Altitude(island, (x + dx * 0.8) * 512, (z + dz * 0.8) * 512) ?? 0) > GasLevel) return false;
@@ -183,6 +196,8 @@ internal static class RaceTrackGasMonster
             {
                 var apart = Math.Abs(i - k); apart = Math.Min(apart, n - apart);
                 if (apart * o.Spacing < 6) continue;
+                // (on a floor, only the road near its height: Island CX's ring under the outside road and the ramps down to it)
+                if (run.Floor is not null && Math.Abs(r.H[i] - r.H[k]) > FloorLevels) continue;
                 var half = r.RaisedHalfs?[i] ?? o.RaisedHalfWidth;
                 if ((r.X[i] - x) * (r.X[i] - x) + (r.Z[i] - z) * (r.Z[i] - z) < (half + 2.5) * (half + 2.5)) return false;
             }
@@ -201,7 +216,7 @@ internal static class RaceTrackGasMonster
                 if (!Gas(sx, sz) || !ClearOfLap(sx, sz, k)) continue;
                 // (and not near another: two side by side bit a car one after the other)
                 if (spots.Concat(placed).Any(o => (o.X - sx) * (o.X - sx) + (o.Z - sz) * (o.Z - sz) < Apart * Apart)) continue;
-                spots.Add(new GasMonsterSpot(sx, sz, r.X[k] + ax * side * half * BiteAcross, r.Z[k] + az * side * half * BiteAcross, r.H[k], run.Out));
+                spots.Add(new GasMonsterSpot(sx, sz, r.X[k] + ax * side * half * BiteAcross, r.Z[k] + az * side * half * BiteAcross, r.H[k], run.Out, FootY: run.Floor ?? 0));
                 prefer = -side;
                 break;
             }

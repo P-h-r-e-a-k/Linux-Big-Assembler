@@ -68,6 +68,10 @@ extern void *HQR_Get(T_HQR_HEADER *header,
                      S32 *outSize = NULL);
 
 //──────────────────────────────────────────────────────────────────────────
+// Every entry of the resource's file unpacked at once while there is room for it (`reserve` bytes kept free): HQRRESS.CPP
+extern S32 HQR_Preload(T_HQR_HEADER *header, S32 reserve);
+
+//──────────────────────────────────────────────────────────────────────────
 #ifdef __cplusplus
 }
 #endif

@@ -2,6 +2,7 @@
 
 #include "C_EXTERN.H"
 #include "UI_LAYOUT.H" /* UI_CENTER_X, UI_VCENTER_OFS */
+#include "RACEGAME.H"  /* RaceGame_RowDisabled */
 
 #include <SYSTEM/MOUSE.H>
 #include <SYSTEM/WINDOW.H>
@@ -93,6 +94,11 @@ S32 GameMenuHitTestRow(const U16 *ptrmenu, U32 mx, U32 my, const U16 *gameMainMe
 #else
         (void)gameMainMenuPtr;
 #endif
+        // (a race game's greyed row: no hover, no click -- RACEGAME.CPP)
+        if (RaceGame_RowDisabled(num)) {
+            y += GM_HAUTEUR_STANDARD + GM_MENU_SPACE;
+            continue;
+        }
 
         {
             S32 y0 = y - GM_HAUTEUR_STANDARD / 2;

@@ -121,9 +121,21 @@ internal static class PolarScenes
             {
                 var copy = buggy.Clone();
                 copy.X = car.X; copy.Y = car.Y; copy.Z = car.Z; copy.Beta = 0;
-                SceneOps.AddActor(model, copy);
+                var carIndex = SceneOps.AddActor(model, copy);
+                // (LBA1's digger, which it is drawn as outside a race, asks for its key: PolarGrobo)
+                if (!PolarGrobo.GateCar(model, carIndex)) log.Add($"scene {SceneOf(cx, cz)}: the car's script isn't the Desert buggy's as expected -- it doesn't ask for the key");
                 cars++;
-                if ((cx, cz) == (start.Cx, start.Cz)) carAt = (SceneOf(cx, cz), car);
+                if ((cx, cz) == (start.Cx, start.Cz))
+                {
+                    carAt = (SceneOf(cx, cz), car);
+                    // (the grobo with the key beside Twinsen's start, on the other side from the car, facing him)
+                    if (CarPlace(layout, terrain, cx, cz, (hero.X, hero.Z), (car.X, car.Z)) is { } g)
+                    {
+                        var beta = (int)Math.Round(Math.Atan2(hero.X - g.X, hero.Z - g.Z) * 4096 / (2 * Math.PI)) & 4095;
+                        PolarGrobo.AddActor(model, g.X, g.Y, g.Z, beta);
+                        log.Add($"scene {SceneOf(cx, cz)}: the grobo with the digger's key at {g}");
+                    }
+                }
             }
             hero.Beta = 0;
             // the edges it shares: east (x + 1), west, south (z + 1), north
@@ -239,7 +251,7 @@ internal static class PolarScenes
 
     // Where Twinsen's car stands (cube-local, the ground's height): the land cell nearest `near` (cube-local) but two cells and more from
     // it, flat and clear in the 3 x 3 cells round it (the car is about two cells long).
-    public static (int X, int Y, int Z)? CarPlace(PolarLayout layout, PolarTerrain.Result terrain, int cx, int cz, (int X, int Z) near)
+    public static (int X, int Y, int Z)? CarPlace(PolarLayout layout, PolarTerrain.Result terrain, int cx, int cz, (int X, int Z) near, (int X, int Z)? avoid = null)
     {
         (int X, int Y, int Z)? best = null; var bestD = double.MaxValue;
         for (var lz = 1; lz < 63; lz++)
@@ -248,6 +260,13 @@ internal static class PolarScenes
             int gx = cx * 64 + lx, gz = cz * 64 + lz;
             double dx = (lx + 0.5) * 512 - near.X, dz = (lz + 0.5) * 512 - near.Z, d = Math.Sqrt(dx * dx + dz * dz);
             if (d < 2 * 512 || d >= bestD) continue;
+            // (and away from something already there -- the grobo: beyond talking reach of Twinsen's start (the car's Action and his are
+            // one key), on the far side of him from the car)
+            if (avoid is { } a)
+            {
+                double ax = a.X - near.X, az = a.Z - near.Z;
+                if (d < 4 * 512 || dx * ax + dz * az > 0) continue;
+            }
             if (Ground(layout, terrain, gx, gz) is not { } surface) continue;
             var clear = true;
             for (var oz = -1; oz <= 1 && clear; oz++) for (var ox = -1; ox <= 1 && clear; ox++) clear = Ground(layout, terrain, gx + ox, gz + oz) == surface;
@@ -295,7 +314,7 @@ internal static class PolarScenes
         if (text.Count < Languages * RetailFiles * 2) throw new InvalidDataException($"TEXT.HQR has {text.Count} entries, fewer than the game's {Languages * RetailFiles * 2}.");
         for (var lang = 0; lang < Languages; lang++)
         {
-            var (ids, data) = Bank(PolarDream.IslandTexts(lang).Prepend((0, "Polar Island")).ToList());
+            var (ids, data) = Bank(PolarDream.IslandTexts(lang).Concat(PolarGrobo.IslandTexts(lang)).Prepend((0, "Polar Island")).OrderBy(t => t.Item1).ToList());
             foreach (var (k, payload) in new[] { (0, ids), (1, data) })
             {
                 var at = TextEntry(lang) + k;

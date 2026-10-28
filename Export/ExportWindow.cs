@@ -65,7 +65,8 @@ internal sealed class ExportWindow : Window
         formatBox.SelectedIndex = 0;
         formatBox.SelectionChanged += (_, _) => formatText.Text = SceneWriters.Describe(SelectedFormat);
         formatText.Text = SceneWriters.Describe(SelectedFormat);
-        folderBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "LBA Assembler 3D export");
+        // (beside the program, as the maps are: nothing on the system drive's Documents -- the user, 2026-10-22)
+        folderBox.Text = Path.Combine(AppContext.BaseDirectory, "3D export");
         categoryBox.SelectionChanged += (_, _) => LoadCategory();
         filterBox.TextChanged += (_, _) => FillList();
         list.SelectionChanged += (_, e) =>

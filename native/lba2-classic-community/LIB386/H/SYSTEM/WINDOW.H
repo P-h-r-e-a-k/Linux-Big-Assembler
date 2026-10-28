@@ -61,9 +61,25 @@ bool Window_IsRendererTextureLocked(void);
 void WindowToSurfaceCoords(S32 windowX, S32 windowY, S32 *surfaceX, S32 *surfaceY);
 void SetWindowFullscreen(bool fullscreen);
 bool GetWindowFullscreen();
+// The window's title bar text, after InitWindow (the race game names its window: RACEGAME.TXT window_title=). Kept for a window made later.
+void SetWindowTitle(const char *title);
 // Actual SDL window fullscreen state (queries SDL_GetWindowFlags), not the
 // cached request flag — for accurate reporting.
 bool Window_IsFullscreen(void);
+
+/* The window resized by the player (or maximised, restored, made full screen):
+   once its size has stayed put for `settleMs` (a drag's many size changes come
+   as one), its client size in pixels -- returns true once per settled change.
+   False while nothing changed, while it is still changing, while minimised, and
+   under the headless video drivers. The race game fits its render size to it
+   (RES_SWITCH.CPP Res_ApplyWindowFit). */
+bool Window_TakeSettledResize(U32 settleMs, U32 *outPixelW, U32 *outPixelH);
+/* The window's size in screen units (what SDL_SetWindowSize takes) and whether
+   it is maximised; false with no window. */
+bool Window_GetWindowedSize(S32 *outW, S32 *outH, bool *outMaximized);
+/* Give the (windowed) window a size of the player's from an earlier run, kept
+   on the screen and centred on it, maximised if it was. */
+void Window_RestoreWindowedSize(S32 w, S32 h, bool maximized);
 
 // Whether this platform has a meaningful windowed/fullscreen choice. True on
 // desktop; false on always-fullscreen devices (Android phones/TVs), where a

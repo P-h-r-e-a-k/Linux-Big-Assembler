@@ -37,6 +37,10 @@ void GetKeyScancodeName(char *string, U8 strMaxLen, U32 scanCode);
 void ManageKeyboard();
 void HandleEventsKeyboard(const void *event);
 
+/// F11 or Alt+Enter, pressed: the game's switch between full screen and a window (CONFIG_FILE.CPP sets it: the setting flipped, applied and
+/// saved). NULL: the keys do nothing of the kind.
+extern void (*Keyboard_ToggleFullscreen)(void);
+
 // =============================================================================
 #ifdef __cplusplus
 }

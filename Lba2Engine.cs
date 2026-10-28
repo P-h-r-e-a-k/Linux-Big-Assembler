@@ -26,9 +26,13 @@ internal static class Lba2Engine
 
     public static string? Find()
     {
-        var beside = Path.Combine(AppContext.BaseDirectory, ExeName);
-        if (File.Exists(beside)) return beside;
+        // (another build of the engine to play with, for development: LBA2_ENGINE=<path to an lba2cc.exe>)
+        if (Environment.GetEnvironmentVariable("LBA2_ENGINE") is { Length: > 0 } custom && File.Exists(custom)) return custom;
 
+        // The engine built into this editor, always. An lba2cc.exe beside the editor used to be taken first: a user who had put the
+        // editor in their LBA2 Classic Community folder -- that project's own lba2cc.exe there, as its readme says to unzip it -- played
+        // every scene on that engine, built before this editor's race-track mode: no race, the opponents standing by the track, the
+        // raised roads only partly solid, and no control socket (2026-10-12, "Built Aug 23 2026" in the game's log).
         var assembly = Assembly.GetExecutingAssembly();
         using (var resource = assembly.GetManifestResourceStream(ResourceName))
         {
@@ -41,7 +45,7 @@ internal static class Lba2Engine
                 foreach (var dir in new[]
                 {
                     Path.Combine(AppContext.BaseDirectory, "native"),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBAAssembler", "native"),
+                    Path.Combine(DataPaths.LocalAppData, "LBAAssembler", "native"),
                 })
                 {
                     var path = Path.Combine(dir, $"lba2cc.{key}{extension}");
@@ -148,6 +152,33 @@ internal static class Lba2Play
     // The options of the last start, so a "Play scene" button can repeat them for another scene.
     public static Lba2PlayOptions? LastOptions { get; set; }
 
+    // What the game the editor started last printed (its console: the log's lines, and what it says before it has a log at all -- "Invalid
+    // user directory" ends it before its window opens): the last lines, and the last error among them. A game that ended at once said why
+    // only there, and the editor showed "The game ended." with its own view of the island behind it (2026-10-12: a report of a race that
+    // never started, from a user in Russia).
+    private static readonly object outputLock = new();
+    private static readonly Queue<string> outputTail = new();
+    // ... and every warning and error it gave, the first few (a control socket it couldn't open, a race file it couldn't read: said early,
+    // and long gone from the tail by the time anyone asks)
+    private static readonly List<string> problems = new();
+    private static string? lastError;
+    public static string? LastError { get { lock (outputLock) return lastError; } }
+    public static string OutputTail { get { lock (outputLock) return string.Join("\n", outputTail); } }
+    public static string Problems { get { lock (outputLock) return string.Join("\n", problems); } }
+    private static void ResetOutput() { lock (outputLock) { outputTail.Clear(); problems.Clear(); lastError = null; } }
+    private static void Output(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+        lock (outputLock)
+        {
+            outputTail.Enqueue(line);
+            while (outputTail.Count > 40) outputTail.Dequeue();
+            if (line.Contains("[ERROR]", StringComparison.Ordinal) || line.Contains("ERROR->", StringComparison.Ordinal)) lastError = line.Trim();
+            if ((line.Contains("[ERROR]", StringComparison.Ordinal) || line.Contains("[WARN]", StringComparison.Ordinal) || line.Contains("ERROR->", StringComparison.Ordinal))
+                && problems.Count < 30) problems.Add(line.Trim());
+        }
+    }
+
     // The folder for the engine's own saves, settings and log, beside the editor's settings.
     public static string? UserDirectory(out string? problem)
     {
@@ -157,7 +188,7 @@ internal static class Lba2Play
         try { Directory.CreateDirectory(user); return user; }
         catch (Exception error) when (error is UnauthorizedAccessException or IOException)
         {
-            user = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBAAssembler", "lba2-play");
+            user = Path.Combine(DataPaths.LocalAppData, "LBAAssembler", "lba2-play");
             try { Directory.CreateDirectory(user); return user; }
             catch (Exception second) when (second is UnauthorizedAccessException or IOException) { problem = $"Couldn't create {user}: {second.Message}"; return null; }
         }
@@ -315,6 +346,8 @@ internal static class Lba2Play
         LastOptions = options;
         var engine = Lba2Engine.Find();
         if (engine is null) { problem = $"The LBA2 engine ({Lba2Engine.ExeName}) isn't part of this build."; return null; }
+        // (which engine plays: one that isn't this editor's own has no race-track mode or control socket)
+        DebugLog.Log($"Lba2Play: the engine {engine}");
         if (!Lba2Engine.IsGameFolder(gameDirectory)) { problem = "The LBA2 game folder isn't set. Choose it under File > Settings."; return null; }
         var user = UserDirectory(out problem);
         if (user is null) return null;
@@ -334,6 +367,7 @@ internal static class Lba2Play
         {
             carFile = Path.Combine(user, "racecar.txt");
             writeCarFile(carFile);
+            DebugLog.Log($"Lba2Play: race-track mode, its file {carFile}");
         }
 
         options.LoadSave = options.NewGame ? null : PrepareSceneSave(engine, gameDirectory, user, options.Scene, carFile);
@@ -342,7 +376,10 @@ internal static class Lba2Play
         // The engine is a console program: without CreateNoWindow Windows opens a console (a terminal window) beside the game
         // (both settings are meaningless, and harmless, on Linux). The environment is inherited, so the engine opens on the
         // editor's own DISPLAY; see Lba2Engine for what it needs to find libSDL3.
-        var start = new ProcessStartInfo(engine) { WorkingDirectory = gameDirectory, UseShellExecute = false, CreateNoWindow = true };
+        // (its console read, for what it says when it ends at once: LastError, OutputTail)
+        var start = new ProcessStartInfo(engine) { WorkingDirectory = gameDirectory, UseShellExecute = false, CreateNoWindow = true,
+                                                   RedirectStandardOutput = true, RedirectStandardError = true,
+                                                   StandardOutputEncoding = System.Text.Encoding.UTF8, StandardErrorEncoding = System.Text.Encoding.UTF8 };
         start.Environment["LBA2_OVERLAY_FILE"] = OverlayFile(user);      // zone boxes and actor paths drawn by the engine (EDITOR_OVERLAY.CPP); an all-zero file draws nothing
         RaceCarEnvironment(start, carFile);
         if (embedded)
@@ -357,7 +394,19 @@ internal static class Lba2Play
             start.Environment["LBA2_WINDOW_POS"] = "-32000,-32000";
         }
         foreach (var arg in options.Arguments(gameDirectory, user)) start.ArgumentList.Add(arg);
-        try { return Process.Start(start); }
+        try
+        {
+            ResetOutput();
+            var process = Process.Start(start);
+            if (process is not null)
+            {
+                process.OutputDataReceived += (_, e) => Output(e.Data);
+                process.ErrorDataReceived += (_, e) => Output(e.Data);
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+            }
+            return process;
+        }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             problem = $"Couldn't start the engine: {error.Message}";

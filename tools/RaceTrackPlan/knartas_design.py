@@ -335,9 +335,11 @@ plan = {
     # (a hut beside the village's middle road, kept)
     'keepBodies': [73],
     'themes': [{'from': int(a), 'to': int(b), 'theme': nm} for nm, a, b in SECTIONS],
-    'pipes': [{'from': int(i0), 'to': int(i1), 'every': 6.0, 'drip': True, 'dripsEvery': 1} for i0, i1 in pipes],
+    # (oneSide, 2026-10-14 -- the user: "always providing a safe path through so they can avoid getting hit if they drive well": each
+    # lap's steam and oil on one half of the road, the other clear: RaceTrackPipes PipeRun.OneSide, PipeLine.OneSide)
+    'pipes': [{'from': int(i0), 'to': int(i1), 'every': 6.0, 'drip': True, 'dripsEvery': 1, 'oneSide': True} for i0, i1 in pipes],
     'steamJets': [{'from': int(i0), 'to': int(i1), 'every': 7.0} for i0, i1 in jets],
-    'pipeline': {'points': [[x - ORIGIN, z - ORIGIN, y] for x, z, y in PIPELINE], 'radius': PIPE_R, 'supportEvery': 12.0, 'dripEvery': 2.5, 'dripMs': 4500},
+    'pipeline': {'points': [[x - ORIGIN, z - ORIGIN, y] for x, z, y in PIPELINE], 'radius': PIPE_R, 'supportEvery': 12.0, 'dripEvery': 2.5, 'dripMs': 4500, 'oneSide': True},
 }
 if '--write' in sys.argv:
     json.dump(plan, open(OUT, 'w'))

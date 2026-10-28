@@ -32,6 +32,16 @@ extern S32 UseWaveMixer;
 S32 InitSampleDriver(char *driver_name);
 
 //--------------------------------------------------------------------------
+//	Capture (a video recorded frame by frame, SOURCES/FRAMEDUMP.CPP): LBA2_AUDIO_CAPTURE
+//	set gives the device silence; between Begin and End the mixer is pulled by
+//	Sample_CaptureMix (stereo S16 at Sample_CaptureRate) instead of the device.
+//--------------------------------------------------------------------------
+void Sample_CaptureBegin(void);
+void Sample_CaptureEnd(void);
+S32 Sample_CaptureMix(S16 *out, S32 numFrames);
+S32 Sample_CaptureRate(void);
+
+//--------------------------------------------------------------------------
 //	SetMasterVolumeSample :		Set master volume for all samples
 //
 //			  volume : 	master volume (0-127)
@@ -183,6 +193,16 @@ int SfxLogIsEnabled(void);
 //	Returns	:			current samplesPaused value
 //--------------------------------------------------------------------------
 S32 GetSamplesPausedCount(void);
+
+//--------------------------------------------------------------------------
+//	SampleMixedFrames :		how many stereo frames the mixer has made
+//
+//	For logs: with SDL's disk audio driver, the place in its output file
+//	(44.1 kHz) a moment of the game is heard at. 0 where nothing is mixed.
+//
+//	Returns	:			frames mixed since the driver started
+//--------------------------------------------------------------------------
+U32 SampleMixedFrames(void);
 
 //--------------------------------------------------------------------------
 #ifdef __cplusplus

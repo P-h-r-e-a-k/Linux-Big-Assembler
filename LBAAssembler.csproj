@@ -67,6 +67,7 @@
     <EmbeddedResource Include="Assets\DummyBody.lm2" LogicalName="DummyBody.lm2" />
     <!-- the race track plans (centre line in island cells, pit lane ends): Tools > LBA2: race track -->
     <EmbeddedResource Include="docs/racetrack/track_plan.json" LogicalName="RaceTrackPlan.Desert.json" />
+    <EmbeddedResource Include="docs/racetrack/sample_track_plan.json" LogicalName="RaceTrackPlan.Sample.json" />
     <EmbeddedResource Include="docs/racetrack/citadel_track_plan.json" LogicalName="RaceTrackPlan.Citadel.json" />
     <EmbeddedResource Include="docs/racetrack/citadel_storm_track_plan.json" LogicalName="RaceTrackPlan.CitadelStorm.json" />
     <EmbeddedResource Include="docs/racetrack/mosquibe_track_plan.json" LogicalName="RaceTrackPlan.Mosquibe.json" />
@@ -79,12 +80,34 @@
     <EmbeddedResource Include="docs/racetrack/knartas_track_plan.json" LogicalName="RaceTrackPlan.Knartas.json" />
     <EmbeddedResource Include="docs/racetrack/otringal_track_plan.json" LogicalName="RaceTrackPlan.Otringal.json" />
     <EmbeddedResource Include="docs/racetrack/volcano_track_plan.json" LogicalName="RaceTrackPlan.Volcano.json" />
+    <EmbeddedResource Include="docs/racetrack/wannies_track_plan.json" LogicalName="RaceTrackPlan.Wannies.json" />
+    <EmbeddedResource Include="docs/racetrack/palace_track_plan.json" LogicalName="RaceTrackPlan.Palace.json" />
     <EmbeddedResource Include="docs/racetrack/polar_track_plan.json" LogicalName="RaceTrackPlan.Polar.json" />
+    <EmbeddedResource Include="docs/racetrack/cxtower_track_plan.json" LogicalName="RaceTrackPlan.CxTower.json" />
+    <EmbeddedResource Include="docs/racetrack/temple_track_plan.json" LogicalName="RaceTrackPlan.Temple.json" />
   </ItemGroup>
 
   <!-- The human-readable scene/body/animation name lists (LBAPackageManager's .HQD text files) ship inside the executable. -->
   <ItemGroup>
     <EmbeddedResource Include="Assets\FileDesc\*.HQD" LogicalName="FileDesc.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!--
+    The race items' sounds (sounds\PickUp\<name>.mp3 as an item comes into the item box, sounds\OnUse\<name>.mp3 as it is used): the race
+    track's build writes them into the game folder as the engine plays them (Terrain/RaceSounds.cs). A glob: a file dropped into either
+    folder is carried from the next build on. LBRA's installer (LittleBigRacingAdventure/Installer/LBRAInstaller.csproj) carries them the same.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="sounds\**\*.mp3;sounds\**\*.wav" LogicalName="RaceSounds/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!--
+    NLayer (MIT, a managed MPEG audio decoder, no dependencies): the Temple of Bu's race music from Steam's/GOG's LBA1 Classic, whose CD
+    tracks are MP3s (Terrain/Temple/TempleMusicAudio.cs decodes them to the WAV the engine streams). Every project compiling Terrain/ needs it:
+    tools/ScriptRoundTrip, and LBRA's installer (LittleBigRacingAdventure/Installer/LBRAInstaller.csproj).
+  -->
+  <ItemGroup>
+    <PackageReference Include="NLayer" Version="3.0.0" />
   </ItemGroup>
 
 </Project>

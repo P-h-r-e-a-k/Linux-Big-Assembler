@@ -150,6 +150,8 @@ S32 IsStreamPlaying() { return (s_streamName[0] && !s_streamPaused) ? TRUE : FAL
 void ChangeVolumeStream(S32 volume) { s_streamVol = volume; }
 S32 GetVolumeStream() { return s_streamVol; }
 char *StreamName() { return s_streamName; }
+void SetStreamLoop(S32 on) { (void)on; }
+S32 PumpStreamLoop(void) { return 0; }
 int MusicLogIsEnabled(void) { return 1; } // keep tracing on so we can capture it
 
 // ── Timer / clock stubs ──────────────────────────────────────────────────────

@@ -57,10 +57,24 @@ internal sealed class IslandMapRenderer
             "SENDELL" => 28, "MOON" => 30,
             // island 12, Polar Island (ported from LBA1: Terrain.Polar), its own slot -- an empty one in the retail file, filled when it is
             // installed; until then the palette its ground was made in
-            "POLAR" => PolarPaletteEntry(gameDirectory), _ => 27,
+            "POLAR" => PolarPaletteEntry(gameDirectory),
+            // the Temple of Bú (ported from LBA1: Terrain.Temple), drawn in its own palette (an empty slot in the retail file, filled when it
+            // is installed) -- Otringal's, its colours written in, until then
+            "TEMPLE" => TemplePaletteEntryFor(gameDirectory),
+            // a map's island (Maps/IslandFiles, ISLANDS.TXT): the game's island whose look it has
+            var other => Maps.IslandFiles.Load(gameDirectory).Look.TryGetValue(other, out var look) ? 27 + look : 27,
         };
         return LoadPaletteEntry(gameDirectory, index);
     }
+
+    private static bool HasEntry(string gameDirectory, int entry)
+    {
+        try { return HqrArchive.Open(Path.Combine(gameDirectory, "RESS.HQR")).Read(entry).Length >= 768 + 44; }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { return false; }
+    }
+
+    // The Temple of Bú's palette entry: its own once installed, else Otringal's (the palette its colours were written into).
+    public static int TemplePaletteEntryFor(string gameDirectory) => HasEntry(gameDirectory, Temple.TempleIsland.PaletteEntry) ? Temple.TempleIsland.PaletteEntry : Temple.TemplePalette.Source;
 
     public const int PolarPaletteSlot = 39;
     public static int PolarPaletteEntryFor(string gameDirectory) => PolarPaletteEntry(gameDirectory);

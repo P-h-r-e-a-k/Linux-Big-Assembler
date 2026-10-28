@@ -56,6 +56,19 @@ extern void DrawOneChoice(S32 x, S32 y, S32 type, S32 num, S32 select);
 extern void DrawGameMenu(U16 *ptrmenu, S32 justone);
 /*--------------------------------------------------------------------------*/
 extern S32 DoGameMenu(U16 *ptrmenu);
+/* The race game's window resized and its picture fitted to it while a menu is up (RES_SWITCH.CPP Res_ApplyWindowFit): DoGameMenu
+   makes the backdrop again at the new size and draws its rows; with MenuRelayoutReturns set (the race game's pages, which draw a header
+   and text of their own over the backdrop) it returns MENU_RELAYOUT instead, for the page to draw itself again and call it again. */
+#define MENU_RELAYOUT 9990
+extern S32 MenuRelayoutReturns;
+/* ... and, with MenuRelayoutReturns set, while the menu waits: non-zero when the page's own text has changed (the race game's Updates page,
+   the updater's word) -- MENU_RELAYOUT returned the same way, the row chosen kept in the menu's first word. NULL: none. */
+extern S32 (*MenuRedrawHook)(void);
+/* The menu's backdrop made again after a resolution switch: the menu's picture (the main menu) or the scene shaded behind it (in game),
+   into Screen and Log, the plasma bar's texture with it. */
+extern void Menu_RepaintAfterResolutionSwitch(void);
+/* ... after the race game's window fit (RES_SWITCH.CPP Res_ApplyWindowFit): the menu's palette shown again first */
+extern void Menu_RepaintAfterWindowFit(void);
 /*--------------------------------------------------------------------------*/
 extern S32 OptionsMenu(S32 flagflip);
 /* Harness hook: arm a one-shot screenshot inside the next DoGameMenu call.

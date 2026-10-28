@@ -55,6 +55,9 @@ public partial class MainWindow
         buildDecorView = BuildDecorRadio.IsChecked == true;
         buildTerrainView = BuildTerrainRadio.IsChecked == true || buildDecorView;      // (buildings and decor use the terrain editor's own pointer tools)
         ApplyMode();
+        // (the status line says what the view does now, as a change of mode does)
+        if (editMode == EditMode.Build && !buildTerrainView)
+            FileLabel.Text = "Build: click an actor, a zone's outline or a track point to edit it in the Build tab, drag it to move it; Add (or right-click the ground) places a new one where you click.";
     }
 
     private void SetMode(EditMode next)
@@ -76,11 +79,11 @@ public partial class MainWindow
         finally { modeSyncing = false; }
         ApplyMode(selectTab: changed);
         if (changed) FileLabel.Text = next == EditMode.Build && lba2JoinedView
-            ? "Build: a joined map isn't edited here (double-click an actor to open its scene on its own); Nuke this scene... blows up every scene of it."
+            ? "Build: click an actor, a zone or a track point of any scene of the map to edit it in the Build tab, drag it to move it; Add places a new one where you click. Nuke this scene... blows up every scene of the map."
             : next switch
         {
             EditMode.Explore => "Explore: move around the scene. Nothing is changed in this mode.",
-            EditMode.Build => terrainToolsActive && buildDecorView ? "Build: click a building or object to select it, drag to move it, drag with the Rotate tool (or press Q and E) to turn it. Add object places a copy of the selected one. The view shows your edits live." : terrainToolsActive ? "Build: pick a terrain tool in the Build tab and paint on the view; the view shows your edits live. Right drag orbits while a tool is chosen, middle drag pans." : "Build: right-click the view to add an actor, double-click an actor to edit it, change zones under Details.",
+            EditMode.Build => terrainToolsActive && buildDecorView ? "Build: click a building or object to select it, drag to move it, drag with the Rotate tool (or press Q and E) to turn it. Add object places a copy of the selected one. The view shows your edits live." : terrainToolsActive ? "Build: pick a terrain tool in the Build tab and paint on the view; the view shows your edits live. Right drag orbits while a tool is chosen, middle drag pans." : "Build: click an actor, a zone's outline or a track point to edit it in the Build tab, drag it to move it; Add (or right-click the ground) places a new one where you click.",
             _ => "Script: click an actor (or pick one in the Script tab) to open its script.",
         };
         Keyboard.Focus(this);
@@ -131,17 +134,22 @@ public partial class MainWindow
         SyncAudioControls();
         if (editMode == EditMode.Script) RefreshScriptActors();
         UpdatePlayButton();
+        // The scene panel follows the view; leaving it (another mode, the terrain tools) stops any placing and drops its track points.
+        if (!ScenePanelActive && scenePlace is not null) scenePanel?.CancelPlacement();
+        SyncScenePanelToView();
+        RefreshActorOverlayForSelection();
     }
 
     private string BuildHelpText()
     {
+        const string scene = "Click an actor, a zone's outline or a track point in the view to edit it above; drag it to move it. Add places a new one where you click the ground, or right-click the ground. Every change is written at once (Edit > Undo takes it back).";
         if (currentGame == GameKind.Lba2 && lba2JoinedView)
-            return "A joined map is not edited here: double-click an actor to open its scene on its own and edit it there. Nuke this scene... below blows up every scene of the map, in a chain reaction from the one in the middle of the view.";
+            return scene + " Double-click an actor to open its scene on its own. Nuke this scene... below blows up every scene of the map, in a chain reaction from the one in the middle of the view.";
         if (currentGame == GameKind.Lba1)
-            return "Right-click an actor for its attributes; double-click it to edit. Change zones under Details. The scene editor opens the scene as data (add, move, delete, duplicate, undo, save). Buildings and other blocks are placed and moved in the interior map (grid editor). Scripts are edited in Script mode.";
+            return scene + " Buildings and other blocks are placed and moved in the grid editor (the Scene tab's Edit the map). Scripts: Edit script…, or Script mode.";
         if (interiorSceneActive)
-            return "Right-click the view to add an actor, double-click an actor to edit it, change zones under Details. The interior's map (its bricks and blocks: place, move and copy buildings and furniture) is edited in the grid editor. Scripts are edited in Script mode.";
-        return "Right-click the view and choose Add Actor Here to place an actor; double-click an actor to change it; change zones under Details. Scripts are edited in Script mode. Pick 'Terrain' above to sculpt the island itself.";
+            return scene + " The interior's map (its bricks and blocks) is edited in the grid editor (the Scene tab's Edit the interior's map). Scripts: Edit script…, or Script mode.";
+        return scene + " Pick 'Terrain' above to sculpt the island itself, 'Buildings and decor' for its objects.";
     }
 
     // ---- the terrain editor, hosted -------------------------------------------------------------------------------------------------------------
@@ -155,6 +163,7 @@ public partial class MainWindow
             terrainEditor.Saved += OnTerrainSaved;
             terrainEditor.StateChanged += OnTerrainStateChanged;
             terrainEditor.Edited += OnTerrainEdited;
+            terrainEditor.BodiesAdded += OnTerrainBodiesAdded;
             terrainEditor.MapRequested += on => { terrainMapWanted = on; ApplyMode(); };
             TerrainPanelHost.Content = terrainEditor.Panel;
             TerrainMapHost.Child = terrainEditor.MapArea;
@@ -191,6 +200,14 @@ public partial class MainWindow
     }
 
     // The island was written: the native 3D view reads the file again and the minimap / software view are rebuilt from it.
+    // The Object maker added a body to the island's OBL: the 3D view reads the bodies again (and the island as edited, its new object page).
+    private void OnTerrainBodiesAdded()
+    {
+        InvalidateNativeIsland();
+        if (live is not null) PushLive();
+        else if (nativeViewActive && !interiorSceneActive) RenderNativeCamera();
+    }
+
     private void OnTerrainSaved()
     {
         InvalidateNativeIsland();
@@ -352,10 +369,13 @@ public partial class MainWindow
 
     // ---- Build tab buttons -----------------------------------------------------------------------------------------------------------------------
 
-    private void BuildSceneEditor_Click(object? sender, RoutedEventArgs e)
+    // Tools > Editors > Scene: Build > Actors and zones, where the scene's actors, zones and track points are edited in the view.
+    private void SceneEdit_Click(object? sender, RoutedEventArgs e)
     {
-        if (currentGame == GameKind.Lba1) Lba1Editor_Click(sender, e);
-        else Lba2Editor_Click(sender, e);
+        if (currentGame == GameKind.Lba2 && TerrainEditable) BuildSceneRadio.IsChecked = true;
+        SetMode(EditMode.Build);
+        ActivatePanel(BuildTab);
+        if (SceneStoreInView() is null) SetStatus("Open a scene first (an island, an interior or an LBA1 scene): its actors, zones and track points are edited where the view shows them.");
     }
 
     // ---- keys -------------------------------------------------------------------------------------------------------------------------------------
@@ -365,6 +385,12 @@ public partial class MainWindow
         // While a scene is played the keys belong to the game (the LBA1 play view gets them from here; LBA2's engine has its own window).
         if (placing && e.Key == Key.Escape) { CancelPlacement(); e.Handled = true; return; }
         if (playing) { lba1Play?.ForwardKey(e, true); return; }
+        // The scene panel: Esc stops placing; Delete deletes what is selected (not while typing in a box).
+        if (scenePlace is not null && e.Key == Key.Escape) { scenePanel?.CancelPlacement(); e.Handled = true; return; }
+        // (Avalonia has no TextBoxBase: TextBox is the only editable text control here, as the Ctrl+Z test below also assumes)
+        if (e.Key == Key.Delete && Keyboard.Modifiers == KeyModifiers.None && ScenePanelActive && scenePanel is not null && scenePanel.SelectedKind != SceneItemKind.None
+            && Keyboard.FocusedElement is not TextBox && !(terrainToolsActive && terrainEditor is not null))
+        { scenePanel.DeleteSelected(); e.Handled = true; return; }
         if (Keyboard.Modifiers == KeyModifiers.Control)
         {
             EditMode? wanted = e.Key switch
@@ -387,12 +413,21 @@ public partial class MainWindow
     // The scene Play should start: the scene that is open. An interior is its own scene; on an island it is the scene of the cube
     // the camera is over (each outdoor scene is one cube of its island), else the one picked in the Scene box, else the first
     // outdoor scene of the island (never just scene 0).
+    // The island file whose scenes an open island file shows: Citadel Island's two files share their scenes, which the game names the
+    // storm's (CITADEL) -- with the town circuit's file (CITABAU) open, Play found no scene under the camera and started the last one
+    // played, after a restart the house's (scene 0): the user, 2026-10-27, "it's only letting me start in scene 0"
+    internal static string SceneIsland(string file)
+    {
+        var name = Path.GetFileNameWithoutExtension(file);
+        return string.Equals(name, "CITABAU", StringComparison.OrdinalIgnoreCase) ? "CITADEL" : name;
+    }
+
     private int Lba2SceneToPlay()
     {
         if (interiorSceneActive && interiorSceneNumber >= 0) return interiorSceneNumber;
         if (SceneUnderCamera() is { } here) return here.Option.Index;
         if (selectedLba2Scene is { } picked) return picked;
-        var island = Path.GetFileNameWithoutExtension(activeFile);
+        var island = SceneIsland(activeFile);
         var first = allSceneEntries.FirstOrDefault(s => !s.IsInterior && string.Equals(s.IslandFile, island, StringComparison.OrdinalIgnoreCase));
         return first?.Option.Index ?? Lba2Play.LastOptions?.Scene ?? 0;
     }
@@ -400,7 +435,7 @@ public partial class MainWindow
     private SceneEntry? SceneUnderCamera()
     {
         if (currentGame != GameKind.Lba2 || interiorSceneActive || currentIsland is null) return null;
-        var island = Path.GetFileNameWithoutExtension(activeFile);
+        var island = SceneIsland(activeFile);
         var cubeX = (int)Math.Floor(targetX / 32768.0);
         var cubeZ = (int)Math.Floor(targetZ / 32768.0);
         return allSceneEntries.FirstOrDefault(s => !s.IsInterior && s.CubeX == cubeX && s.CubeY == cubeZ && string.Equals(s.IslandFile, island, StringComparison.OrdinalIgnoreCase));

@@ -51,7 +51,7 @@ internal static class RaceTrackHoop
         }
         var foot = lowest - run.Bottom * run.Scale - 120;
         var beta = ((int)Math.Round(Math.Atan2(tx, tz) * 4096 / (2 * Math.PI)) % 4096 + 4096) % 4096;
-        if (IslandDecors.Locate(island, r.X[k] * 512, r.Z[k] * 512) is not { } at || at.Cube.Decors.Count + run.Bodies.Length > IslandDecors.MaxPerCube)
+        if (IslandDecors.Locate(island, r.X[k] * 512, r.Z[k] * 512) is not { } at || at.Cube.Decors.Count + run.Bodies.Length > IslandDecors.MaxPerCubeRaceTrack)
         { report.Notes.Add($"WARNING: the hoop at ({x:0.#}, {z:0.#}): no room for it"); return; }
         var obl = HqrArchive.Open(oblPath);
         var clipped = 0;

@@ -90,4 +90,11 @@ extern void FadeInVolumeMusic(void);
 extern void CheckNextMusic(void);
 
 //▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+// A race's own music in place of the scenes' (a file's full path; NULL or "" none), and music that keeps going (LBA Assembler, RACEMOD.CPP)
+extern void SetRaceMusic(const char *path);
+extern const char *RaceMusic(void);
+extern void PlayRaceMusic(void);
+extern void LoopMusic(S32 on);
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 #endif // CDROM_H

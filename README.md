@@ -334,7 +334,7 @@ actor's body already did. Apply then adds the actor to the scene file (`SceneOps
 exists, so a new actor's every field is written fresh) instead of refusing forever; the picker disappears once the actor is saved, since it isn't "new" any more.
 
 **Window habits (2026-09-22):** `WindowLifecycle`/`WindowPlacement` give every substantial secondary window (both actor-attributes windows, the script editor, the
-grid/object/asset editors, both scene editors, the LBA1 play window) the same two things, in one shared implementation rather than each window its own copy: it
+grid/object/asset editors, the LBA1 play window) the same two things, in one shared implementation rather than each window its own copy: it
 remembers its own kind's last position and size (`EditorSettings.WindowPositions`, keyed by window kind so several open at once - one per actor, say - cascade off
 that one remembered spot instead of landing on top of each other) and falls back to its ordinary centred placement when that spot is no longer on any currently
 connected monitor (`Screen.AllScreens`, not just "somewhere in the combined virtual desktop", which would still say yes for a spot a since-unplugged monitor
@@ -379,7 +379,7 @@ the View menu). The window title shows the game folder the editor is working in.
   and the view shows the edit as you make it; "Move the view" is the tool that just orbits. While a terrain tool is chosen the
   right button orbits and the middle button pans. *Actors and zones* is the ordinary view with right-click *Add Actor Here*,
   double-click an actor for its attributes and the zone data editable under DETAILS. Interiors and LBA1 scenes have the second
-  set, plus buttons for the scene editor, the interior map (grid editor), bricks and sprites, objects and bodies and Body
+  set, plus the scene panel (actors, zones, track points), and buttons for the interior map (grid editor), bricks and sprites, objects and bodies and Body
   Studio. Unsaved terrain edits stay when you change mode; Edit > Undo / Redo, File > Save and the Ctrl keys act on the terrain
   editor while its tools are showing; switching island or game, or closing, asks about unsaved terrain edits (save / discard /
   stay).
@@ -583,7 +583,7 @@ edited as data rather than patched byte by byte:
   it on demand. `tools/ScriptRoundTrip` never sets a disk path for its own runs, so its thousands of test saves stay
   in memory only and never touch disk for this.
 - **File > Save / Open** (Ctrl+S / Ctrl+O) run the same menu commands as clicking them; every window with its own
-  meaningful "save" (both actor-attributes windows' Apply, the script editor, the grid/asset/scene editors) binds
+  meaningful "save" (both actor-attributes windows' Apply, the script editor, the grid/asset editors) binds
   Ctrl+S to that instead while it has focus. Every menu item has its own access-key letter (Alt, then the underlined
   letter, opens or picks it), unique within its own menu.
 - **`ActorPrefabs`**: ready-made actors modelled on retail ones (today the two LBA1 sliding doors), each tested to
@@ -594,7 +594,7 @@ edited as data rather than patched byte by byte:
 Tests (read-only against the game folders; anything that writes uses temporary copies):
 `dotnet run --project tools/ScriptRoundTrip -- foundation all | store all | runtime all | validate | gridvalidate | patches`.
 
-## LBA2: play mode and scene editor
+## LBA2: play mode and scene editing
 
 **Tools > LBA2: play scene (the full engine)...** starts `lba2cc.exe`, the complete LBA2 community engine
 (`native/lba2-classic-community`, all of its assembly is ported to C++), against the LBA2 game folder, so what is saved on
@@ -609,18 +609,95 @@ loads that save; anything typed in the PLAY tab's console box runs once the scen
 item* fills in the inventory variables 0..40). It was chosen over a C# port because the engine is already a faithful,
 maintained game and only a launcher was needed; the parts worth porting (the data layer) are in C#.
 
-**Tools > LBA2: scene editor...** (`Lba2SceneEditorWindow`) is the LBA1 scene editor's counterpart for LBA2: a
-`SceneDocument` over `SCENE.HQR` with a plan of the scene seen from above (x right, z down, a grid of cells) on which
-actors (with their facing), zones (in their type's colour) and track points are drawn, picked, dragged, added, deleted
-(references renumbered by `SceneOps`) and duplicated, their numbers edited (actors: body, animation, flags ...; zones: the
-per-type fields; the Scene tab: island, cube, light, music, ambient sounds), with undo, validation on Save (the patch
-table is rebuilt and the engine's scene buffer size in entry 0 is raised when needed), **Play scene** (starts the engine
-with the last options), scripts in the C script editor, and *Save into another slot*. It has no terrain or interior map
-(LBA2's are drawn by the native engine), and no blank-scene generator yet (an LBA2 interior's map lives in `LBA_BKG.HQR`).
+**Scenes are edited where the view shows them** (Build > Actors and zones; Tools > Editors > *Scene*; 2026-10-24 -- the scene editor
+windows, which drew a scene on a plan of their own, went: "our current scene viewer isn't practical for a human to actually use", the user).
+The Build tab's scene panel (`ScenePanel`, `MainWindow.SceneEdit.cs`) lists one scene's actors, zones and track points (the scene box: the
+scenes in the view -- an island's outdoor scenes, a joined map's) with an inspector of their numbers (actors: position, facing, entity, body,
+animation, sprite, flags, move, speed, life, armour, hit force, text colour, bonus, info; zones: type, bounds and the per-type fields; track
+points: position; the Scene tab: the header -- island, cube, light, music, ambient sounds -- and *Check the scene*, *Save into another slot*,
+*Go to scene*, the grid editor on the scene, *Make a blank interior* / *Make the scene blank*). In the view, in every kind (an island's 3D
+view, an interior's or an LBA1 scene's isometric picture, a joined map of either game): click an actor, a zone's outline or a track point
+(drawn as gold diamonds while the panel is up) to select it, drag it to move it (at its own height); **Add** places a new 3D actor (LBA2:
+by body, the entity that has it; LBA1: by entity), a copy of the selected actor, an actor from another scene (its scripts fitted to this
+one), an LBA1 door, a zone of any type or a track point where the ground is clicked (`PickSceneGround`: the island's terrain, the
+interior's floor, a joined map's columns -- the scene clicked in is the one it goes into), or at a place typed in; right-clicking the
+ground offers the same there; **Delete** (the Delete key too) and **Duplicate**. Every change is written at once through `SceneStore`
+with a description, so it is one step on Edit > Undo (Ctrl+Z), the view shows it, and an open map's goes into the map's working copy.
+*Edit script…* opens the C script editor on the actor; *Full attributes…* the actor window.
 
 Tests: `dotnet run --project tools/ScriptRoundTrip -- lba2play` starts the engine headless in six scenes across the
 islands and checks it arrives in each; adds an actor to a scene with `SceneOps`, saves with `SceneStore`, and checks the
 running engine has one more object.
+
+**Its actors (2026-10-17, a tester's "if I place zoe in a scene it does not load her in the actual game ... rabbibunny skeletons ... load
+up as twinsun with no ai"):**
+- An LBA2 actor's body and animation are numbers in its entity's lists (RESS.HQR entry 44), not BODY.HQR / ANIM.HQR entries. *New 3D
+  actor…* used to store the BODY.HQR entry picked as the body of entity 0, Twinsen's: the engine finds no such body in his entity and
+  draws his normal one. Now the body picked gives the actor the entity that has it, the body's number there and its standing animation
+  (`Lba2EntityTable.KindForBody`); *Choose body…* does the same, and the inspector shows the entity. The actor attributes window's body
+  change saves the same way (`Lba2ActorPersistence`): a body of another kind of actor makes the actor that kind, where it was kept for the
+  session only.
+- **Add > Actor from another scene…** copies an actor of any scene, its scripts too (a skeleton of scene 184 attacks Twinsen as it does
+  there), fitted to this scene since 2026-10-17 (`ScriptRemap`, below).
+- **Actor 1 is the Meca-penguin's** (`COMMON.H` `NUM_PINGOUIN`): at every scene start the engine hides and kills whatever is there, and
+  every retail scene has a placeholder there (entity 14 at 0, 0, 0). A blank interior (and so a new map's) had the hero alone, so the
+  first actor added was actor 1 and never appeared. Blank scenes keep the slot (`Lba2BlankScene`, `MapNew`); adding or duplicating an actor
+  in a scene without it puts it back first (`SceneOps.EnsureMecaPenguinSlot`: the actors from 1 on move up one, their scripts renumbered);
+  it can't be deleted in the scene panel; the validator warns about a scene whose actor 1 is an actor of its own. The main window's
+  *Add Actor Here* saves through the same (`Lba2ActorPersistence`); when that moves the scene's numbers the main window reads it again.
+- A new actor's scripts are a lone END (`SceneOps.BlankActor`): the loader points a script at where its bytes start, so an empty one ran
+  whatever followed it in the record; the validator warns about an empty script (no retail one is).
+
+**The main window shows what the scene editors saved (2026-10-17, before the scene panel replaced them; the tester's "I can edit a scene and click save but it does not update
+in the main editor window, the same with actors"):** a save of either scene editor (`SceneDocument.Saved`) has the main window read the
+scene again, as an undo step does (`ReloadScenesAfterWrite`: its view, actor lists and actor windows -- those of the scene close), and
+another scene editor open on the scene reloads too. The renderer's session edits of the scene go first (`lba2_renderer_forget_scene_edits`):
+an interior's were put back over the file at every load, so an actor moved in the actor window and then moved in the scene editor (or the
+move undone) stood where the actor window had put it. An island of a map shows its actors and zones in the 3D view, and *Add Actor Here*
+works on it: the renderer's actor scan takes an island file's own scenes from ISLANDS.TXT (`RendererScanIslandActors`; it read only the
+game's scenes 0..221 by their island number).
+
+**Behaviours (2026-10-17, a tester's "make a selection of pre existing scripts to apply to actors? so what would technically be the default
+for that npc? for example a rabbi skeleton should see, seekout, and try to kill the player?"):** ready-made scripts for an actor
+(`Scenes/ActorBehaviours.cs`, `BehaviourPickWindow`), in the scene panel (the inspector's **Behaviour…**), both actor attributes windows
+(**Apply a behaviour…**) and for new actors:
+- *No script*; templates for any kind -- *Stands still*, *Wanders about*, *Patrols back and forth* (two track points added beside it),
+  *Talks when spoken to* (a line of the scene's island's dialogue file, said when Twinsen is near and presses action), *Spots, chases and
+  attacks Twinsen*, *Keeps away from Twinsen* (kinds that can walk backwards) -- written in the script language and compiled with the kind's
+  own walking and attacking animations (`KindAnims`: each kind's animations and the actions their frames carry, a hit or a throw);
+- the game's own actors of the same kind (entity), the same scripts folded into one with their count, each with a line saying what it does
+  (goes for Twinsen, attacks, talks, walks a route, wanders, depends on the story...).
+- **A new actor gets its kind's usual behaviour** (`DefaultFor`): an enemy kind (at least half the game's actors of it attack) its most used
+  attacking one -- a new skeleton hunts Twinsen as scene 184's do; any other kind a behaviour of it whose lines this scene's island has
+  (talkers first, then what brings least along), else it stands. *Add > New 3D actor without a script…* (and the actor window's tick box)
+  leave it without.
+- A game actor's scripts are carried into the new scene by `ScriptRemap`: the actor itself and Twinsen stay (and LBA2's actor 1, the
+  Meca-penguin's slot); the track points it walks to and the scenaric zones it waits for are copied, moved with the actor (kept inside the
+  scene); its lines stay when the scene's island has the same dialogue file; its scene variables are renumbered clear of the scene's other
+  actors'; what it does to other actors, to its old scene's cameras, fragments, ladders and rails, and to the story (game flags, items,
+  holomap, money, chapter, films, scene changes) is cut out (jumps and SET_COMPORTEMENT / SET_TRACK offsets moved to match), and a condition
+  that can no longer hold compares with a value nothing is below. Every change is listed. The validator now also warns when those offsets
+  don't land on an instruction, or a condition names an actor the scene hasn't got (retail scenes: none).
+
+**A map's scripts are saved into the map (2026-10-17, a tester's "if I was to give an npc a script it would not save it to the custom maps
+files but instead to the main game directorys scene.hqr"):** with a map open, the script window saves into the map's own scene (its working
+copy; File > Save map writes the .LS2/.LS1 of the .lbamap, with the scripts' comments, `<NAME>_COMMENTS.JSON`), and says so (*Save to the
+map…*); so do the actor windows, the zone inspector and the scene panel. Unsaved script edits belong to the folder they were made in
+(`ScriptSession`): Close map, Save map, Install map, test edits, the 1996 demo and closing the editor ask about them -- before, an LBA1
+map's unsaved edit showed as the game's own scene of its slot after Close map and was saved over it. While a map is open nothing writes the
+game folder's own files (`FileTransaction.Protect`; File > Install map into game excepted).
+
+Tests: `-- mapscripts <sandbox LBA2 folder> [<sandbox LBA1 folder>]` (a map's script saved into the map and its file, the game's SCENE.HQR
+untouched, the guard, an edit kept for its folder after Close map; every template and every game actor's behaviour on a new actor of every
+kind valid; the skeleton's usual behaviour and the attack template played headless: they go for Twinsen and hit him; a talker says its line
+when he presses action; LBA1's runtime: a new soldier with the attack template hits him); `-- mapscripts kinds lba1|lba2 <folder>` lists every
+kind's usual behaviour, `-- mapscripts presets lba1|lba2 <folder> <entity> [apply <id>]` a kind's behaviours.
+
+Tests: `-- mapactors <sandbox game folder>` (the actors made the old way and the new, played headless by the engine; see docs/LBA_MAPS.md);
+`-- scenesync` (what a scene editor saves -- both games, a map's scene -- is what a fresh read sees, `SceneDocument.Saved` for every write
+and only then, new actors' kind, body and scripts, the actor window's new actor and the penguin's slot); `-- scenesyncnative <sandbox game
+folder>` (the renderer: an interior's session edit forgotten after its file was written, a map island's actors listed and Add Actor Here on
+it, a game island's scan leaving a map's scenes out).
 
 ## LBA2: island terrain editor
 
@@ -655,6 +732,24 @@ is in the title bar). On the map a strip under it plots the heights along the ro
   the atlas), paint a *game code* (water, lava, electric, conveyors ...), re-cut cell diagonals.
 - **Objects:** select / drag / add / delete / duplicate decors, edit body, position, angle, game code and the hide variable
   (positions and ZVs are cube-local; the ZV moves with the object).
+- **Heightmaps** (the panel's *Heightmap* section, or File > Import heightmap / Export heightmap; `Terrain/IslandHeightmap`,
+  `Terrain/HeightmapFile`, `HeightmapWindow`): one pixel per height point of the island's cube bounding box, so W x H cubes need
+  **W x 64 + 1 by H x 64 + 1 pixels** (65 x 65 for one cube, 129 x 129 for 2 x 2, 257 x 321 for Desert's 4 x 5; neighbouring cubes
+  share their edge points). The picture lies as the top-down map and the minimap show the island: the top-left pixel is the box's
+  lowest world X and Z, right is +X, down is +Z, 512 units a pixel; squares with no cube are left out (exported transparent).
+  Import reads PNG (grey, colour or palette, 1-16 bits, transparency = leave the ground, interlaced), raw 16-bit little-endian
+  (`.r16`), heights as numbers (`.csv`) and, in the app, BMP / JPEG / TIFF / GIF; another size is resampled corner to corner,
+  cropped from the top-left or refused. Black / white are world heights (by default what the PNG says it was exported with, else
+  the island's own lowest / highest ground); ground at or under the sea level becomes the island's own sea ground and ground
+  rising out of it its land (or every cell again by slope); then, only where heights changed: diagonals re-cut, steep triangles
+  blocked (Col bit), light baked again (+ shadows under objects), objects moved with the ground. The dialog previews the picture
+  and the ground it makes and applies it live to the 3D view; Import is one undo step, Cancel puts the ground back. Export writes
+  16-bit PNG (black / white = the island's lowest / highest ground, kept in a tEXt chunk so Import gets every height back), 8-bit
+  PNG, `.r16` or `.csv`. File > New map can make an island from a heightmap (its size sets the cubes). Tests:
+  `-- heightmap selftest <ile>` (synthetic gradients, cone, resample / crop, transparency, sea, steep, undo, untouched areas),
+  `-- heightmap roundtrip <folder>` (every island: export -> import is byte-identical in PNG, raw and CSV), `-- heightmap size
+  <folder>`, `-- heightmap engine <sandbox game>` (a map island from a hill-and-crater picture, played headless from MAPS:
+  Twinsen walks up the hill and stays on the ground).
 
 Tests: `dotnet run --project tools/ScriptRoundTrip -c Release -- island all` parses and rewrites all 14 retail islands byte for
 byte, checks every operation (borders stay equal, levelling recovers a synthetic plane, ramps, footprints, undo restores the
@@ -689,9 +784,9 @@ offset (i, j, k) is `(block, i + dx * (j + dy * k))`, measured on the retail gri
 block, undo / redo; the library panel edits a block's brick and shape per cell and adds a **new block** (`GridPaint.AppendBlock`), so with *New
 picture* a brand-new brick can be drawn, made a block and painted (engine-verified in LBA2: the engine draws the new brick). LBA2's grid has
 the 34-byte header (style, fragment set, used-block bitmap) the LBA1 shape lacks; `Lba2GridBackend` converts. LBA1 grids save through the
-scene store (validated against the library and bricks), LBA2's rewrite `LBA_BKG.HQR` (a `.bak`). Reachable from the LBA1 scene editor's
-Scene menu and from the LBA2 scene editor's Scene tab, which also has **Make a blank interior** (a flat floor of the library's floor block and
-Twinsen alone in the scene; `Lba2BlankScene`, engine-verified). Blocks 1..255 only (the grid's used-block bitmap has 256 bits), bricks under
+scene store (validated against the library and bricks), LBA2's rewrite `LBA_BKG.HQR` (a `.bak`). Reachable from the scene panel's
+Scene tab (*Edit the map*, *Edit the interior's map*), which also has **Make a blank interior** (a flat floor of the library's floor block and
+Twinsen alone in the scene, with actor 1 the Meca-penguin's slot; `Lba2BlankScene`, engine-verified). Blocks 1..255 only (the grid's used-block bitmap has 256 bits), bricks under
 20000 in LBA2 (the engine's renumbering table).
 
 Tests: `-- grids` (both games' grids, painting, erasing, library edits, saves through the stores), `-- gridengine` / `-- newbrick` / `-- blankengine`
@@ -768,22 +863,18 @@ Checks: the maths against the engine's own values (`runtime math`), all 120 scen
 walk, the Lupin Burg door round trip 13 -> 61 -> 13 (`runtime walk | doors`), dialogue, text, voices, sounds and music
 conversion (`runtime text | dialogue`), bonuses, the magic ball, the camera and grid fragments (`runtime extras`).
 
-## LBA1 scene editor
+## LBA1 scenes
 
-**Tools > LBA1: scene editor...** (`Lba1SceneEditorWindow`) edits one scene as data: a `SceneDocument` over the game
-files, so nothing is written until **Save** (which validates first, and keeps a `.bak`), and every step can be undone
-(Ctrl+Z / Ctrl+Y). The scene's map is drawn with its actors (bodies and door sprites), zones and track points on top;
-click one to select it, drag it to move it (it snaps to 1/4 cell and follows the floor), edit its numbers in the panel on
-the right (the Scene tab holds the header: island, game-over scene, light, music, ambient samples). **Add** places a new 3D
-actor (any FILE3D entity), a copy of the selected actor, one of the ready-made doors (`ActorPrefabs`), a zone of any type
-or a track point where you click; **Delete** removes the selection, and for actors and track points renumbers every
-reference in every script (`SceneOps`: the operand roles of the translator, plus the "which actor am I colliding with"
-values scripts compare with; deleting something that is still referenced asks first and re-points the references to
-Twinsen / point 0); **Duplicate** copies. *Full attributes* and *Edit script* hand the actor to the main window's dialogs
-(the editor reloads when they save). **Play scene** runs what is saved. **Scene > Make this scene blank** replaces the scene
-with an empty world (`Lba1BlankScene`): a flat 32 x 32 floor built from the slot's own most common solid floor block and
-Twinsen standing on it, keeping the slot's island, music, light and block library; **Scene > Save into another slot**
-copies the scene over another scene (the game's scene table is fixed, so a "new" scene always replaces one).
+An LBA1 scene is edited as an LBA2 one is, in the view (Build; see "Scenes are edited where the view shows them" above): the same panel,
+with LBA1's fields (facing 0..1023, FILE3D entities chosen with *Choose entity…*, the zones' four info values and snap) and LBA1's own
+**Add** items -- the ready-made doors (`ActorPrefabs`). Deleting an actor or a track point renumbers every reference in every script
+(`SceneOps`: the operand roles of the translator, plus the "which actor am I colliding with" values scripts compare with; deleting
+something still referenced asks first and re-points the references to Twinsen / point 0). *Make the scene blank* replaces the scene with an
+empty world (`Lba1BlankScene`): a flat 32 x 32 floor built from the slot's own most common solid floor block and Twinsen standing on it,
+keeping the slot's island, music, light and block library, one undo step. *Save into another slot* copies the scene over another (the
+game's scene table is fixed, so a "new" scene always replaces one). New 3D actors get their kind's usual behaviour (*New 3D actor
+without a script…* none), *Actor from another scene…* copies an actor with its scripts fitted to this scene, and *Behaviour…* gives an actor
+another behaviour.
 
 Tests: `dotnet run --project tools/ScriptRoundTrip -- store ops` (add / delete on every scene of both games, references
 renumbered, tables valid) and `store blank` (blank scenes built, saved and walked on).
@@ -791,7 +882,8 @@ renumbered, tables valid) and `store blank` (blank scenes built, saved and walke
 ## Actor scripts as C
 
 Actor life and track scripts open as C-style source in the actor script window (Life (C) / Track (C) tabs, with the read-only native disassembly in a pane on the left) with
-live compile checking, and can be saved back into `SCENE.HQR` (first save keeps `SCENE.HQR.bak`). The translator is
+live compile checking, and can be saved back into `SCENE.HQR` (first save keeps `SCENE.HQR.bak`; with a map open, into the map: *Save to
+the map…*, see the LBA2 scene editor's "A map's scripts are saved into the map"). The translator is
 verified byte-exact against every script in both games (LBA2: 6230 scripts, LBA1: all 1238 actors of the 120 scenes);
 see [LbaScript/README.md](LbaScript/README.md) for the language, how it maps onto the engine's opcodes, and the test
 tooling. LBA1 uses its own opcode tables (`Lba1Tables.cs`); it has no `switch`, and `a && b` compiles to consecutive

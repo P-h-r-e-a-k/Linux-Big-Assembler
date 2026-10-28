@@ -92,6 +92,10 @@ extern void ClearAmbiance(void);
 extern void InitPalette(void);
 /*--------------------------------------------------------------------------*/
 extern void ChoicePalette(void);
+// An island drawn in a palette of its own (an XPL's RESS.HQR entry), or -1: the editor's view of the Temple of Bú (RENDERER_API.CPP sets it
+// for that island's load and clears it for any other's and for an inside scene's); the game never sets it -- there the race-track mod's
+// island_palette= gives the raced island's
+extern S32 IslandPaletteOverride;
 /*--------------------------------------------------------------------------*/
 extern void FadePal(U8 r, U8 v, U8 b, U8 *ptrpal, S32 percent);
 /*--------------------------------------------------------------------------*/

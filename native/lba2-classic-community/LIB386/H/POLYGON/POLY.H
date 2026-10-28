@@ -169,6 +169,19 @@ extern S32 Fill_Trame_Parity; ///< Parity for trame polygons
 
 extern U8 Fill_Logical_Palette[256];
 
+/// Fog by each pixel's own depth (LBA Assembler, 2026-10-18): set for a polygon whose fog must not be one level for the whole of it
+/// (AFF_OBJ.CPP: a polygon spanning fog bands of a body fogged by depth, ObjFogByDepth -- one of LBA Assembler's drawn-only decors, the
+/// Temple of Bu's chunks of wall and floor up to 9,000 units across, which came out a patchwork of fog levels with a step at each
+/// chunk's edge, each chunk jumping a level at once as the camera moved). With the fog Z-buffered fillers (FILL_POLY_FOG_ZBUFFER) the
+/// solid, flat and textured (chroma-keyed or not) types then take each pixel's fog band from its depth in the Z-buffer, the band a
+/// body's origin had at that depth (BoundRegleTrois(0, 15, ...): the same levels, smoothly over the body); the palette row stays the
+/// CLUT's (SetCLUT). 0: as the game always drew (one band, SetCLUT's).
+extern S32 Fill_FogPerPixel;
+/// A Z-buffer value's fog band (its offset in PtrCLUTFog, level << 12), by the value's top ten bits: made by SetFog.
+extern U16 Fill_FogBandOf[1024];
+/// The fog band, 0..15, of a Z-buffer value (Fill_FogBandOf's level).
+#define FILL_FOG_LEVEL_OF(zbuf) ((S32)(Fill_FogBandOf[((U32)(zbuf) & 0xFFFF) >> 6] >> 12))
+
 // -----------------------------------------------------------------------------
 void Switch_Fillers(U32 Bank);
 

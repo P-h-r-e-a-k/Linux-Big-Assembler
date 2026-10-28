@@ -1783,6 +1783,14 @@ void DoLife(U8 numobj) {
 
             //---------------------------------------------------------------------------
         case LM_PLAY_ACF:
+            // (a race-track mod's race: the scene's film left out, as its cinema is -- Wannies Island's start scene plays the lift's,
+            // 20 s of it before every race and time trial there, 2026-10-26. RACEMOD.CPP RaceMod_NoCinema)
+            { extern S32 RaceMod_NoCinema(void);
+              if (RaceMod_NoCinema()) {
+                  Log_Info("[life] actor %d of scene %d: film %s left out (a race)", (int)numobj, (int)NumCube, (char *)PtrPrg);
+                  PtrPrg += strlen((char *)PtrPrg) + 1;
+                  break;
+              } }
             SaveTimer();
             if (!FlagFade)
                 FadeToBlackAndSamples(PtrPal);
@@ -2040,18 +2048,29 @@ void DoLife(U8 numobj) {
                 ptrobj->SampleAlways = 0;
             }
 
-            if (!ptrobj->SampleAlways
-                     OR !IsSamplePlaying(ptrobj->SampleAlways)) {
-                ptrobj->SampleVolume = (U8)ParmSampleVolume;
+            {
+                // (a race's opponent car: its engine started, panned and let go by RACEMOD.CPP EnginesHeard, heard from Twinsen's car)
+                extern S32 RaceMod_EngineHeard(S32 num);
+                extern void InitParmSample(void);
+                const S32 heard = RaceMod_EngineHeard(numobj);
 
-                ptrobj->SampleAlways = HQ_3D_MixSample(num, 0x1000, 0, 0,
-                                                       ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
-            } else {
-                if (ptrobj->SampleAlways)
-                    num = ptrobj->SampleAlways;
+                if (!ptrobj->SampleAlways
+                         OR !IsSamplePlaying(ptrobj->SampleAlways)) {
+                    ptrobj->SampleVolume = (U8)ParmSampleVolume;
 
-                HQ_3D_ChangePanSample(num,
-                                      ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+                    if (heard) {
+                        ptrobj->SampleAlways = (U32)num << 8;
+                        InitParmSample();
+                    } else
+                        ptrobj->SampleAlways = HQ_3D_MixSample(num, 0x1000, 0, 0,
+                                                               ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+                } else if (!heard) {
+                    if (ptrobj->SampleAlways)
+                        num = ptrobj->SampleAlways;
+
+                    HQ_3D_ChangePanSample(num,
+                                          ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+                }
             }
             break;
 
@@ -2411,7 +2430,14 @@ HERCULE( HPrintf( "errno= %d: %s\n", errno, strerror(errno) ) ) ;
         case LM_CINEMA_MODE:
             num = *PtrPrg++;
 
+            // (not in a race: a cinema with a destination cube is skipped by the menu key into that cube -- OBJECT.CPP ResetCinemaMode --
+            // and on Wannies Island, a race track made on LBA2's scenes, Twinsen's own script in its start scene, 98, set the arrival's
+            // (to the hall, scene 123) as the race began and nothing ended it: Esc, or the race over going back to the menu, sent the game
+            // to the hall, the race left behind, 2026-10-25. RACEMOD.CPP RaceMod_NoCinema)
+            { extern S32 RaceMod_NoCinema(void);
+              if (num && RaceMod_NoCinema()) { Log_Info("[life] actor %d of scene %d: cinema mode %d left out (a race)", (int)numobj, (int)NumCube, (int)num); break; } }
             if (num != CinemaMode) {
+                Log_Info("[life] actor %d of scene %d: cinema mode %d (was %d)", (int)numobj, (int)NumCube, (int)num, (int)CinemaMode);
                 CinemaMode = (U8)num;
 
                 if (!num) {
@@ -2499,6 +2525,14 @@ HERCULE( HPrintf( "errno= %d: %s\n", errno, strerror(errno) ) ) ;
             //---------------------------------------------------------------------------
         case LM_ECLAIR: // Eclair n/10s
             num = *PtrPrg++;
+
+            // (no lightning on Citadel Island in a race-track mod's weather once the storm is over: its storm's actors, which go from
+            // chapter 2 on, still ran in the earlier chapters it is raced in -- the user, 2026-10-27, "Our Citabau track still has
+            // lightning even though the rain is stopped")
+            if (Island == 0 AND RaceMod_FineWeather()) {
+                Log_Info("[life] obj=%d: lightning left out, the storm is over (race-track mod)", (int)numobj);
+                break;
+            }
 
             n = InitIncrustDisp(INCRUST_ECLAIR, 0, 0, 0, 0, 0, 1);
 

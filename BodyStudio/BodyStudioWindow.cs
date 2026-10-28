@@ -115,7 +115,9 @@ public sealed class BodyStudioWindow : Window
         // The tabs take the app's own theme (Theme.axaml) like every other window's; nothing is owner-drawn any more.
         var tabs=new TabControl(){Padding=new Thickness(0)};Grid.SetRow(tabs,1);
         var modelTab=new TabItem(){Header="3D body",Content=preview};var imageTab=new TabItem(){Header="Reference image",Content=new Border(){Background=Brush(Renderer.KeyBackground),Child=reference}};tabs.Items.Add(modelTab);tabs.Items.Add(imageTab);right.Children.Add(tabs);
-        wire.IsCheckedChanged+=(_,_)=>{preview.Wire=wire.IsChecked==true;preview.Invalidate();};bones.IsCheckedChanged+=(_,_)=>{preview.Bones=bones.IsChecked==true;preview.Invalidate();};front.Click+=(_,_)=>{preview.Yaw=negative.IsChecked==true?0:MathF.PI;preview.Invalidate();};back.Click+=(_,_)=>{preview.Yaw=negative.IsChecked==true?MathF.PI:0;preview.Invalidate();};previewGame.SelectionChanged+=(_,_)=>ShowGenerated();
+        wire.IsCheckedChanged+=(_,_)=>{preview.Wire=wire.IsChecked==true;preview.Invalidate();};bones.IsCheckedChanged+=(_,_)=>{preview.Bones=bones.IsChecked==true;preview.Invalidate();};
+        // (the renderer shows a body's +Z side at yaw 0)
+        front.Click+=(_,_)=>{preview.Yaw=negative.IsChecked==true?MathF.PI:0;preview.Invalidate();};back.Click+=(_,_)=>{preview.Yaw=negative.IsChecked==true?0:MathF.PI;preview.Invalidate();};previewGame.SelectionChanged+=(_,_)=>ShowGenerated();
         generate.Click+=async(_,_)=>await Generate();export.Click+=async(_,_)=>await Export();
         save.Click+=(_,_)=>SaveProject();
         load.Click+=(_,_)=>

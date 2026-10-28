@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
 
@@ -51,6 +52,7 @@ internal sealed class EmbeddedGameHost : NativeControlHost
         public const int RevertToParent = 2;
         public const uint Button1Mask = 1 << 8;
         public const int Success = 0;
+        public const int PointerRoot = 1;                 // XGetInputFocus: no window holds the keyboard (no window manager, or one that follows the pointer)
 
         [StructLayout(LayoutKind.Sequential)]
         public struct XErrorEvent
@@ -70,6 +72,7 @@ internal sealed class EmbeddedGameHost : NativeControlHost
         [DllImport(Lib)] public static extern int XMapWindow(IntPtr display, IntPtr window);
         [DllImport(Lib)] public static extern int XUnmapWindow(IntPtr display, IntPtr window);
         [DllImport(Lib)] public static extern int XReparentWindow(IntPtr display, IntPtr window, IntPtr parent, int x, int y);
+        [DllImport(Lib)] public static extern int XRaiseWindow(IntPtr display, IntPtr window);
         [DllImport(Lib)] public static extern int XMoveResizeWindow(IntPtr display, IntPtr window, int x, int y, uint width, uint height);
         [DllImport(Lib)] public static extern int XSetInputFocus(IntPtr display, IntPtr window, int revertTo, IntPtr time);
         [DllImport(Lib)] public static extern int XGetInputFocus(IntPtr display, out IntPtr window, out int revertTo);
@@ -203,6 +206,9 @@ internal sealed class EmbeddedGameHost : NativeControlHost
         [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
         [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+        public const uint GA_PARENT = 1;
         public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr param);
         [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
         [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
@@ -268,7 +274,7 @@ internal sealed class EmbeddedGameHost : NativeControlHost
     private IntPtr game;                                   // the engine's window once it has been re-parented into host
     private Process? process;
     private readonly HashSet<IntPtr> captured = new();     // every engine window taken over so far (a replaced one may not have been destroyed yet)
-    private (int X, int Y, int W, int H) gameRect;         // where the game window sits inside host, in device pixels
+    private (int X, int Y, int W, int H) gameRect;         // where the game window sits inside the window it is in, in device pixels
     private readonly DispatcherTimer focusTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
     private readonly DispatcherTimer resizeDebounce = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(400) };
 
@@ -328,7 +334,8 @@ internal sealed class EmbeddedGameHost : NativeControlHost
     private void ConsiderLiveResize()
     {
         if (game == IntPtr.Zero || WantsResize is null) return;
-        var (w, h) = ClampToEngineLimits(DevicePixelSize());
+        // (full screen: the screen's size, its window's pixels as they are)
+        var (w, h) = ClampToEngineLimits(ContainerPixelSize());
         if (Math.Abs(w - launchWidth) < 16 && Math.Abs(h - launchHeight) < 16) return;   // layout noise, not a real resize
         pendingResizeW = w; pendingResizeH = h;
         resizeDebounce.Stop();
@@ -355,6 +362,22 @@ internal sealed class EmbeddedGameHost : NativeControlHost
     {
         var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
         return ((int)Math.Round(Bounds.Width * scale), (int)Math.Round(Bounds.Height * scale));
+    }
+
+    // The window the game sits in: full screen's own window while that is up, our black child window otherwise.
+    private IntPtr Container => fullScreenHandle != IntPtr.Zero ? fullScreenHandle : host;
+
+    // The space the game has, in device pixels. Full screen's window is measured as it actually is on the screen -- its own pixels,
+    // no scaling applied (which is what upstream's DpiScale(1, 1) means there) -- since it is not this control's area at all.
+    private (int Width, int Height) ContainerPixelSize()
+    {
+        if (fullScreenHandle == IntPtr.Zero) return DevicePixelSize();
+        if (IsWindows)
+            return Win32.GetClientRect(fullScreenHandle, out var rect) ? (rect.Right - rect.Left, rect.Bottom - rect.Top) : DevicePixelSize();
+        var d = Display;
+        return d != IntPtr.Zero && X11.XGetGeometry(d, fullScreenHandle, out _, out _, out _, out var w, out var h, out _, out _) != 0
+            ? ((int)w, (int)h)
+            : DevicePixelSize();
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
@@ -473,6 +496,9 @@ internal sealed class EmbeddedGameHost : NativeControlHost
         if (!ReferenceEquals(process, engine) || engine.HasExited || host == IntPtr.Zero) return;
         captured.Add(window);
         game = window;
+        // (the game has the keyboard from the start -- and keeps it: FocusTick)
+        wantsKeyboard = true;
+        WatchOwner();
         try
         {
             if (IsWindows)
@@ -499,13 +525,15 @@ internal sealed class EmbeddedGameHost : NativeControlHost
         focusTimer.Start();
     }
 
-    // Is the game window still a child of ours? (It vanishes when the engine replaces its window, see SettleMilliseconds, or ends.)
+    // Is the game window still a child of the one it should sit in? (It vanishes when the engine replaces its window, see
+    // SettleMilliseconds, or ends.)
     private bool GameStillHosted()
     {
-        if (game == IntPtr.Zero || host == IntPtr.Zero) return false;
-        if (IsWindows) return Win32.GetParent(game) == host;
+        var container = Container;
+        if (game == IntPtr.Zero || container == IntPtr.Zero) return false;
+        if (IsWindows) return Win32.GetParent(game) == container;
         // asked of our own window, never of the game's: a request on a destroyed window would only raise BadWindow
-        if (X11.XQueryTree(Display, host, out _, out _, out var children, out var count) == 0 || children == IntPtr.Zero) return false;
+        if (X11.XQueryTree(Display, container, out _, out _, out var children, out var count) == 0 || children == IntPtr.Zero) return false;
         try
         {
             for (var i = 0; i < (int)count; i++)
@@ -526,22 +554,25 @@ internal sealed class EmbeddedGameHost : NativeControlHost
     // two while a live resize is still in flight (debounced, then an async control-socket round trip) is covered by SDL's own
     // scale-to-fit -- the same SDL_LOGICAL_PRESENTATION_LETTERBOX mechanism this host relied on entirely before live resize
     // existed.
+    // The game is centred in the window it actually sits in: full screen's own window while that is up, our black child otherwise.
     private void Fit()
     {
-        if (host == IntPtr.Zero) return;
+        var container = Container;
+        if (container == IntPtr.Zero) return;
         int w, h;
         if (IsWindows)
         {
-            if (!Win32.GetClientRect(host, out var rect)) return;
+            if (!Win32.GetClientRect(container, out var rect)) return;
             w = rect.Right - rect.Left; h = rect.Bottom - rect.Top;
         }
         else
         {
             var d = Display;
             if (d == IntPtr.Zero) return;
-            (w, h) = DevicePixelSize();
+            (w, h) = ContainerPixelSize();
             if (w < 1 || h < 1) return;
-            X11.XMoveResizeWindow(d, host, 0, 0, (uint)w, (uint)h);
+            // our own child window is ours to keep in step with the control; full screen's window is the window manager's to size
+            if (container == host) X11.XMoveResizeWindow(d, host, 0, 0, (uint)w, (uint)h);
         }
         if (w >= 16 && h >= 16 && game != IntPtr.Zero)
         {
@@ -570,36 +601,69 @@ internal sealed class EmbeddedGameHost : NativeControlHost
         catch (Exception error) { DebugLog.Log($"EmbeddedGameHost: fitting the game window failed: {error.Message}"); }
     }
 
+    // A pointer press Avalonia does raise over this control (its edges, and whatever the native area doesn't swallow) is a click on the game.
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        FocusGame();
+        GameClicked();
     }
 
+    // The game's window in the window it sits in: once the game has changed its size (`resolution`, the play area resized or full
+    // screen) SDL gives it its own window's style again -- a popup's, which is why the game's window can be the one in front (PlayKeyHook
+    // takes F11 from it too). Its style is left so: made a child's again, SDL put it back at once, again and again. Should it leave the
+    // window it sits in, it is put back.
+    // Windows only: on X11 SDL doesn't restyle its window, it destroys it and makes a new one (see SettleMilliseconds), and FocusTick
+    // takes that new one over below -- the same thing, done the X11 way. A parent of none means the window is gone rather than moved, and
+    // is left to that same code; asking a destroyed window for its parent would only raise BadWindow.
+    private void KeepInside()
+    {
+        if (!IsWindows || game == IntPtr.Zero) return;
+        var container = Container;
+        var parent = Win32.GetAncestor(game, Win32.GA_PARENT);
+        if (parent == container || parent == IntPtr.Zero) return;
+        DebugLog.Log($"EmbeddedGameHost: the game's window left the editor's (its parent {parent:X}): put back");
+        Win32.SetParent(game, container);
+        Fit();
+    }
+
+    // ---- the keyboard: the game has it from the moment it is embedded until a click on one of the editor's own controls, and again from a
+    // click on the game (a click on a foreign child window doesn't move the focus by itself). While it should, the focus anything else of the
+    // editor's takes from it is given back on the next tick, so long as the window in front is the editor's: the focus manager giving it back
+    // to the control that had it when the editor's window is activated again (after a dialog, after another program, after the race car's
+    // setup), the game's own window restyled by SDL at a change of size. (The user, 2026-10-12: "After hitting play sometimes we have to
+    // manually click the game area to get it to respond to input")
+    private bool wantsKeyboard;
+    private Window? owner;
+
     // Every 120 ms while a game is embedded:
-    //  - a game window that is no longer ours (the engine replaced it after AttachAsync stopped watching) is looked for again
-    //    among the engine's top-level windows and taken over;
-    //  - clicking on the game gives it the keyboard (a click on a foreign child window doesn't move the focus by itself, and the
-    //    native area of the control never delivers pointer events to Avalonia); clicking anywhere else in the editor's window
-    //    while the game has the keyboard gives it back to the editor.
+    //  - the game's window is put back in the window it should sit in, or, when the engine replaced it altogether, the new one is
+    //    looked for among the engine's top-level windows and taken over;
+    //  - a button down over the game is taken for a click on it (a click on a foreign child window doesn't move the focus by itself,
+    //    and the native area of the control never delivers pointer events to Avalonia);
+    //  - the keyboard is given back to the game while it should have it and the editor is the program in front.
     private void FocusTick(object? sender, EventArgs e)
     {
         if (game == IntPtr.Zero || process is not { HasExited: false } engine) return;
         try
         {
+            KeepInside();
             if (!GameStillHosted())
             {
                 var replacement = FindEngineWindow(engine.Id, captured);
                 if (replacement == IntPtr.Zero) return;
                 DebugLog.Log($"EmbeddedGameHost: the engine replaced its window; taking over 0x{replacement:x}");
-                Capture(replacement, host);
+                Capture(replacement, Container);
                 Adopt(engine, replacement);
                 return;
             }
             if (IsWindows)
             {
-                if (Win32.GetFocus() == game || (Win32.GetAsyncKeyState(Win32.VK_LBUTTON) & 0x8000) == 0) return;
-                if (Win32.GetCursorPos(out var p) && Win32.GetWindowRect(game, out var r) && p.X >= r.Left && p.X < r.Right && p.Y >= r.Top && p.Y < r.Bottom) Win32.SetFocus(game);
+                if (Win32.GetFocus() == game) return;
+                // (a click on the game its window didn't tell of: the button down over it)
+                if ((Win32.GetAsyncKeyState(Win32.VK_LBUTTON) & 0x8000) != 0 && Win32.GetCursorPos(out var p) && Win32.GetWindowRect(game, out var r)
+                    && p.X >= r.Left && p.X < r.Right && p.Y >= r.Top && p.Y < r.Bottom)
+                    wantsKeyboard = true;
+                if (wantsKeyboard && EditorInFront()) Win32.SetFocus(game);
                 return;
             }
             var d = Display;
@@ -612,32 +676,108 @@ internal sealed class EmbeddedGameHost : NativeControlHost
                 X11.XMoveResizeWindow(d, game, gameRect.X, gameRect.Y, (uint)gameRect.W, (uint)gameRect.H);
                 X11.XFlush(d);
             }
-            if (X11.XQueryPointer(d, host, out _, out _, out _, out _, out var x, out var y, out var mask) == 0 || (mask & X11.Button1Mask) == 0) return;
             X11.XGetInputFocus(d, out var focused, out _);
-            var overGame = x >= gameRect.X && x < gameRect.X + gameRect.W && y >= gameRect.Y && y < gameRect.Y + gameRect.H;
-            if (overGame)
+            if (X11.XQueryPointer(d, Container, out _, out _, out _, out _, out var x, out var y, out var mask) != 0 && (mask & X11.Button1Mask) != 0)
             {
-                if (focused != game) { X11.XSetInputFocus(d, game, X11.RevertToParent, IntPtr.Zero); X11.XFlush(d); }
-            }
-            else if (focused == game && TopLevel.GetTopLevel(this)?.TryGetPlatformHandle() is { } top && top.Handle != IntPtr.Zero)
-            {
-                // the button is down somewhere else in the editor's window (the X focus is inside it, so the window manager
-                // doesn't move the focus itself): the editor's own window gets the keyboard back
-                if (X11.XQueryPointer(d, top.Handle, out _, out _, out _, out _, out var tx, out var ty, out _) != 0
-                    && X11.XGetGeometry(d, top.Handle, out _, out _, out _, out var tw, out var th, out _, out _) != 0
-                    && tx >= 0 && ty >= 0 && tx < tw && ty < th)
+                if (x >= gameRect.X && x < gameRect.X + gameRect.W && y >= gameRect.Y && y < gameRect.Y + gameRect.H) wantsKeyboard = true;
+                else if (fullScreenHandle != IntPtr.Zero)
                 {
-                    X11.XSetInputFocus(d, top.Handle, X11.RevertToParent, IntPtr.Zero);
-                    X11.XFlush(d);
+                    // full screen: the black round the game is the game's too (upstream hears of a click there as WM_PARENTNOTIFY)
+                    var (cw, ch) = ContainerPixelSize();
+                    if (x >= 0 && y >= 0 && x < cw && y < ch) wantsKeyboard = true;
+                }
+                else if (TopLevel.GetTopLevel(this)?.TryGetPlatformHandle() is { } top && top.Handle != IntPtr.Zero
+                         && X11.XQueryPointer(d, top.Handle, out _, out _, out _, out _, out var tx, out var ty, out _) != 0
+                         && X11.XGetGeometry(d, top.Handle, out _, out _, out _, out var tw, out var th, out _, out _) != 0
+                         && tx >= 0 && ty >= 0 && tx < tw && ty < th)
+                {
+                    // the button is down somewhere else in the editor's window: one of the editor's own controls was clicked and keeps
+                    // the keyboard, which is what OwnerPointerPressed says of the clicks Avalonia itself raises. The X focus is inside
+                    // the editor's window, so the window manager doesn't move it itself: it is given back to the editor here.
+                    wantsKeyboard = false;
+                    if (focused == game) { X11.XSetInputFocus(d, top.Handle, X11.RevertToParent, IntPtr.Zero); X11.XFlush(d); }
                 }
             }
+            if (wantsKeyboard && focused != game && EditorInFront()) { X11.XSetInputFocus(d, game, X11.RevertToParent, IntPtr.Zero); X11.XFlush(d); }
         }
         catch (Exception error) { DebugLog.Log($"EmbeddedGameHost: focus check failed: {error.Message}"); focusTimer.Stop(); }
+    }
+
+    // Whether the window in front is the editor's own -- its main window, full screen's, or the game's (SDL's popup once its size has
+    // changed): not a dialog, a panel floating on its own, nor another program's; the keyboard isn't taken from those.
+    private bool EditorInFront()
+    {
+        if (IsWindows)
+        {
+            var front = Win32.GetForegroundWindow();
+            return front != IntPtr.Zero && (front == game || front == fullScreenHandle || front == OwnerHandle);
+        }
+        // X11 has no window in front: what there is, is the window that holds the keyboard, and it (or one of its ancestors) is the
+        // game's, full screen's or the editor's own top level. PointerRoot means no window holds it at all -- no window manager, or one
+        // that gives the keyboard to whatever the pointer is over -- so nothing would be taken from anyone.
+        var d = Display;
+        if (d == IntPtr.Zero) return false;
+        X11.XGetInputFocus(d, out var focused, out _);
+        if (focused == IntPtr.Zero) return false;
+        if (focused.ToInt64() == X11.PointerRoot) return true;
+        var top = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        for (var window = focused; window != IntPtr.Zero && window != rootWindow;)
+        {
+            if (window == game || (fullScreenHandle != IntPtr.Zero && window == fullScreenHandle) || (top != IntPtr.Zero && window == top)) return true;
+            if (X11.XQueryTree(d, window, out _, out var parent, out var children, out _) == 0) return false;
+            if (children != IntPtr.Zero) X11.XFree(children);
+            window = parent;
+        }
+        return false;
+    }
+
+    private IntPtr OwnerHandle => owner?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+
+    // A click on the game, or on the black round it: it takes the keyboard. Upstream hears of one from the window the game sits in, which
+    // is told of a button pressed on its child before the child acts on it (WM_PARENTNOTIFY) -- a message HwndHost let it hook. Avalonia's
+    // NativeControlHost has no such hook, so a click is noticed instead by OnPointerPressed, by the full-screen window's own tunnelled
+    // handler, and by FocusTick's button-down check.
+    private void GameClicked()
+    {
+        wantsKeyboard = true;
+        if (game != IntPtr.Zero) FocusGame();
+    }
+
+    // The editor's window: a click on any of its own controls -- a panel, a box, a button -- leaves the keyboard there; the window
+    // activated again gives it back to the game at once, should it have it (the focus manager has just given it to the control that last
+    // had it). Avalonia's tunnelled PointerPressed is WPF's PreviewMouseDown, and like it is never raised for the native area the game
+    // sits in -- only for the editor's own controls.
+    private void WatchOwner()
+    {
+        var window = Window.GetWindow(this);
+        if (ReferenceEquals(window, owner)) return;
+        UnwatchOwner();
+        owner = window;
+        if (owner is null) return;
+        owner.AddHandler(InputElement.PointerPressedEvent, OwnerPointerPressed, RoutingStrategies.Tunnel);
+        owner.Activated += OwnerActivated;
+    }
+
+    private void UnwatchOwner()
+    {
+        if (owner is null) return;
+        owner.RemoveHandler(InputElement.PointerPressedEvent, OwnerPointerPressed);
+        owner.Activated -= OwnerActivated;
+        owner = null;
+    }
+
+    private void OwnerPointerPressed(object? sender, PointerPressedEventArgs e) => wantsKeyboard = false;
+
+    private void OwnerActivated(object? sender, EventArgs e)
+    {
+        if (!wantsKeyboard) return;
+        Dispatcher.UIThread.Post(() => { if (wantsKeyboard && game != IntPtr.Zero && EditorInFront()) FocusGame(); }, DispatcherPriority.Background);
     }
 
     public void FocusGame()
     {
         if (game == IntPtr.Zero) return;
+        wantsKeyboard = true;
         try
         {
             if (IsWindows) Win32.SetFocus(game);
@@ -652,6 +792,99 @@ internal sealed class EmbeddedGameHost : NativeControlHost
         resizeDebounce.Stop();
         game = IntPtr.Zero;
         captured.Clear();
+        wantsKeyboard = false;
+        UnwatchOwner();
+        CloseFullScreen();
+    }
+
+    // ---- full screen (F11 while playing, MainWindow.Play.cs): the game's window moved into a window of its own over the whole of the
+    // editor's screen, the engine switched to the screen's size (WantsResize, as for any other change of the area); and back ----------
+    private Window? fullScreen;
+    private IntPtr fullScreenHandle;                       // full screen's own native window (an X window / an HWND): the game's parent while it is up
+    public bool IsFullScreen => fullScreen is not null;
+
+    public void ToggleFullScreen()
+    {
+        if (game == IntPtr.Zero) return;
+        if (fullScreen is null) EnterFullScreen();
+        else LeaveFullScreen();
+    }
+
+    private void EnterFullScreen()
+    {
+        var owner = Window.GetWindow(this);
+        var window = new Window
+        {
+            Title = "LBA Assembler: playing (F11: back to the editor)", SystemDecorations = SystemDecorations.None, CanResize = false,
+            Background = Brushes.Black, ShowInTaskbar = false, ShowActivated = true,
+        }.WithOwner(owner);
+        // (on the editor's screen: placed there, then taken full screen. WPF maximises a window without a border, which covers the
+        // taskbar too; a maximised Avalonia window is held to the work area, so the state that covers the whole screen is FullScreen)
+        if (owner is not null)
+        {
+            window.WindowStartupLocation = WindowStartupLocation.Manual;
+            window.Left = owner.Left + 20; window.Top = owner.Top + 20; window.Width = 400; window.Height = 300;
+        }
+        window.WindowState = WindowState.FullScreen;
+        // (closed some other way -- Alt+F4 -- it gives the game back rather than taking it with it)
+        window.Closing += (_, e) => { if (fullScreen is not null) { e.Cancel = true; LeaveFullScreen(); } };
+        // (a click on the black round the game: the game takes the keyboard, as WM_PARENTNOTIFY tells upstream's own hook on this window)
+        window.AddHandler(InputElement.PointerPressedEvent, (object? _, PointerPressedEventArgs _) => GameClicked(), RoutingStrategies.Tunnel);
+        // Windows has the window at its full size by the time it is shown; an X11 window manager makes it full screen in its own time,
+        // a moment after -- so the game is fitted again, and the engine asked for the new size, when that actually happens.
+        window.Resized += (_, _) => { if (fullScreenHandle != IntPtr.Zero) { SafeFit(); ConsiderLiveResize(); } };
+        window.ShowOwned();
+        fullScreen = window;
+        fullScreenHandle = window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        if (fullScreenHandle == IntPtr.Zero)
+        {
+            // nothing to re-parent the game into (no native handle of its own): the play stays where it is
+            DebugLog.Log("EmbeddedGameHost: full screen's window has no native handle; staying in the editor");
+            CloseFullScreen();
+            return;
+        }
+        Reparent(game, fullScreenHandle);
+        Fit();
+        wantsKeyboard = true;
+        FocusGame();
+        ConsiderLiveResize();
+        DebugLog.Log("EmbeddedGameHost: full screen");
+    }
+
+    private void LeaveFullScreen()
+    {
+        if (fullScreen is null) return;
+        if (game != IntPtr.Zero) Reparent(game, host);
+        CloseFullScreen();
+        Fit();
+        wantsKeyboard = true;
+        if (game != IntPtr.Zero) FocusGame();
+        ConsiderLiveResize();
+        DebugLog.Log("EmbeddedGameHost: back in the editor");
+    }
+
+    private void CloseFullScreen()
+    {
+        var window = fullScreen;
+        fullScreen = null;
+        fullScreenHandle = IntPtr.Zero;
+        if (window is null) return;
+        window.Close();
+        if (window.OwnerWindow is { } owner) owner.Activate();
+    }
+
+    // Moves the game's window from one window of ours into another (full screen's, and back). Unlike Capture's, neither is managed by
+    // the window manager, so the X11 side is a plain re-parent -- nothing to withdraw first; the window is raised above whatever its new
+    // parent draws into (an X re-parent puts it on top of its new siblings already, but Avalonia's own render window is one of them).
+    private static void Reparent(IntPtr window, IntPtr parent)
+    {
+        if (window == IntPtr.Zero || parent == IntPtr.Zero) return;
+        if (IsWindows) { Win32.SetParent(window, parent); return; }
+        var d = Display;
+        if (d == IntPtr.Zero) return;
+        X11.XReparentWindow(d, window, parent, 0, 0);
+        X11.XRaiseWindow(d, window);
+        X11.XFlush(d);
     }
 
     // Ends the game (a running one is closed the hard way: it is a test session, nothing of it is kept).

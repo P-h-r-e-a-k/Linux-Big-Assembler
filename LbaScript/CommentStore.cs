@@ -85,7 +85,13 @@ internal sealed class CommentStore
     public void Save()
     {
         if (!dirty) return;
-        if (LoadError is not null && File.Exists(Path)) File.Copy(Path, Path + ".bad", overwrite: true);
+        // (the old .bad removed first, not copied over: in a map's or test edits' copy of the game folder it can be a hard link to the
+        // game folder's own, and copying over a hard link writes the file both names share)
+        if (LoadError is not null && File.Exists(Path))
+        {
+            if (File.Exists(Path + ".bad")) File.Delete(Path + ".bad");
+            File.Copy(Path, Path + ".bad");
+        }
 
         if (sets.Count == 0)
         {
@@ -95,6 +101,19 @@ internal sealed class CommentStore
             return;
         }
 
+        var temp = Path + ".tmp";
+        File.WriteAllText(temp, ToJson());
+        File.Move(temp, Path, overwrite: true);
+        dirty = false;
+        LoadError = null;
+    }
+
+    // ---- the sets as data (a map file keeps its scenes' comments: MapInstall)
+
+    public IEnumerable<(int Scene, int Actor, ScriptKind Kind, CommentSet Set)> Entries => sets.Select(p => (p.Key.Scene, p.Key.Actor, p.Key.Kind, p.Value));
+
+    public string ToJson()
+    {
         var dto = new StoreDto { Version = CurrentVersion };
         foreach (var byScene in sets.GroupBy(p => p.Key.Scene).OrderBy(g => g.Key))
         {
@@ -111,12 +130,25 @@ internal sealed class CommentStore
             }
             dto.Scenes.Add(scene);
         }
+        return JsonSerializer.Serialize(dto, Json);
+    }
 
-        var temp = Path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(dto, Json));
-        File.Move(temp, Path, overwrite: true);
-        dirty = false;
-        LoadError = null;
+    // Sets read from JSON text (ToJson's), kept in memory under `path` (nothing is read from it). Unreadable text gives an empty store.
+    public static CommentStore FromJson(string json, string path)
+    {
+        var store = new CommentStore(path);
+        try
+        {
+            var dto = JsonSerializer.Deserialize<StoreDto>(json, Json) ?? throw new JsonException("empty");
+            foreach (var scene in dto.Scenes)
+                foreach (var actor in scene.Actors)
+                {
+                    if (actor.Life is not null) store.sets[(scene.Scene, actor.Actor, ScriptKind.Life)] = actor.Life.ToSet();
+                    if (actor.Track is not null) store.sets[(scene.Scene, actor.Actor, ScriptKind.Track)] = actor.Track.ToSet();
+                }
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException) { store.sets.Clear(); store.LoadError = e.Message; }
+        return store;
     }
 
     // ---- file shape ----------------------------------------------------------

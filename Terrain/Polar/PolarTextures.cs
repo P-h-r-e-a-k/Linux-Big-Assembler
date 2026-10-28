@@ -258,6 +258,15 @@ internal static class PolarTextures
             }
         }
 
+        // Tiles already in the island's palette, put on pages as they are (the Temple of Bú's: its palette has LBA1's colours in it,
+        // TemplePalette, and its tiles are mapped before they are placed).
+        private Colours(byte[] palette)
+        {
+            Lba1 = palette;
+            for (var c = 0; c < 256; c++) Nearest[c] = c;
+        }
+        public static Colours AsTheyAre(byte[] palette) => new(palette);
+
         // a colour of a palette as 8-bit RGB (the 6-bit palettes, 0..63, four times brighter)
         public static (int R, int G, int B) Rgb(byte[] palette, int i)
         {

@@ -95,6 +95,13 @@ S32 Jmp_TrameZBuf(S32 Nb_Points, Struc_Point *Ptr_Points, U16 color) {
 }
 
 S32 Jmp_SolidFogZBuf(S32 Nb_Points, Struc_Point *Ptr_Points, U16 color) {
+    // (each pixel's fog by its depth: Fill_FogPerPixel, POLY.H -- the colour unfogged, the filler fogs it)
+    if (Fill_FogPerPixel) {
+        Fill_Filler = Filler_FlatFogZBufPix;
+        Fill_ClipFlag = CLIP_FLAT + CLIP_ZBUFFER;
+        Fill_Color.Num = color & 0xFF;
+        return Fill_PolyClip(Nb_Points, Ptr_Points);
+    }
     color = Fill_Logical_Palette[color] & 0xFF;
     color = (color << 8) | color;
 
@@ -366,14 +373,14 @@ S32 Jmp_TextureFlatChromaKeyZBuf(S32 Nb_Points, Struc_Point *Ptr_Points, U16 col
 }
 
 S32 Jmp_TextureFogZBuf(S32 Nb_Points, Struc_Point *Ptr_Points, U16 color) {
-    Fill_Filler = Filler_TextureFogZBuf;
+    Fill_Filler = Fill_FogPerPixel ? Filler_TextureFogZBufPix : Filler_TextureFogZBuf;
     Fill_ClipFlag = CLIP_FLAT + CLIP_TEXTURE + CLIP_ZBUFFER;
 
     return Fill_PolyClip(Nb_Points, Ptr_Points);
 }
 
 S32 Jmp_TextureChromaKeyFogZBuf(S32 Nb_Points, Struc_Point *Ptr_Points, U16 color) {
-    Fill_Filler = Filler_TextureChromaKeyFogZBuf;
+    Fill_Filler = Fill_FogPerPixel ? Filler_TextureChromaKeyFogZBufPix : Filler_TextureChromaKeyFogZBuf;
     Fill_ClipFlag = CLIP_FLAT + CLIP_TEXTURE + CLIP_ZBUFFER;
 
     return Fill_PolyClip(Nb_Points, Ptr_Points);
